@@ -1,0 +1,5367 @@
+{
+  "metadata": {
+    "title": "Barise学習ページ ローカルJSON教材データ",
+    "createdAt": "2026-06-04",
+    "version": "v5-work-evaluation-prompt-fix",
+    "intendedConsumer": "GPT Codex / Codex implementation agent",
+    "updatedAt": "2026-06-26",
+    "source": "Google Drive &Y 最新版ナレッジ / Barise V4.10.1 ミニワークAI判定ゲート",
+    "phase2AiWallWorkUpdatedAt": "2026-06-09",
+    "aiGatewayFoundationUpdatedAt": "2026-06-11",
+    "videoTitleSource": "Google Sheets: Barise_動画リンク管理 / 動画管理!A:D, O（2026-06-18参照）",
+    "v49BrushupUpdatedAt": "2026-06-18",
+    "workEvaluationAiApiUpdatedAt": "2026-06-21",
+    "miniWorkAiGateUpdatedAt": "2026-06-22",
+    "loginAuthResetUpdatedAt": "2026-06-26",
+    "sheetsSyncUpdatedAt": "2026-06-26",
+    "workEvaluationKnowledgeUpdatedAt": "2026-06-27",
+    "phase1ReviewFixUpdatedAt": "2026-06-27",
+    "phase1ReviewFixVersion": "v5-phase1-review-fix"
+  },
+  "authPolicy": {
+    "mvpLoginMethod": "email_exists_in_spreadsheet",
+    "identityKey": "email_key",
+    "passwordRequired": false,
+    "verificationCodeRequired": false,
+    "lineUserIdVerificationRequired": false,
+    "allowedWhen": {
+      "emailExists": true,
+      "account_status": "active"
+    },
+    "authDecisionLayer": "netlify_functions",
+    "registrationSource": "Google Sheets: Barise登録情報 / 登録情報一覧",
+    "invalidEmailRowsIgnored": true,
+    "securityNote": "MVPでは登録情報シートに存在するメールアドレスのみログイン許可する簡易認証。判定はフロントではなくNetlify Functions側で行う。本番拡張時は確認コード・LINE連携・認証基盤を検討する。"
+  },
+  "authGateway": {
+    "provider": "netlify_functions",
+    "endpointUrl": "/.netlify/functions/auth-login",
+    "identityKey": "email_key",
+    "registrationSpreadsheetEnv": "BARISE_REGISTRATION_SPREADSHEET_ID",
+    "registrationSheetNameEnv": "BARISE_REGISTRATION_SHEET_NAME",
+    "defaultRegistrationSheetName": "登録情報一覧",
+    "serviceAccountEnv": [
+      "GOOGLE_SERVICE_ACCOUNT_EMAIL",
+      "GOOGLE_PRIVATE_KEY"
+    ],
+    "secretPolicy": "Google Sheets接続情報はNetlify Environment Variablesで保持し、フロントやJSONには置かない。"
+  },
+  "syncGateway": {
+    "provider": "netlify_functions",
+    "endpointUrl": "/.netlify/functions/learning-sync",
+    "mode": "sheets",
+    "fallbackToLocalOnWriteFailure": false,
+    "actions": [
+      "markVideoWatched",
+      "submitMiniWork",
+      "submitWork",
+      "submitAiWorkAnswer",
+      "submitAiWorkFollowup",
+      "submitAiWorkRevision",
+      "submitAiWorkIntakeFollowup"
+    ],
+    "secretPolicy": "Sheets同期のサービスアカウント情報はNetlify Environment Variablesで保持し、フロントやJSONには置かない。"
+  },
+  "displayRules": {
+    "allowedLearnerTerms": [
+      "ミニワーク",
+      "ワーク",
+      "通過",
+      "もう少し具体化",
+      "サポート相談",
+      "評価中",
+      "評価に失敗しました",
+      "マイページへ戻る"
+    ],
+    "forbiddenLearnerTerms": [
+      "プチワーク",
+      "本ワーク",
+      "MVP",
+      "good",
+      "needs_more",
+      "support_needed",
+      "reviewing",
+      "failed",
+      "debug",
+      "mock",
+      "candidate",
+      "hidden_from_learner",
+      "internal",
+      "pass",
+      "retry",
+      "review",
+      "aiError",
+      "gpt-4o-mini",
+      "OPENAI_API_KEY",
+      "evaluate-work",
+      "api.openai.com"
+    ],
+    "statusLabelMap": {
+      "good": "通過",
+      "needs_more": "もう少し具体化",
+      "support_needed": "サポート相談",
+      "reviewing": "評価中",
+      "failed": "評価に失敗しました"
+    }
+  },
+  "spreadsheetTabs": [
+    {
+      "name": "users",
+      "purpose": "メールアドレスログイン照合と受講者基本情報を管理する",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "string",
+          "required": true,
+          "example": "U0001"
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "required": true,
+          "example": "sample@example.com"
+        },
+        {
+          "name": "email_normalized",
+          "type": "string",
+          "required": true,
+          "example": "sample@example.com"
+        },
+        {
+          "name": "line_user_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "display_name",
+          "type": "string",
+          "required": false,
+          "example": "田中さん"
+        },
+        {
+          "name": "account_status",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "active",
+            "inactive",
+            "suspended",
+            "cancelled"
+          ],
+          "example": "active"
+        },
+        {
+          "name": "enrolled_course",
+          "type": "string",
+          "required": false,
+          "example": "Barise本講座"
+        },
+        {
+          "name": "current_phase_id",
+          "type": "string",
+          "required": false,
+          "example": "P2"
+        },
+        {
+          "name": "current_lesson_id",
+          "type": "string",
+          "required": false,
+          "example": "P2-01"
+        },
+        {
+          "name": "last_accessed_at",
+          "type": "datetime",
+          "required": false,
+          "example": "2026-06-04T10:00:00+09:00"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "example": "2026-06-01T10:00:00+09:00"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "required": false,
+          "example": "2026-06-04T10:00:00+09:00"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "purpose": "フェーズ一覧を管理する",
+      "columns": [
+        {
+          "name": "phase_id",
+          "type": "string",
+          "required": true,
+          "example": "P2"
+        },
+        {
+          "name": "phase_order",
+          "type": "number",
+          "required": true,
+          "example": 2
+        },
+        {
+          "name": "phase_title",
+          "type": "string",
+          "required": true,
+          "example": "実行力・思考整理"
+        },
+        {
+          "name": "phase_summary",
+          "type": "string",
+          "required": true,
+          "example": "学びを現場の行動へ落とし込むフェーズです。"
+        },
+        {
+          "name": "unlock_condition",
+          "type": "string",
+          "required": false,
+          "example": "P1 completed"
+        }
+      ]
+    },
+    {
+      "name": "lessons",
+      "purpose": "動画教材と学習目的を管理する",
+      "columns": [
+        {
+          "name": "lesson_id",
+          "type": "string",
+          "required": true,
+          "example": "P2-01"
+        },
+        {
+          "name": "phase_id",
+          "type": "string",
+          "required": true,
+          "example": "P2"
+        },
+        {
+          "name": "lesson_order",
+          "type": "number",
+          "required": true,
+          "example": 1
+        },
+        {
+          "name": "lesson_title",
+          "type": "string",
+          "required": true,
+          "example": "数値で現状を捉える"
+        },
+        {
+          "name": "lesson_summary",
+          "type": "string",
+          "required": true,
+          "example": "事業の現状を数字で整理する視点を学びます。"
+        },
+        {
+          "name": "video_url",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "purpose_watch",
+          "type": "string",
+          "required": true,
+          "example": "数値で現状を捉える視点を理解する"
+        },
+        {
+          "name": "purpose_think",
+          "type": "string",
+          "required": true,
+          "example": "自分の事業で見るべき数字は何か"
+        },
+        {
+          "name": "purpose_write",
+          "type": "string",
+          "required": true,
+          "example": "今週確認する数値を3つ書く"
+        },
+        {
+          "name": "mini_work_required",
+          "type": "boolean",
+          "required": true,
+          "example": true
+        },
+        {
+          "name": "work_required",
+          "type": "boolean",
+          "required": true,
+          "example": true
+        }
+      ]
+    },
+    {
+      "name": "mini_works",
+      "purpose": "動画直下のミニワークを管理する",
+      "columns": [
+        {
+          "name": "mini_work_id",
+          "type": "string",
+          "required": true,
+          "example": "MW-P2-01"
+        },
+        {
+          "name": "lesson_id",
+          "type": "string",
+          "required": true,
+          "example": "P2-01"
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "example": "現場で見る数字の整理"
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": true,
+          "example": "自分の事業で今週確認する数字を3つ書いてください。"
+        },
+        {
+          "name": "helper_text",
+          "type": "string",
+          "required": false,
+          "example": "実際に確認できる数字を選びましょう。"
+        },
+        {
+          "name": "passing_score",
+          "type": "number",
+          "required": false,
+          "example": 70
+        }
+      ]
+    },
+    {
+      "name": "works",
+      "purpose": "節目ごとのワークを管理する",
+      "columns": [
+        {
+          "name": "work_id",
+          "type": "string",
+          "required": true,
+          "example": "W-P2-01"
+        },
+        {
+          "name": "related_phase_id",
+          "type": "string",
+          "required": false,
+          "example": "P2"
+        },
+        {
+          "name": "related_lesson_id",
+          "type": "string",
+          "required": false,
+          "example": "P2-01"
+        },
+        {
+          "name": "work_order",
+          "type": "number",
+          "required": true,
+          "example": 1
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "example": "数値改善アクション設計"
+        },
+        {
+          "name": "purpose",
+          "type": "string",
+          "required": true,
+          "example": "後続の行動計画に使うため"
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": true,
+          "example": "今週改善したい数字と、具体アクションを書いてください。"
+        },
+        {
+          "name": "unlock_condition",
+          "type": "string",
+          "required": true,
+          "example": "related_mini_work_passed"
+        },
+        {
+          "name": "display_before_unlock",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "hidden",
+            "name_only"
+          ],
+          "example": "name_only"
+        },
+        {
+          "name": "passing_score",
+          "type": "number",
+          "required": false,
+          "example": 75
+        }
+      ]
+    },
+    {
+      "name": "progress",
+      "purpose": "メールアドレス軸で学習進捗を管理する",
+      "columns": [
+        {
+          "name": "progress_id",
+          "type": "string",
+          "required": true,
+          "example": "PRG-U0001-P2-01"
+        },
+        {
+          "name": "email_normalized",
+          "type": "string",
+          "required": true,
+          "example": "sample@example.com"
+        },
+        {
+          "name": "user_id",
+          "type": "string",
+          "required": false,
+          "example": "U0001"
+        },
+        {
+          "name": "phase_id",
+          "type": "string",
+          "required": true,
+          "example": "P2"
+        },
+        {
+          "name": "lesson_id",
+          "type": "string",
+          "required": true,
+          "example": "P2-01"
+        },
+        {
+          "name": "video_status",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "not_started",
+            "in_progress",
+            "watched"
+          ],
+          "example": "watched"
+        },
+        {
+          "name": "mini_work_status",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "not_submitted",
+            "submitted",
+            "reviewing",
+            "good",
+            "needs_more",
+            "support_needed",
+            "failed"
+          ],
+          "example": "needs_more"
+        },
+        {
+          "name": "work_status",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "none",
+            "locked",
+            "unlocked",
+            "submitted",
+            "good",
+            "needs_more",
+            "support_needed"
+          ],
+          "example": "locked"
+        },
+        {
+          "name": "last_score",
+          "type": "number",
+          "required": false,
+          "example": 72
+        },
+        {
+          "name": "next_action",
+          "type": "string",
+          "required": false,
+          "example": "revise_mini_work"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "required": true,
+          "example": "2026-06-04T10:10:00+09:00"
+        }
+      ]
+    },
+    {
+      "name": "submissions",
+      "purpose": "ミニワーク/ワークの提出履歴を保存する",
+      "columns": [
+        {
+          "name": "submission_id",
+          "type": "string",
+          "required": true,
+          "example": "SUB-001"
+        },
+        {
+          "name": "email_normalized",
+          "type": "string",
+          "required": true,
+          "example": "sample@example.com"
+        },
+        {
+          "name": "target_type",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "mini_work",
+            "work"
+          ],
+          "example": "mini_work"
+        },
+        {
+          "name": "target_id",
+          "type": "string",
+          "required": true,
+          "example": "MW-P2-01"
+        },
+        {
+          "name": "answer_text",
+          "type": "string",
+          "required": true,
+          "example": "今週は問い合わせ数、成約率、平均単価を確認します。"
+        },
+        {
+          "name": "status",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "submitted",
+            "reviewing",
+            "good",
+            "needs_more",
+            "support_needed",
+            "failed"
+          ],
+          "example": "needs_more"
+        },
+        {
+          "name": "score",
+          "type": "number",
+          "required": false,
+          "example": 72
+        },
+        {
+          "name": "submitted_at",
+          "type": "datetime",
+          "required": true,
+          "example": "2026-06-04T10:12:00+09:00"
+        }
+      ]
+    },
+    {
+      "name": "ai_evaluation_logs",
+      "purpose": "W1〜W5のAI評価リクエスト、プロンプト、返却JSON、エラーを履歴保存する",
+      "columns": [
+        {
+          "name": "log_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "request_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "session_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "user_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "email_normalized",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "common_profile_json",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "work_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "work_title",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "stage",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "hearing_history_json",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "answer_text",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "prompt_text",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "request_payload_json",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "response_json",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "score",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "unmet_criteria_json",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "next_action",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "staff_feedback_recommended",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "error_message",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "created_at",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "string",
+          "required": false,
+          "example": ""
+        }
+      ]
+    },
+    {
+      "name": "staff_feedback_queue",
+      "purpose": "AI評価で担当者フィードバック候補になったW単位のキューを保存する",
+      "columns": [
+        {
+          "name": "queue_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "session_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "user_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "email_normalized",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "work_id",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "work_title",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "score",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "trigger_status",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "message",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "created_at",
+          "type": "string",
+          "required": false,
+          "example": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "string",
+          "required": false,
+          "example": ""
+        }
+      ]
+    },
+    {
+      "name": "reset_logs",
+      "purpose": "管理者によるソフトリセットの実行履歴を保存する",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "example": "2026-06-26T10:00:00+09:00"
+        },
+        {
+          "name": "reset_id",
+          "type": "string",
+          "required": true,
+          "example": "RESET-001"
+        },
+        {
+          "name": "email_key",
+          "type": "string",
+          "required": true,
+          "example": "student@example.com"
+        },
+        {
+          "name": "scope",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "all",
+            "lesson",
+            "work"
+          ],
+          "example": "lesson"
+        },
+        {
+          "name": "lesson_id",
+          "type": "string",
+          "required": false,
+          "example": "P2-01"
+        },
+        {
+          "name": "work_id",
+          "type": "string",
+          "required": false,
+          "example": "W-P2-01"
+        },
+        {
+          "name": "actor",
+          "type": "string",
+          "required": false,
+          "example": "admin"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false,
+          "example": "運営確認による再受講対応"
+        },
+        {
+          "name": "affected_rows",
+          "type": "string",
+          "required": false,
+          "example": "_進捗サマリー:1, _回答ログ_all:3"
+        },
+        {
+          "name": "reset_type",
+          "type": "string",
+          "required": true,
+          "example": "soft_reset"
+        },
+        {
+          "name": "before_snapshot_json",
+          "type": "string",
+          "required": true,
+          "example": "{\"progress_summary\":{},\"work_summary\":{},\"video_log\":{\"matched_count\":1},\"answer_log\":{\"matched_count\":2}}"
+        }
+      ]
+    }
+  ],
+  "sampleData": {
+    "users": [
+      {
+        "user_id": "U0001",
+        "email": "sample@example.com",
+        "email_normalized": "sample@example.com",
+        "line_user_id": "",
+        "display_name": "田中さん",
+        "account_status": "active",
+        "enrolled_course": "Barise本講座",
+        "current_phase_id": "P1",
+        "current_lesson_id": "P1-00",
+        "last_accessed_at": "",
+        "created_at": "2026-06-01T10:00:00+09:00",
+        "updated_at": "2026-06-04T00:00:00+09:00"
+      },
+      {
+        "user_id": "U0002",
+        "email": "inactive@example.com",
+        "email_normalized": "inactive@example.com",
+        "line_user_id": "",
+        "display_name": "休止ユーザー",
+        "account_status": "inactive",
+        "enrolled_course": "Barise本講座",
+        "current_phase_id": "P1",
+        "current_lesson_id": "P1-01",
+        "last_accessed_at": "",
+        "created_at": "2026-06-01T10:00:00+09:00",
+        "updated_at": "2026-06-01T10:00:00+09:00"
+      }
+    ],
+    "phases": [
+      {
+        "phase_id": "P1",
+        "phase_order": 1,
+        "phase_title": "フェーズ1：実行力の土台をつくる",
+        "phase_summary": "行動・習慣・思考・AI活用の土台を整える",
+        "unlock_condition": ""
+      },
+      {
+        "phase_id": "P2",
+        "phase_order": 2,
+        "phase_title": "フェーズ2：判断力を養う思考教育",
+        "phase_summary": "現状・理想・仮説・検証・他者適用を構造化する",
+        "unlock_condition": ""
+      },
+      {
+        "phase_id": "FINAL",
+        "phase_order": 99,
+        "phase_title": "最終まとめ",
+        "phase_summary": "実行力×判断力の統合",
+        "unlock_condition": "P2 completed"
+      }
+    ],
+    "lessons": [
+      {
+        "lesson_id": "P1-00",
+        "phase_id": "P1",
+        "lesson_order": 0,
+        "category_or_work": "オープニング",
+        "lesson_title": "フェーズ1の全体像",
+        "hook": "「スキルを身につけようとしているのに評価が上がらない」「やる気はあるのに成果につながらない」→土台をすっ飛ばしてスキルに走っているという問題提起",
+        "learning_outcome": "コース全体のゴールと9つのカテゴリの全体像が把握できる",
+        "main_topic_1": "フェーズ1のゴール宣言：行動・習慣・思考の土台が整い、自分で自分を動かし続けられる状態へ。「頑張る」から「正しく動ける」への転換がテーマ",
+        "main_topic_2": "9カテゴリを4ブロックで図解：【土台】ビジネス遂行力→【自分を動かす】自己管理・タスク・目標→【思考を鍛える】自責・概念・クリティカル→【時代の武器】AI活用",
+        "practice_part": "このコースの使い方：動画視聴＋各実践パートで手を動かすことで初めて身につくという前提を共有",
+        "bridge_summary": "「まずカテゴリ①ビジネス遂行力から始めましょう」という明確な行動指示で①へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "コース全体のゴールと9つのカテゴリの全体像が把握できる",
+        "video_url": "https://youtu.be/0NPKOg0jsDY",
+        "estimated_duration": "約8分",
+        "purpose_watch": "コース全体のゴールと9つのカテゴリの全体像が把握できる",
+        "purpose_think": "フェーズ1のゴール宣言：行動・習慣・思考の土台が整い、自分で自分を動かし続けられる状態へ。「頑張る」から「正しく動ける」への転換がテーマ",
+        "purpose_write": "このコースの使い方：動画視聴＋各実践パートで手を動かすことで初めて身につくという前提を共有",
+        "mini_work_required": false,
+        "work_required": false,
+        "mini_work_ids": [],
+        "work_ids": [],
+        "material_points": [
+          "「スキルを身につけようとしているのに評価が上がらない」「やる気はあるのに成果につながらない」→土台をすっ飛ばしてスキルに走っているという問題提起",
+          "フェーズ1のゴール宣言：行動・習慣・思考の土台が整い、自分で自分を動かし続けられる状態へ。「頑張る」から「正しく動ける」への転換がテーマ",
+          "9カテゴリを4ブロックで図解：【土台】ビジネス遂行力→【自分を動かす】自己管理・タスク・目標→【思考を鍛える】自責・概念・クリティカル→【時代の武器】AI活用",
+          "「まずカテゴリ①ビジネス遂行力から始めましょう」という明確な行動指示で①へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-01",
+        "phase_id": "P1",
+        "lesson_order": 1,
+        "category_or_work": "ビジネス遂行力",
+        "lesson_title": "ビジネス遂行力",
+        "hook": "「やる気はあるのに周りから信頼されない」「言われたことはやっているのに評価が上がらない」→仕事の成果の前に信頼の土台があるという問題提起",
+        "learning_outcome": "意識・礼儀・時間・マネジメントマナーという4つの習慣を体系的に理解し、「信頼される人」の行動基準が明確になる",
+        "main_topic_1": "視座を上げるとは何か：「与えられた仕事をこなす人」vs「自分から場に貢献しようとする人」の違い。まず5分で周りに貢献できることを探す習慣から始まる",
+        "main_topic_2": "礼儀・時間・マナーの共通原則：頷き・笑顔・アイコンタクト、10分前行動、1on1を自分から組む・当日中にアウトプット。信頼の積み上げ方として繋げる",
+        "practice_part": "「今日から始める1つの行動」を選ばせる。小さく始めることで習慣化へのハードルを下げる",
+        "bridge_summary": "「土台が固まったら、次は自分自身を管理する力が必要です」と②へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "意識・礼儀・時間・マネジメントマナーという4つの習慣を体系的に理解し、「信頼される人」の行動基準が明確になる",
+        "video_url": "https://youtu.be/BNQlL5TfqXY",
+        "estimated_duration": "約10分",
+        "purpose_watch": "意識・礼儀・時間・マネジメントマナーという4つの習慣を体系的に理解し、「信頼される人」の行動基準が明確になる",
+        "purpose_think": "視座を上げるとは何か：「与えられた仕事をこなす人」vs「自分から場に貢献しようとする人」の違い。まず5分で周りに貢献できることを探す習慣から始まる",
+        "purpose_write": "「今日から始める1つの行動」を選ばせる。小さく始めることで習慣化へのハードルを下げる",
+        "mini_work_required": true,
+        "work_required": false,
+        "mini_work_ids": [
+          "MW-P1-01"
+        ],
+        "work_ids": [],
+        "material_points": [
+          "「やる気はあるのに周りから信頼されない」「言われたことはやっているのに評価が上がらない」→仕事の成果の前に信頼の土台があるという問題提起",
+          "視座を上げるとは何か：「与えられた仕事をこなす人」vs「自分から場に貢献しようとする人」の違い。まず5分で周りに貢献できることを探す習慣から始まる",
+          "礼儀・時間・マナーの共通原則：頷き・笑顔・アイコンタクト、10分前行動、1on1を自分から組む・当日中にアウトプット。信頼の積み上げ方として繋げる",
+          "「土台が固まったら、次は自分自身を管理する力が必要です」と②へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-02",
+        "phase_id": "P1",
+        "lesson_order": 2,
+        "category_or_work": "自己管理・セルフマネジメント",
+        "lesson_title": "自己管理・セルフマネジメント",
+        "hook": "「やる気があるときとないときでパフォーマンスが全然違う」→モチベーションは感情ではなく仕組みで安定させられるという問題提起",
+        "learning_outcome": "「ご褒美設計」と「習慣トリガー」という2つの仕組みで、安定した行動量をキープできるようになる",
+        "main_topic_1": "小さなご褒美で行動をポイント化：KDI・KPI・KGIそれぞれの達成にご褒美を紐づける設計。「毎日のタスク達成→ハーゲンダッツ」「月次目標→好きなカフェ」など具体例",
+        "main_topic_2": "習慣トリガーの固定化：「いつ・何をしたら・何をする」という習慣の3点セットを設計。マイルールを3つ決め週次で振り返る仕組みをつくる",
+        "practice_part": "「あなたの今週のKDI達成に、どんなご褒美を設定しますか？」ご褒美ワークをその場で体験する設計",
+        "bridge_summary": "「自分を動かす仕組みができたら、次はタスクを整理して動く力です」と③へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "「ご褒美設計」と「習慣トリガー」という2つの仕組みで、安定した行動量をキープできるようになる",
+        "video_url": "https://youtu.be/ZAjsIEBNMII",
+        "estimated_duration": "約10分",
+        "purpose_watch": "「ご褒美設計」と「習慣トリガー」という2つの仕組みで、安定した行動量をキープできるようになる",
+        "purpose_think": "小さなご褒美で行動をポイント化：KDI・KPI・KGIそれぞれの達成にご褒美を紐づける設計。「毎日のタスク達成→ハーゲンダッツ」「月次目標→好きなカフェ」など具体例",
+        "purpose_write": "「あなたの今週のKDI達成に、どんなご褒美を設定しますか？」ご褒美ワークをその場で体験する設計",
+        "mini_work_required": true,
+        "work_required": false,
+        "mini_work_ids": [
+          "MW-P1-02"
+        ],
+        "work_ids": [],
+        "material_points": [
+          "「やる気があるときとないときでパフォーマンスが全然違う」→モチベーションは感情ではなく仕組みで安定させられるという問題提起",
+          "小さなご褒美で行動をポイント化：KDI・KPI・KGIそれぞれの達成にご褒美を紐づける設計。「毎日のタスク達成→ハーゲンダッツ」「月次目標→好きなカフェ」など具体例",
+          "習慣トリガーの固定化：「いつ・何をしたら・何をする」という習慣の3点セットを設計。マイルールを3つ決め週次で振り返る仕組みをつくる",
+          "「自分を動かす仕組みができたら、次はタスクを整理して動く力です」と③へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-03",
+        "phase_id": "P1",
+        "lesson_order": 3,
+        "category_or_work": "タスク管理①",
+        "lesson_title": "タスク管理",
+        "hook": "「やることリストがどんどん増えて、いつも終わらない」→忙しいのに成果が出ない原因は削る判断をしていないからという問題提起",
+        "learning_outcome": "「やること」ではなく「やらないこと」を決める思考が身につき、週次で仕事をスッキリ整理できるようになる",
+        "main_topic_1": "やらないことを決める技術：「やる・やらない・いつやるか」の3択で全タスクを仕分け。8割以上をスケジュール化する基準を示す",
+        "main_topic_2": "週次「完了・未完了ワーク」：モノ・カネ・ヒトの3軸で週1回タスクを棚卸し。「終わらなかったのはなぜか」まで振り返ることで次週に活きる",
+        "practice_part": "「今週のタスクを書き出し、やらないものを1つ決めてください」という体験設計",
+        "bridge_summary": "「削ることができたら、次は残ったタスクをどう確実にこなすかです」と④へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "「やること」ではなく「やらないこと」を決める思考が身につき、週次で仕事をスッキリ整理できるようになる",
+        "video_url": "https://youtu.be/wpfV7Wka3yc",
+        "estimated_duration": "約10分",
+        "purpose_watch": "「やること」ではなく「やらないこと」を決める思考が身につき、週次で仕事をスッキリ整理できるようになる",
+        "purpose_think": "やらないことを決める技術：「やる・やらない・いつやるか」の3択で全タスクを仕分け。8割以上をスケジュール化する基準を示す",
+        "purpose_write": "「今週のタスクを書き出し、やらないものを1つ決めてください」という体験設計",
+        "mini_work_required": true,
+        "work_required": false,
+        "mini_work_ids": [
+          "MW-P1-03"
+        ],
+        "work_ids": [],
+        "material_points": [
+          "「やることリストがどんどん増えて、いつも終わらない」→忙しいのに成果が出ない原因は削る判断をしていないからという問題提起",
+          "やらないことを決める技術：「やる・やらない・いつやるか」の3択で全タスクを仕分け。8割以上をスケジュール化する基準を示す",
+          "週次「完了・未完了ワーク」：モノ・カネ・ヒトの3軸で週1回タスクを棚卸し。「終わらなかったのはなぜか」まで振り返ることで次週に活きる",
+          "「削ることができたら、次は残ったタスクをどう確実にこなすかです」と④へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-04",
+        "phase_id": "P1",
+        "lesson_order": 4,
+        "category_or_work": "タスク管理②",
+        "lesson_title": "マスト1思考",
+        "hook": "「計画は立てるが予定通りにいかない」「1日の終わりに未完了タスクが積み上がる」→完了率が上がらないのは意志でなく設計の問題という問題提起",
+        "learning_outcome": "タスクを1時間単位でスケジュール化する方法と、緊急度×重要度マトリクスで迷いなく優先順位を決めるスキルが身につく",
+        "main_topic_1": "タスク完了率80%超えの設計：①今日のタスクをtodoベースで洗い出し→②1時間単位でスケジュール化→③マストワンタスクを1つ決める、という3ステップ",
+        "main_topic_2": "緊急度×重要度マトリクスの使い方：4象限でタスクを仕分け。「重要だが緊急でないもの」を先に手を打つことが成果につながる構造を説明",
+        "practice_part": "「今日のタスクをマトリクスで仕分けし、マストワンタスクを1つ決めてください」という体験設計",
+        "bridge_summary": "「タスクを動かせるようになったら、次は自分の目標をどう設定するかです」と⑤へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "タスクを1時間単位でスケジュール化する方法と、緊急度×重要度マトリクスで迷いなく優先順位を決めるスキルが身につく",
+        "video_url": "https://youtu.be/lhosEJkDz8U",
+        "estimated_duration": "約10分",
+        "purpose_watch": "タスクを1時間単位でスケジュール化する方法と、緊急度×重要度マトリクスで迷いなく優先順位を決めるスキルが身につく",
+        "purpose_think": "タスク完了率80%超えの設計：①今日のタスクをtodoベースで洗い出し→②1時間単位でスケジュール化→③マストワンタスクを1つ決める、という3ステップ",
+        "purpose_write": "「今日のタスクをマトリクスで仕分けし、マストワンタスクを1つ決めてください」という体験設計",
+        "mini_work_required": true,
+        "work_required": false,
+        "mini_work_ids": [
+          "MW-P1-04"
+        ],
+        "work_ids": [],
+        "material_points": [
+          "「計画は立てるが予定通りにいかない」「1日の終わりに未完了タスクが積み上がる」→完了率が上がらないのは意志でなく設計の問題という問題提起",
+          "タスク完了率80%超えの設計：①今日のタスクをtodoベースで洗い出し→②1時間単位でスケジュール化→③マストワンタスクを1つ決める、という3ステップ",
+          "緊急度×重要度マトリクスの使い方：4象限でタスクを仕分け。「重要だが緊急でないもの」を先に手を打つことが成果につながる構造を説明",
+          "「タスクを動かせるようになったら、次は自分の目標をどう設定するかです」と⑤へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-05",
+        "phase_id": "P1",
+        "lesson_order": 5,
+        "category_or_work": "目標・目的設定",
+        "lesson_title": "目標・目的設定",
+        "hook": "「目標は持っているが毎日の行動と繋がっていない」「なんとなく頑張っているが何に向かっているか見えない」という状態への問題提起",
+        "learning_outcome": "1年後の目標から3ヶ月ごとのマイルストーン・月次TODOまで落とし込む「ビジョン設計ワーク」の方法が身につく",
+        "main_topic_1": "ビジョン設計ワークとは何か：「1年後の具体的で定量的なゴール」から逆算して今月何をすべきかを導く思考法。「定性的な夢」を「定量的な目標」に変換するステップを提示",
+        "main_topic_2": "マイルストーン設計と月次TODOの連動：3ヶ月ごとの中間ゴールを設定し1ヶ月単位のTODOまで落とし込む。「目標を立てたが途中で見失う」状態を構造的に防ぐ仕組み",
+        "practice_part": "「1年後の自分の状態を、具体的な数字で書いてみてください」という問いかけで自分ごと化",
+        "bridge_summary": "「目標が決まったら、次は障害になる思考の癖を直す自責思考の話です」と⑥へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "1年後の目標から3ヶ月ごとのマイルストーン・月次TODOまで落とし込む「ビジョン設計ワーク」の方法が身につく",
+        "video_url": "https://youtu.be/vfHPXsbpUg8",
+        "estimated_duration": "約10分",
+        "purpose_watch": "1年後の目標から3ヶ月ごとのマイルストーン・月次TODOまで落とし込む「ビジョン設計ワーク」の方法が身につく",
+        "purpose_think": "ビジョン設計ワークとは何か：「1年後の具体的で定量的なゴール」から逆算して今月何をすべきかを導く思考法。「定性的な夢」を「定量的な目標」に変換するステップを提示",
+        "purpose_write": "「1年後の自分の状態を、具体的な数字で書いてみてください」という問いかけで自分ごと化",
+        "mini_work_required": true,
+        "work_required": false,
+        "mini_work_ids": [
+          "MW-P1-05"
+        ],
+        "work_ids": [],
+        "material_points": [
+          "「目標は持っているが毎日の行動と繋がっていない」「なんとなく頑張っているが何に向かっているか見えない」という状態への問題提起",
+          "ビジョン設計ワークとは何か：「1年後の具体的で定量的なゴール」から逆算して今月何をすべきかを導く思考法。「定性的な夢」を「定量的な目標」に変換するステップを提示",
+          "マイルストーン設計と月次TODOの連動：3ヶ月ごとの中間ゴールを設定し1ヶ月単位のTODOまで落とし込む。「目標を立てたが途中で見失う」状態を構造的に防ぐ仕組み",
+          "「目標が決まったら、次は障害になる思考の癖を直す自責思考の話です」と⑥へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-06",
+        "phase_id": "P1",
+        "lesson_order": 6,
+        "category_or_work": "自責思考",
+        "lesson_title": "自責思考の罠",
+        "hook": "「失敗したとき、つい環境や他人のせいにしてしまう」→それは自然な反応だが、そのままでは同じ失敗を繰り返し続けるという問題提起",
+        "learning_outcome": "失敗を自責思考で振り返る週次ルーティンが身につき、同じミスを繰り返さなくなる",
+        "main_topic_1": "自責思考と他責思考の違い：「環境・他人のせい（他責）」vs「自分の行動・判断のどこに原因があるか（自責）」。自責は「自分を責めること」でなく「コントロールできる部分を見つけること」という定義を明確に",
+        "main_topic_2": "週次振り返りワークの設計：1週間の失敗を洗い出し→それぞれの原因を自責思考で考えるフレーム。記録を続けることでパターンが見えてくることを説明",
+        "practice_part": "「直近1週間でうまくいかなかったことを1つ書き出し、自責で原因を3つ探してみてください」",
+        "bridge_summary": "「思考の癖を直したら、次は言葉の解像度を上げる概念的思考力です」と⑦へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "失敗を自責思考で振り返る週次ルーティンが身につき、同じミスを繰り返さなくなる",
+        "video_url": "",
+        "estimated_duration": "約10分",
+        "purpose_watch": "失敗を自責思考で振り返る週次ルーティンが身につき、同じミスを繰り返さなくなる",
+        "purpose_think": "自責思考と他責思考の違い：「環境・他人のせい（他責）」vs「自分の行動・判断のどこに原因があるか（自責）」。自責は「自分を責めること」でなく「コントロールできる部分を見つけること」という定義を明確に",
+        "purpose_write": "「直近1週間でうまくいかなかったことを1つ書き出し、自責で原因を3つ探してみてください」",
+        "mini_work_required": true,
+        "work_required": false,
+        "mini_work_ids": [
+          "MW-P1-06"
+        ],
+        "work_ids": [],
+        "material_points": [
+          "「失敗したとき、つい環境や他人のせいにしてしまう」→それは自然な反応だが、そのままでは同じ失敗を繰り返し続けるという問題提起",
+          "自責思考と他責思考の違い：「環境・他人のせい（他責）」vs「自分の行動・判断のどこに原因があるか（自責）」。自責は「自分を責めること」でなく「コントロールできる部分を見つけること」という定義を明確に",
+          "週次振り返りワークの設計：1週間の失敗を洗い出し→それぞれの原因を自責思考で考えるフレーム。記録を続けることでパターンが見えてくることを説明",
+          "「思考の癖を直したら、次は言葉の解像度を上げる概念的思考力です」と⑦へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-07",
+        "phase_id": "P1",
+        "lesson_order": 7,
+        "category_or_work": "概念的思考力",
+        "lesson_title": "概念的思考力",
+        "hook": "「言いたいことはわかるが、うまく言葉にできない」「同じ言葉を使っているのに認識がズレている」→言葉の解像度が低いと思考も行動もズレが生まれるという問題提起",
+        "learning_outcome": "具体と抽象の関係性を理解し、言葉を定義して使う習慣が身につく。概念的思考の土台が完成する",
+        "main_topic_1": "具体と抽象の基礎：「具体（個別の事例・事実）」と「抽象（共通する本質・概念）」の関係を図解で解説。具体→抽象の変換と逆（抽象→具体）の両方を練習する考え方",
+        "main_topic_2": "言葉の定義が認識のズレを防ぐ：「成果」「頑張る」「早く」など曖昧な言葉をそのまま使うことで起きるトラブルの例。言葉を定義する習慣がコミュニケーションの精度を上げる",
+        "practice_part": "「普段よく使う曖昧な言葉を1つ選び、具体的に定義してみてください」という体験設計",
+        "bridge_summary": "「言葉の解像度が上がったら、次はその情報を批判的に受け取る力です」と⑧へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "具体と抽象の関係性を理解し、言葉を定義して使う習慣が身につく。概念的思考の土台が完成する",
+        "video_url": "https://youtu.be/xCGIM7iAWxQ",
+        "estimated_duration": "約10分",
+        "purpose_watch": "具体と抽象の関係性を理解し、言葉を定義して使う習慣が身につく。概念的思考の土台が完成する",
+        "purpose_think": "具体と抽象の基礎：「具体（個別の事例・事実）」と「抽象（共通する本質・概念）」の関係を図解で解説。具体→抽象の変換と逆（抽象→具体）の両方を練習する考え方",
+        "purpose_write": "「普段よく使う曖昧な言葉を1つ選び、具体的に定義してみてください」という体験設計",
+        "mini_work_required": true,
+        "work_required": false,
+        "mini_work_ids": [
+          "MW-P1-07"
+        ],
+        "work_ids": [],
+        "material_points": [
+          "「言いたいことはわかるが、うまく言葉にできない」「同じ言葉を使っているのに認識がズレている」→言葉の解像度が低いと思考も行動もズレが生まれるという問題提起",
+          "具体と抽象の基礎：「具体（個別の事例・事実）」と「抽象（共通する本質・概念）」の関係を図解で解説。具体→抽象の変換と逆（抽象→具体）の両方を練習する考え方",
+          "言葉の定義が認識のズレを防ぐ：「成果」「頑張る」「早く」など曖昧な言葉をそのまま使うことで起きるトラブルの例。言葉を定義する習慣がコミュニケーションの精度を上げる",
+          "「言葉の解像度が上がったら、次はその情報を批判的に受け取る力です」と⑧へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-08",
+        "phase_id": "P1",
+        "lesson_order": 8,
+        "category_or_work": "クリティカルシンキング",
+        "lesson_title": "クリティカルシンキング",
+        "hook": "「言われたことをそのまま実行したら的外れな結果になった」「情報が多すぎて何を信じていいかわからない」→批判的に問い直す力の必要性を提起",
+        "learning_outcome": "クリティカルシンキングの定義と、ロジカルシンキングとの使い分けが明確になる。情報を受け取るときの問い直しの習慣が身につく",
+        "main_topic_1": "クリティカルシンキングとは何か：「本当にそうか？」「前提は正しいか？」「他の可能性はないか？」という問いを立てる思考法。鵜呑みにしない姿勢とただ疑うだけにならないバランス",
+        "main_topic_2": "ロジカルvsクリティカルの使い分け：ロジカル（筋道を立てて考える）とクリティカル（前提・根拠を問い直す）は対立でなく補完関係。両方を使う場面の具体例",
+        "practice_part": "「最近誰かから聞いた情報を1つ選び、『本当にそうか？』と問い直してみてください」という体験設計",
+        "bridge_summary": "「思考の力が身についたら、最後はそれをAIと掛け合わせる時代の武器へ」と⑨へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "クリティカルシンキングの定義と、ロジカルシンキングとの使い分けが明確になる。情報を受け取るときの問い直しの習慣が身につく",
+        "video_url": "",
+        "estimated_duration": "約10分",
+        "purpose_watch": "クリティカルシンキングの定義と、ロジカルシンキングとの使い分けが明確になる。情報を受け取るときの問い直しの習慣が身につく",
+        "purpose_think": "クリティカルシンキングとは何か：「本当にそうか？」「前提は正しいか？」「他の可能性はないか？」という問いを立てる思考法。鵜呑みにしない姿勢とただ疑うだけにならないバランス",
+        "purpose_write": "「最近誰かから聞いた情報を1つ選び、『本当にそうか？』と問い直してみてください」という体験設計",
+        "mini_work_required": true,
+        "work_required": false,
+        "mini_work_ids": [
+          "MW-P1-08"
+        ],
+        "work_ids": [],
+        "material_points": [
+          "「言われたことをそのまま実行したら的外れな結果になった」「情報が多すぎて何を信じていいかわからない」→批判的に問い直す力の必要性を提起",
+          "クリティカルシンキングとは何か：「本当にそうか？」「前提は正しいか？」「他の可能性はないか？」という問いを立てる思考法。鵜呑みにしない姿勢とただ疑うだけにならないバランス",
+          "ロジカルvsクリティカルの使い分け：ロジカル（筋道を立てて考える）とクリティカル（前提・根拠を問い直す）は対立でなく補完関係。両方を使う場面の具体例",
+          "「思考の力が身についたら、最後はそれをAIと掛け合わせる時代の武器へ」と⑨へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-09",
+        "phase_id": "P1",
+        "lesson_order": 9,
+        "category_or_work": "AI活用",
+        "lesson_title": "AIを道具として使いこなす最初の一歩",
+        "hook": "「AIが話題だが実際に仕事でどう使えばいいかわからない」「使ってみたが思ったより役に立たなかった」→使い方を知らないとただの検索ツールになってしまうという問題提起",
+        "learning_outcome": "生成AIの基本的な使い方と、自分専用のbotを作るところまで実践できるようになる。AIを道具として日常業務に組み込む最初の一歩が踏み出せる",
+        "main_topic_1": "生成AIの基礎と正しい使い方：AIに「何を・どう伝えるか」というプロンプトの基本を解説。「使えない」と感じる人の多くが「伝え方」を知らないだけ",
+        "main_topic_2": "自分専用botを作る：GPTsを使って業務に特化したbotを作る手順を実演形式で解説。「どんなテーマでもいい、まず1つ作ることが重要」というハードルの低さを強調",
+        "practice_part": "「日常で繰り返しやっていることを1つ選び、それを助けるbotのテーマを考えてみてください」",
+        "bridge_summary": "フェーズ1全体を振り返り「行動・管理・思考・AI、すべての土台が整いました。次はフェーズ2で判断力を養います」とフェーズ2への接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "生成AIの基本的な使い方と、自分専用のbotを作るところまで実践できるようになる。AIを道具として日常業務に組み込む最初の一歩が踏み出せる",
+        "video_url": "",
+        "estimated_duration": "約10分",
+        "purpose_watch": "生成AIの基本的な使い方と、自分専用のbotを作るところまで実践できるようになる。AIを道具として日常業務に組み込む最初の一歩が踏み出せる",
+        "purpose_think": "生成AIの基礎と正しい使い方：AIに「何を・どう伝えるか」というプロンプトの基本を解説。「使えない」と感じる人の多くが「伝え方」を知らないだけ",
+        "purpose_write": "「日常で繰り返しやっていることを1つ選び、それを助けるbotのテーマを考えてみてください」",
+        "mini_work_required": false,
+        "work_required": false,
+        "mini_work_ids": [],
+        "work_ids": [],
+        "material_points": [
+          "「AIが話題だが実際に仕事でどう使えばいいかわからない」「使ってみたが思ったより役に立たなかった」→使い方を知らないとただの検索ツールになってしまうという問題提起",
+          "生成AIの基礎と正しい使い方：AIに「何を・どう伝えるか」というプロンプトの基本を解説。「使えない」と感じる人の多くが「伝え方」を知らないだけ",
+          "自分専用botを作る：GPTsを使って業務に特化したbotを作る手順を実演形式で解説。「どんなテーマでもいい、まず1つ作ることが重要」というハードルの低さを強調",
+          "フェーズ1全体を振り返り「行動・管理・思考・AI、すべての土台が整いました。次はフェーズ2で判断力を養います」とフェーズ2への接続"
+        ]
+      },
+      {
+        "lesson_id": "P1-10",
+        "phase_id": "P1",
+        "lesson_order": 10,
+        "category_or_work": "締め",
+        "lesson_title": "フェーズ1のまとめ",
+        "hook": "受講前の「やる気はあるのに成果につながらない」「何から手をつければいいかわからない」という状態を改めて言語化。変容の大きさを実感させる入り口",
+        "learning_outcome": "コース全体の統合と「自分がどう変わったか」の確認",
+        "main_topic_1": "9つのカテゴリが一本の力になる：信頼される行動→自分を動かす→タスクをこなす→目標に進む→失敗から学ぶ→言葉の解像度→情報を問い直す→AIを使う、という一本のつながりを図解で再提示",
+        "main_topic_2": "受講後の自分像を日常の場面で言語化：「締め切りを常にこなせる」「目標から今日やることが逆算できる」「失敗しても次に活かせる」「AIで資料作成時間が半分に」など具体的な変化",
+        "practice_part": "「今日から1つだけ使ってみてください」という小さな行動指示",
+        "bridge_summary": "「フェーズ1で固めた土台の上に、次はフェーズ2で判断力を養います。土台なきスキルは砂上の楼閣、でも今のあなたには土台がある」でフェーズ2への期待感を作る",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "コース全体の統合と「自分がどう変わったか」の確認",
+        "video_url": "https://youtu.be/vRrVMc_WhMw",
+        "estimated_duration": "約10分",
+        "purpose_watch": "コース全体の統合と「自分がどう変わったか」の確認",
+        "purpose_think": "9つのカテゴリが一本の力になる：信頼される行動→自分を動かす→タスクをこなす→目標に進む→失敗から学ぶ→言葉の解像度→情報を問い直す→AIを使う、という一本のつながりを図解で再提示",
+        "purpose_write": "「今日から1つだけ使ってみてください」という小さな行動指示",
+        "mini_work_required": false,
+        "work_required": false,
+        "mini_work_ids": [],
+        "work_ids": [],
+        "material_points": [
+          "受講前の「やる気はあるのに成果につながらない」「何から手をつければいいかわからない」という状態を改めて言語化。変容の大きさを実感させる入り口",
+          "9つのカテゴリが一本の力になる：信頼される行動→自分を動かす→タスクをこなす→目標に進む→失敗から学ぶ→言葉の解像度→情報を問い直す→AIを使う、という一本のつながりを図解で再提示",
+          "受講後の自分像を日常の場面で言語化：「締め切りを常にこなせる」「目標から今日やることが逆算できる」「失敗しても次に活かせる」「AIで資料作成時間が半分に」など具体的な変化",
+          "「フェーズ1で固めた土台の上に、次はフェーズ2で判断力を養います。土台なきスキルは砂上の楼閣、でも今のあなたには土台がある」でフェーズ2への期待感を作る"
+        ]
+      },
+      {
+        "lesson_id": "P2-00",
+        "phase_id": "P2",
+        "lesson_order": 0,
+        "category_or_work": "オープニング",
+        "lesson_title": "フェーズ2の全体像",
+        "hook": "「頑張っているのに結果につながらない」「感覚に頼って判断している」という状態を言語化",
+        "learning_outcome": "コース全体のゴールと5つのワークの全体像が把握できる",
+        "main_topic_1": "フェーズ2のゴール宣言：「判断力」とは何かを提示。自分の業務がなぜ結果につながるかを構造で説明できる状態を目指す",
+        "main_topic_2": "W1〜W5の流れを図解で一気に見せる。各ワークの位置づけを「地図」として提示",
+        "practice_part": "このコースの使い方：動画視聴＋手を動かすことで初めて身につくという前提を共有",
+        "bridge_summary": "「まずW1から始めましょう」という明確な行動指示でW1①へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "コース全体のゴールと5つのワークの全体像が把握できる",
+        "video_url": "https://youtu.be/yGXNwWnN2Yc",
+        "estimated_duration": "約8分",
+        "purpose_watch": "コース全体のゴールと5つのワークの全体像が把握できる",
+        "purpose_think": "フェーズ2のゴール宣言：「判断力」とは何かを提示。自分の業務がなぜ結果につながるかを構造で説明できる状態を目指す",
+        "purpose_write": "このコースの使い方：動画視聴＋手を動かすことで初めて身につくという前提を共有",
+        "mini_work_required": false,
+        "work_required": false,
+        "mini_work_ids": [],
+        "work_ids": [],
+        "material_points": [
+          "「頑張っているのに結果につながらない」「感覚に頼って判断している」という状態を言語化",
+          "フェーズ2のゴール宣言：「判断力」とは何かを提示。自分の業務がなぜ結果につながるかを構造で説明できる状態を目指す",
+          "W1〜W5の流れを図解で一気に見せる。各ワークの位置づけを「地図」として提示",
+          "「まずW1から始めましょう」という明確な行動指示でW1①へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P2-01",
+        "phase_id": "P2",
+        "lesson_order": 1,
+        "category_or_work": "W1①",
+        "lesson_title": "数値化の鬼",
+        "hook": "「一生懸命動いているのに結果につながらない」→見ている場所の問題という問題提起",
+        "learning_outcome": "自分の業務を数値で捉える3つの視点が手に入る",
+        "main_topic_1": "「感覚でやっている仕事」vs「数値で捉えている仕事」の対比。フリーランス・会社員の具体例を提示",
+        "main_topic_2": "数値化の3視点：①行動量 ②プロセス ③成果。各視点に失敗例と正しい捉え方のセット",
+        "practice_part": "「あなたの仕事で、今日から数値化できることは何ですか？」という問いかけで自分ごと化",
+        "bridge_summary": "3つの視点を復習→次の動画（W1②戦略と戦術）への接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "自分の業務を数値で捉える3つの視点が手に入る",
+        "video_url": "https://youtu.be/a2HgZ8uQjwk",
+        "estimated_duration": "約12分",
+        "purpose_watch": "自分の業務を数値で捉える3つの視点が手に入る",
+        "purpose_think": "「感覚でやっている仕事」vs「数値で捉えている仕事」の対比。フリーランス・会社員の具体例を提示",
+        "purpose_write": "「あなたの仕事で、今日から数値化できることは何ですか？」という問いかけで自分ごと化",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-01"
+        ],
+        "work_ids": [
+          "W-P2-01"
+        ],
+        "material_points": [
+          "「一生懸命動いているのに結果につながらない」→見ている場所の問題という問題提起",
+          "「感覚でやっている仕事」vs「数値で捉えている仕事」の対比。フリーランス・会社員の具体例を提示",
+          "数値化の3視点：①行動量 ②プロセス ③成果。各視点に失敗例と正しい捉え方のセット",
+          "3つの視点を復習→次の動画（W1②戦略と戦術）への接続"
+        ]
+      },
+      {
+        "lesson_id": "P2-02",
+        "phase_id": "P2",
+        "lesson_order": 2,
+        "category_or_work": "W1②",
+        "lesson_title": "戦略と戦術",
+        "hook": "「やるべきことはやっている、でも目標に近づいている感じがしない」→戦略と戦術の混同が原因という切り口",
+        "learning_outcome": "戦略・戦術・実行の3層を区別し、自分の行動が目標のどこに位置するかわかる",
+        "main_topic_1": "3層の定義と具体例（戦略=Why、戦術=How、実行=What）。会社員・フリーランス両方の例を提示",
+        "main_topic_2": "よくある混同パターン2〜3個。手段の目的化・量をこなすことを戦略と思い込む状態。W1①の数値化視点と接続",
+        "practice_part": "「あなたが今やっていることを戦略・戦術・実行に分けてみてください」3層フォーマットを画面に提示",
+        "bridge_summary": "3層の整理を復習→「次はW2、理想の状態をどう定義するか」へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "戦略・戦術・実行の3層を区別し、自分の行動が目標のどこに位置するかわかる",
+        "video_url": "https://youtu.be/rbtjOWf731U",
+        "estimated_duration": "約12分",
+        "purpose_watch": "戦略・戦術・実行の3層を区別し、自分の行動が目標のどこに位置するかわかる",
+        "purpose_think": "3層の定義と具体例（戦略=Why、戦術=How、実行=What）。会社員・フリーランス両方の例を提示",
+        "purpose_write": "「あなたが今やっていることを戦略・戦術・実行に分けてみてください」3層フォーマットを画面に提示",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-02"
+        ],
+        "work_ids": [
+          "W-P2-01"
+        ],
+        "material_points": [
+          "「やるべきことはやっている、でも目標に近づいている感じがしない」→戦略と戦術の混同が原因という切り口",
+          "3層の定義と具体例（戦略=Why、戦術=How、実行=What）。会社員・フリーランス両方の例を提示",
+          "よくある混同パターン2〜3個。手段の目的化・量をこなすことを戦略と思い込む状態。W1①の数値化視点と接続",
+          "3層の整理を復習→「次はW2、理想の状態をどう定義するか」へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P2-03",
+        "phase_id": "P2",
+        "lesson_order": 3,
+        "category_or_work": "W2①",
+        "lesson_title": "KPI",
+        "hook": "「目標は立てているのにいつの間にか追うのをやめてしまう」→目標が測れない形になっているという問題提起",
+        "learning_outcome": "KGI・KPI・KDIの3層体系を理解し、自分のゴールを測れる形に変換できる",
+        "main_topic_1": "KGI・KPI・KDIの構造と具体例（月収50万→月3件契約→週10件提案）。KGIだけ決めてKPIがない危険性を提示",
+        "main_topic_2": "良いKPIの3条件：①自分でコントロールできる ②数値で測れる ③定期的に確認できる",
+        "practice_part": "「あなたの仕事のKGI・KPI・KDIを書いてみてください」3段階ツリー構造を画面に提示",
+        "bridge_summary": "3層の重要性を再確認→「KPIには落とし穴があります、それが次の動画のテーマ」とW2②へ接続",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "KGI・KPI・KDIの3層体系を理解し、自分のゴールを測れる形に変換できる",
+        "video_url": "https://youtu.be/7FaNrrMFjnk",
+        "estimated_duration": "約12分",
+        "purpose_watch": "KGI・KPI・KDIの3層体系を理解し、自分のゴールを測れる形に変換できる",
+        "purpose_think": "KGI・KPI・KDIの構造と具体例（月収50万→月3件契約→週10件提案）。KGIだけ決めてKPIがない危険性を提示",
+        "purpose_write": "「あなたの仕事のKGI・KPI・KDIを書いてみてください」3段階ツリー構造を画面に提示",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-03"
+        ],
+        "work_ids": [
+          "W-P2-02"
+        ],
+        "material_points": [
+          "「目標は立てているのにいつの間にか追うのをやめてしまう」→目標が測れない形になっているという問題提起",
+          "KGI・KPI・KDIの構造と具体例（月収50万→月3件契約→週10件提案）。KGIだけ決めてKPIがない危険性を提示",
+          "良いKPIの3条件：①自分でコントロールできる ②数値で測れる ③定期的に確認できる",
+          "3層の重要性を再確認→「KPIには落とし穴があります、それが次の動画のテーマ」とW2②へ接続"
+        ]
+      },
+      {
+        "lesson_id": "P2-04",
+        "phase_id": "P2",
+        "lesson_order": 4,
+        "category_or_work": "W2②",
+        "lesson_title": "KPI地獄を避ける方法",
+        "hook": "「数字は管理しているのに成果が出ない」→KPI設定自体が目的化しているという問題提起",
+        "learning_outcome": "「見せかけの数字」と「本当に意味のある数字」を見分けられるようになる",
+        "main_topic_1": "見せかけの数字の具体例（SNSフォロワー→問い合わせ数、作業時間→成果物数など）。数字を追う安心感と実際の成果のずれを明示",
+        "main_topic_2": "なぜ見せかけの数字が生まれるか：「測りやすいものを選んでしまう」人間の習性を解説",
+        "practice_part": "「あなたのKPIに見せかけの数字が混じっていませんか？」W2①で書いたKPIを見直す体験設計",
+        "bridge_summary": "W1で現状構造化→W2で理想をKPI定義→「次はギャップを埋める仮説を立てる、W3へ」",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "「見せかけの数字」と「本当に意味のある数字」を見分けられるようになる",
+        "video_url": "https://youtu.be/J8Ll2ltSQk8",
+        "estimated_duration": "約12分",
+        "purpose_watch": "「見せかけの数字」と「本当に意味のある数字」を見分けられるようになる",
+        "purpose_think": "見せかけの数字の具体例（SNSフォロワー→問い合わせ数、作業時間→成果物数など）。数字を追う安心感と実際の成果のずれを明示",
+        "purpose_write": "「あなたのKPIに見せかけの数字が混じっていませんか？」W2①で書いたKPIを見直す体験設計",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-04"
+        ],
+        "work_ids": [
+          "W-P2-02"
+        ],
+        "material_points": [
+          "「数字は管理しているのに成果が出ない」→KPI設定自体が目的化しているという問題提起",
+          "見せかけの数字の具体例（SNSフォロワー→問い合わせ数、作業時間→成果物数など）。数字を追う安心感と実際の成果のずれを明示",
+          "なぜ見せかけの数字が生まれるか：「測りやすいものを選んでしまう」人間の習性を解説",
+          "W1で現状構造化→W2で理想をKPI定義→「次はギャップを埋める仮説を立てる、W3へ」"
+        ]
+      },
+      {
+        "lesson_id": "P2-05",
+        "phase_id": "P2",
+        "lesson_order": 5,
+        "category_or_work": "W3①",
+        "lesson_title": "イシューからはじめよ",
+        "hook": "「やり終えてから『これ本当に必要だったのか』と感じたことはないか」→問題は行動量でなく解く問題の選び方という切り口",
+        "learning_outcome": "本当に解くべき問題（イシュー）を見極める視点が手に入る",
+        "main_topic_1": "イシューの定義「白黒つけなければならない本質的な問い」を平易な言葉で解説。課題に見えているものと本当のイシューの違いを具体例で提示",
+        "main_topic_2": "良いイシューの3条件：①答えが出ると方向性が大きく変わる ②仮説が立てられる ③今検証できる",
+        "practice_part": "「今取り組んでいる課題を1つ書き出し、本当のイシューに言い換えてみてください」",
+        "bridge_summary": "「イシューが特定できたら、次は仮の答えを立てる段階。W3②仮説思考へ」",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "本当に解くべき問題（イシュー）を見極める視点が手に入る",
+        "video_url": "https://youtu.be/zStxr9iJpS4",
+        "estimated_duration": "約12分",
+        "purpose_watch": "本当に解くべき問題（イシュー）を見極める視点が手に入る",
+        "purpose_think": "イシューの定義「白黒つけなければならない本質的な問い」を平易な言葉で解説。課題に見えているものと本当のイシューの違いを具体例で提示",
+        "purpose_write": "「今取り組んでいる課題を1つ書き出し、本当のイシューに言い換えてみてください」",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-05"
+        ],
+        "work_ids": [
+          "W-P2-03"
+        ],
+        "material_points": [
+          "「やり終えてから『これ本当に必要だったのか』と感じたことはないか」→問題は行動量でなく解く問題の選び方という切り口",
+          "イシューの定義「白黒つけなければならない本質的な問い」を平易な言葉で解説。課題に見えているものと本当のイシューの違いを具体例で提示",
+          "良いイシューの3条件：①答えが出ると方向性が大きく変わる ②仮説が立てられる ③今検証できる",
+          "「イシューが特定できたら、次は仮の答えを立てる段階。W3②仮説思考へ」"
+        ]
+      },
+      {
+        "lesson_id": "P2-06",
+        "phase_id": "P2",
+        "lesson_order": 6,
+        "category_or_work": "W3②",
+        "lesson_title": "仮説思考",
+        "hook": "「情報をたくさん集めてから考えよう」という習慣が思考の効率を下げているという逆説的な問題提起",
+        "learning_outcome": "仮説を先に立て、検証で精度を上げていく思考の順番が身につく",
+        "main_topic_1": "「完璧な情報が揃うまで動かない」思考との対比で仮説→検証→修正サイクルを説明。「仮説が間違っていても良い、仮説があるから検証ができる」",
+        "main_topic_2": "仮説の立て方：「So What?（だから何？）」と「Why So?（なぜそう言える？）」を繰り返す技術",
+        "practice_part": "W3①で特定したイシューに対して「仮の答え＋その根拠」をセットで書く体験設計",
+        "bridge_summary": "「仮説を立てたら次は検証と修正。W4ではその技術を学びます」",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "仮説を先に立て、検証で精度を上げていく思考の順番が身につく",
+        "video_url": "https://youtu.be/5Y36xKOdDSw",
+        "estimated_duration": "約12分",
+        "purpose_watch": "仮説を先に立て、検証で精度を上げていく思考の順番が身につく",
+        "purpose_think": "「完璧な情報が揃うまで動かない」思考との対比で仮説→検証→修正サイクルを説明。「仮説が間違っていても良い、仮説があるから検証ができる」",
+        "purpose_write": "W3①で特定したイシューに対して「仮の答え＋その根拠」をセットで書く体験設計",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-06"
+        ],
+        "work_ids": [
+          "W-P2-03"
+        ],
+        "material_points": [
+          "「情報をたくさん集めてから考えよう」という習慣が思考の効率を下げているという逆説的な問題提起",
+          "「完璧な情報が揃うまで動かない」思考との対比で仮説→検証→修正サイクルを説明。「仮説が間違っていても良い、仮説があるから検証ができる」",
+          "仮説の立て方：「So What?（だから何？）」と「Why So?（なぜそう言える？）」を繰り返す技術",
+          "「仮説を立てたら次は検証と修正。W4ではその技術を学びます」"
+        ]
+      },
+      {
+        "lesson_id": "P2-07",
+        "phase_id": "P2",
+        "lesson_order": 7,
+        "category_or_work": "W4①",
+        "lesson_title": "なぜなぜ分析",
+        "hook": "「同じ問題が何度も繰り返される」→原因でなく症状を直しているからという問題提起",
+        "learning_outcome": "「なぜ？」を繰り返すことで根本原因を特定する思考プロセスが身につく",
+        "main_topic_1": "「なぜ」を5回繰り返すプロセスを身近な例（例：営業成績が落ちた）で段階的に実演",
+        "main_topic_2": "よくある失敗パターン：感情論になる・犯人探しになるケース。正しいなぜの立て方との対比",
+        "practice_part": "「最近うまくいかなかったことを1つ選び、なぜなぜ分析を5回やってみてください」",
+        "bridge_summary": "「根本原因がわかったら、次は振り返りを仕組み化する方法。W4②へ」",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "「なぜ？」を繰り返すことで根本原因を特定する思考プロセスが身につく",
+        "video_url": "https://youtu.be/7AqPS0HYHLg",
+        "estimated_duration": "約12分",
+        "purpose_watch": "「なぜ？」を繰り返すことで根本原因を特定する思考プロセスが身につく",
+        "purpose_think": "「なぜ」を5回繰り返すプロセスを身近な例（例：営業成績が落ちた）で段階的に実演",
+        "purpose_write": "「最近うまくいかなかったことを1つ選び、なぜなぜ分析を5回やってみてください」",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-07"
+        ],
+        "work_ids": [
+          "W-P2-04"
+        ],
+        "material_points": [
+          "「同じ問題が何度も繰り返される」→原因でなく症状を直しているからという問題提起",
+          "「なぜ」を5回繰り返すプロセスを身近な例（例：営業成績が落ちた）で段階的に実演",
+          "よくある失敗パターン：感情論になる・犯人探しになるケース。正しいなぜの立て方との対比",
+          "「根本原因がわかったら、次は振り返りを仕組み化する方法。W4②へ」"
+        ]
+      },
+      {
+        "lesson_id": "P2-08",
+        "phase_id": "P2",
+        "lesson_order": 8,
+        "category_or_work": "W4②",
+        "lesson_title": "ふりかえりフレームワーク（KPT/YWTM）",
+        "hook": "「頑張った後に何も振り返らず次も同じやり方で臨む」→振り返りがないと経験が積まれても知識が更新されない",
+        "learning_outcome": "KPTとYWTを使って経験を次の行動に変換できるようになる",
+        "main_topic_1": "KPTの使い方：Keep・Problem・Try。「TryはProblemから必ず導く」鉄則を強調",
+        "main_topic_2": "YWTの使い方：やったこと・わかったこと・次やること。KPTとの使い分け（定期振り返りvs経験直後）",
+        "practice_part": "直近の仕事でどちらかのフレームワークを使って振り返る。W4①と組み合わせ「原因特定→改善策→振り返り記録」サイクルを完成",
+        "bridge_summary": "「W1〜W4で自分の業務を一通り扱えた。最後W5では他者に使う力を養います」",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "KPTとYWTを使って経験を次の行動に変換できるようになる",
+        "video_url": "https://youtu.be/uITk5xoRPDM",
+        "estimated_duration": "約12分",
+        "purpose_watch": "KPTとYWTを使って経験を次の行動に変換できるようになる",
+        "purpose_think": "KPTの使い方：Keep・Problem・Try。「TryはProblemから必ず導く」鉄則を強調",
+        "purpose_write": "直近の仕事でどちらかのフレームワークを使って振り返る。W4①と組み合わせ「原因特定→改善策→振り返り記録」サイクルを完成",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-08"
+        ],
+        "work_ids": [
+          "W-P2-04"
+        ],
+        "material_points": [
+          "「頑張った後に何も振り返らず次も同じやり方で臨む」→振り返りがないと経験が積まれても知識が更新されない",
+          "KPTの使い方：Keep・Problem・Try。「TryはProblemから必ず導く」鉄則を強調",
+          "YWTの使い方：やったこと・わかったこと・次やること。KPTとの使い分け（定期振り返りvs経験直後）",
+          "「W1〜W4で自分の業務を一通り扱えた。最後W5では他者に使う力を養います」"
+        ]
+      },
+      {
+        "lesson_id": "P2-09",
+        "phase_id": "P2",
+        "lesson_order": 9,
+        "category_or_work": "W5①",
+        "lesson_title": "ピラミッドストラクチャー",
+        "hook": "「頭の中では整理できているのに、話すと伝わらない」→情報量でなく構造の問題という問題提起",
+        "learning_outcome": "「結論から伝える」思考と表現が身につく。説明・提案・報告すべてに使える汎用スキル",
+        "main_topic_1": "ピラミッドストラクチャーの3層構造（頂点=結論、中層=根拠、底層=具体的事実）。So What?/Why So?の双方向検証",
+        "main_topic_2": "作り方の3ステップ：①分ける（MECEでグルーピング）②まとめる（メッセージ抽出）③関連づける（結論を導く）",
+        "practice_part": "「他者の課題や状況を1つ選び、ピラミッドストラクチャーで整理してみてください」W5「他者への適用」を初めて意識させる",
+        "bridge_summary": "「次は問題を分解して全体を網羅的に捉えるロジックツリーへ」",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "「結論から伝える」思考と表現が身につく。説明・提案・報告すべてに使える汎用スキル",
+        "video_url": "https://youtu.be/PxTUStusrXg",
+        "estimated_duration": "約12分",
+        "purpose_watch": "「結論から伝える」思考と表現が身につく。説明・提案・報告すべてに使える汎用スキル",
+        "purpose_think": "ピラミッドストラクチャーの3層構造（頂点=結論、中層=根拠、底層=具体的事実）。So What?/Why So?の双方向検証",
+        "purpose_write": "「他者の課題や状況を1つ選び、ピラミッドストラクチャーで整理してみてください」W5「他者への適用」を初めて意識させる",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-09"
+        ],
+        "work_ids": [
+          "W-P2-05"
+        ],
+        "material_points": [
+          "「頭の中では整理できているのに、話すと伝わらない」→情報量でなく構造の問題という問題提起",
+          "ピラミッドストラクチャーの3層構造（頂点=結論、中層=根拠、底層=具体的事実）。So What?/Why So?の双方向検証",
+          "作り方の3ステップ：①分ける（MECEでグルーピング）②まとめる（メッセージ抽出）③関連づける（結論を導く）",
+          "「次は問題を分解して全体を網羅的に捉えるロジックツリーへ」"
+        ]
+      },
+      {
+        "lesson_id": "P2-10",
+        "phase_id": "P2",
+        "lesson_order": 10,
+        "category_or_work": "W5②",
+        "lesson_title": "ロジックツリー",
+        "hook": "「どこから手をつければいいかわからない」→問題が大きく見えるのは分解されていないからという問題提起",
+        "learning_outcome": "ロジックツリーで問題を構造的に分解し「本当に着手すべき箇所」を見つけられる。W1〜W4の思考を他者に適用するための最後のツール",
+        "main_topic_1": "ロジックツリーの3種類：Whatツリー（現状把握）・Whyツリー（原因分析）・Howツリー（解決策設計）。W1〜W4との対応関係を明示",
+        "main_topic_2": "「分類」と「分解」の違いを解説。MECEを強調。ピラミッドストラクチャーとの相互補完関係を示す",
+        "practice_part": "「身近な他者が抱えている課題をロジックツリーで分解してみてください」W5の最終ゴール「他者のケースに思考構造を適用する」体験",
+        "bridge_summary": "コース全体（W1〜W5）の構造を振り返り。5段階の判断フローが身についたことを確認して締める",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "ロジックツリーで問題を構造的に分解し「本当に着手すべき箇所」を見つけられる。W1〜W4の思考を他者に適用するための最後のツール",
+        "video_url": "https://youtu.be/zzkCzMwAYb8",
+        "estimated_duration": "約12分",
+        "purpose_watch": "ロジックツリーで問題を構造的に分解し「本当に着手すべき箇所」を見つけられる。W1〜W4の思考を他者に適用するための最後のツール",
+        "purpose_think": "ロジックツリーの3種類：Whatツリー（現状把握）・Whyツリー（原因分析）・Howツリー（解決策設計）。W1〜W4との対応関係を明示",
+        "purpose_write": "「身近な他者が抱えている課題をロジックツリーで分解してみてください」W5の最終ゴール「他者のケースに思考構造を適用する」体験",
+        "mini_work_required": true,
+        "work_required": true,
+        "mini_work_ids": [
+          "MW-P2-10"
+        ],
+        "work_ids": [
+          "W-P2-05"
+        ],
+        "material_points": [
+          "「どこから手をつければいいかわからない」→問題が大きく見えるのは分解されていないからという問題提起",
+          "ロジックツリーの3種類：Whatツリー（現状把握）・Whyツリー（原因分析）・Howツリー（解決策設計）。W1〜W4との対応関係を明示",
+          "「分類」と「分解」の違いを解説。MECEを強調。ピラミッドストラクチャーとの相互補完関係を示す",
+          "コース全体（W1〜W5）の構造を振り返り。5段階の判断フローが身についたことを確認して締める"
+        ]
+      },
+      {
+        "lesson_id": "P2-11",
+        "phase_id": "P2",
+        "lesson_order": 11,
+        "category_or_work": "締め",
+        "lesson_title": "フェーズ2のまとめ",
+        "hook": "受講前の「頑張っているのに結果につながらない」「感覚に頼って判断している」状態を改めて言語化。変容の大きさを実感させる入り口",
+        "learning_outcome": "コース全体の統合と「自分がどう変わったか」の確認",
+        "main_topic_1": "W1〜W5が「一本の判断フロー」であることを図解で再提示。現状構造化→理想定義→問い見極め→仮説検証→他者適用の流れを統合",
+        "main_topic_2": "受講後の自分像を具体的な場面で言語化。「上司に構造で答えられる」「他者の課題をロジックツリーで整理して返せる」など日常場面で示す",
+        "practice_part": "「今日から一つだけ使ってみてください」という小さな行動指示",
+        "bridge_summary": "「思考は使うほど育つ」というメッセージで締める。次フェーズへの期待感を持たせる",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "コース全体の統合と「自分がどう変わったか」の確認",
+        "video_url": "https://youtu.be/_y0EGmIR3sc",
+        "estimated_duration": "約12分",
+        "purpose_watch": "コース全体の統合と「自分がどう変わったか」の確認",
+        "purpose_think": "W1〜W5が「一本の判断フロー」であることを図解で再提示。現状構造化→理想定義→問い見極め→仮説検証→他者適用の流れを統合",
+        "purpose_write": "「今日から一つだけ使ってみてください」という小さな行動指示",
+        "mini_work_required": false,
+        "work_required": false,
+        "mini_work_ids": [],
+        "work_ids": [],
+        "material_points": [
+          "受講前の「頑張っているのに結果につながらない」「感覚に頼って判断している」状態を改めて言語化。変容の大きさを実感させる入り口",
+          "W1〜W5が「一本の判断フロー」であることを図解で再提示。現状構造化→理想定義→問い見極め→仮説検証→他者適用の流れを統合",
+          "受講後の自分像を具体的な場面で言語化。「上司に構造で答えられる」「他者の課題をロジックツリーで整理して返せる」など日常場面で示す",
+          "「思考は使うほど育つ」というメッセージで締める。次フェーズへの期待感を持たせる"
+        ]
+      },
+      {
+        "lesson_id": "FINAL-01",
+        "phase_id": "FINAL",
+        "lesson_order": 1,
+        "category_or_work": "最終まとめ",
+        "lesson_title": "あなたは今、自分で考えて動ける人になった",
+        "hook": "「このコースを始める前のあなたを覚えていますか？」という問いかけから入る。フェーズ1冒頭の「やる気はあるのに成果につながらない」とフェーズ2冒頭の「頑張っているのに結果が安定しない」という2つの痛みを改めて言語化し、どれだけ遠くまで来たかを実感させる入り口にする",
+        "learning_outcome": "フェーズ1・2が「一人の人間の変容」として統合され、自分の成長を実感できる。次のフェーズへの期待感が生まれる",
+        "main_topic_1": "2つのフェーズが「一本の力」になる：フェーズ1（実行力）とフェーズ2（判断力）は車の両輪。「実行力だけでは方向が間違う。判断力だけでは動けない。両方揃って初めて成果になる」という構造を図解で提示",
+        "main_topic_2": "変容のビフォーアフターを具体的な場面で見せる：「上司から突然『この施策なぜやるの？』と聞かれたとき——以前は焦って言葉が出なかった。今は現状を構造化し、KPIと紐づけ、なぜなぜ分析で根拠を示せる」という一連のシーンで2フェーズの統合を示す",
+        "practice_part": "「今日から、どの力を一番使いますか？」という視聴者への問いかけを最後に残す。余韻のある終わり方で視聴後の行動につなげる",
+        "bridge_summary": "「実行力と判断力の次は、それを他者に伝え組織を動かす力です」という形で次フェーズへの興味を引き、「あなたはもう、自分で考えて動ける人です」という言葉で締める",
+        "source": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "lesson_summary": "フェーズ1・2が「一人の人間の変容」として統合され、自分の成長を実感できる。次のフェーズへの期待感が生まれる",
+        "video_url": "https://youtu.be/auHrh4wDZKY",
+        "estimated_duration": "約10分",
+        "purpose_watch": "フェーズ1・2が「一人の人間の変容」として統合され、自分の成長を実感できる。次のフェーズへの期待感が生まれる",
+        "purpose_think": "2つのフェーズが「一本の力」になる：フェーズ1（実行力）とフェーズ2（判断力）は車の両輪。「実行力だけでは方向が間違う。判断力だけでは動けない。両方揃って初めて成果になる」という構造を図解で提示",
+        "purpose_write": "「今日から、どの力を一番使いますか？」という視聴者への問いかけを最後に残す。余韻のある終わり方で視聴後の行動につなげる",
+        "mini_work_required": false,
+        "work_required": false,
+        "mini_work_ids": [],
+        "work_ids": [],
+        "material_points": [
+          "「このコースを始める前のあなたを覚えていますか？」という問いかけから入る。フェーズ1冒頭の「やる気はあるのに成果につながらない」とフェーズ2冒頭の「頑張っているのに結果が安定しない」という2つの痛みを改めて言語化し、どれだけ遠くまで来たかを実感させる入り口にする",
+          "2つのフェーズが「一本の力」になる：フェーズ1（実行力）とフェーズ2（判断力）は車の両輪。「実行力だけでは方向が間違う。判断力だけでは動けない。両方揃って初めて成果になる」という構造を図解で提示",
+          "変容のビフォーアフターを具体的な場面で見せる：「上司から突然『この施策なぜやるの？』と聞かれたとき——以前は焦って言葉が出なかった。今は現状を構造化し、KPIと紐づけ、なぜなぜ分析で根拠を示せる」という一連のシーンで2フェーズの統合を示す",
+          "「実行力と判断力の次は、それを他者に伝え組織を動かす力です」という形で次フェーズへの興味を引き、「あなたはもう、自分で考えて動ける人です」という言葉で締める"
+        ]
+      }
+    ],
+    "miniWorks": [
+      {
+        "mini_work_id": "MW-P1-01",
+        "phase_id": "P1",
+        "lesson_id": "P1-01",
+        "mini_work_order": 1,
+        "theme": "ビジネス遂行力",
+        "title": "明日からの1つを決める",
+        "goal": "動画で学んだ習慣を小さく行動に移す",
+        "prompt": "4つの習慣（挨拶／枕言葉／報連相3点／頷き・笑顔／見て見ぬふりを拾う）から1つ選び、明日から実行する",
+        "expected_output": "選んだ行動1つ＋実行日・場面の宣言",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：動画で学んだ習慣を小さく行動に移す\n提出の目安：選んだ行動1つ＋実行日・場面の宣言",
+        "evaluation_criteria_id": "EC-P1-01",
+        "passing_score": 80,
+        "miniWorkId": "MW-P1-01",
+        "parentLessonId": "P1-01",
+        "workId": "MW-P1-01",
+        "workTitle": "P1-01 ミニワーク：明日からの1つを決める",
+        "workPurpose": "動画で学んだ習慣を小さく行動に移す",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "行動が1つに絞られている／選んだ理由が自分の言葉で書かれている／いつ・どこで・どんな場面で試すかが具体的に書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "今日の動画で学んだ行動から、明日から実践することを1つ選んで回答してください。①選んだ行動はどれですか？②なぜその行動を選びましたか？③具体的にいつ・どんな場面で試しますか？",
+        "answer_placeholder": "例: 挨拶を選びます。明日の朝、出社時に同じチームの3人へ自分から挨拶します。最近こちらから声をかける回数が少なかったので、会話の入口を作るためです。"
+      },
+      {
+        "mini_work_id": "MW-P1-02",
+        "phase_id": "P1",
+        "lesson_id": "P1-02",
+        "mini_work_order": 2,
+        "theme": "自己管理・セルフマネジメント",
+        "title": "今日から試す1つを決める",
+        "goal": "意志に頼らず行動できる仕組みを1つ導入する",
+        "prompt": "5つの方法（5分ルール／作業場所を決める／小ご褒美／SNS削除・通知OFF／タスク4つ以内）から1つ選ぶ",
+        "expected_output": "選んだ仕組み1つ＋導入手順",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：意志に頼らず行動できる仕組みを1つ導入する\n提出の目安：選んだ仕組み1つ＋導入手順",
+        "evaluation_criteria_id": "EC-P1-02",
+        "passing_score": 80,
+        "miniWorkId": "MW-P1-02",
+        "parentLessonId": "P1-02",
+        "workId": "MW-P1-02",
+        "workTitle": "P1-02 ミニワーク：今日から試す1つを決める",
+        "workPurpose": "意志に頼らず行動できる仕組みを1つ導入する",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "方法が1つに絞られている／選んだ理由が自分の言葉で書かれている（「仕組みで動く」という本質への理解が感じられる）／具体的な場面や状況が書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "今日の動画で学んだ5つの方法から、今日から試すことを1つ選んで回答してください。①選んだ方法はどれですか？②なぜその方法を選びましたか？③具体的にどんな場面・状況で試しますか？",
+        "answer_placeholder": "例: 朝の着手時に「今日は提案資料の初稿を作ります」、昼に「半分まで進みました」、完了時に「提出しました」と上司へ報告します。"
+      },
+      {
+        "mini_work_id": "MW-P1-03",
+        "phase_id": "P1",
+        "lesson_id": "P1-03",
+        "mini_work_order": 3,
+        "theme": "タスク管理",
+        "title": "今日試す1つを決める",
+        "goal": "やらないことを決める力をつける",
+        "prompt": "7つの方法（将来的意義で選別／断る／自動化・外注／後回し可の問い 等）から1つ選んで試す",
+        "expected_output": "1つの選別・削減タスクの実行",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：やらないことを決める力をつける\n提出の目安：1つの選別・削減タスクの実行",
+        "evaluation_criteria_id": "EC-P1-03",
+        "passing_score": 80,
+        "miniWorkId": "MW-P1-03",
+        "parentLessonId": "P1-03",
+        "workId": "MW-P1-03",
+        "workTitle": "P1-03 ミニワーク：今日試す1つを決める",
+        "workPurpose": "やらないことを決める力をつける",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "方法が1つに絞られている／理由が自分の言葉で書かれている／どのタスク・場面で試すか具体的に書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "今日の動画で学んだ方法から、今日試すことを1つ選んで回答してください。①選んだ方法はどれですか？②なぜその方法を選びましたか？③具体的にどのタスク・場面で試しますか？",
+        "answer_placeholder": "例: 会議で相手の発言を最後まで聞き、要点を一度復唱してから自分の意見を伝えます。相手の意図を取り違えないためです。"
+      },
+      {
+        "mini_work_id": "MW-P1-04",
+        "phase_id": "P1",
+        "lesson_id": "P1-04",
+        "mini_work_order": 4,
+        "theme": "マスト1思考",
+        "title": "今日やるべきことを書き出し、一番に丸をつける",
+        "goal": "最重要1つを見極めて最優先で着手する習慣をつくる",
+        "prompt": "全タスクを書き出し→1つに丸→翌朝そこから着手",
+        "expected_output": "タスクリスト＋丸1つ＋翌朝の実行記録",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：最重要1つを見極めて最優先で着手する習慣をつくる\n提出の目安：タスクリスト＋丸1つ＋翌朝の実行記録",
+        "evaluation_criteria_id": "EC-P1-04",
+        "passing_score": 80,
+        "miniWorkId": "MW-P1-04",
+        "parentLessonId": "P1-04",
+        "workId": "MW-P1-04",
+        "workTitle": "P1-04 ミニワーク：今日やるべきことを書き出し、一番に丸をつける",
+        "workPurpose": "最重要1つを見極めて最優先で着手する習慣をつくる",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "タスクが複数書き出されている／「一番」が1つに絞られている／選んだ理由が「上司・顧客からの依頼優先」または「緊急度×重要度」の観点で書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "今日やるべきことを全部書き出し、その中から一番重要なものを1つ選んでください。①書き出したタスク一覧②一番に選んだタスク③なぜそれが一番だと判断しましたか？",
+        "answer_placeholder": "例: 今日のタスクはA/B/Cです。一番はAです。理由は、今日中にAが終わらないと明日の提案準備が遅れるためです。"
+      },
+      {
+        "mini_work_id": "MW-P1-05",
+        "phase_id": "P1",
+        "lesson_id": "P1-05",
+        "mini_work_order": 5,
+        "theme": "目標・目的設定",
+        "title": "両極端ワーク",
+        "goal": "本当にやりたいこと・真の目的を言語化する",
+        "prompt": "①もし制限がなければ？／②もし今日が最後の1日なら？の2つの問いに答える",
+        "expected_output": "2つの問いそれぞれへの回答（やりたい／行きたい／伝えたい等）",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：本当にやりたいこと・真の目的を言語化する\n提出の目安：2つの問いそれぞれへの回答（やりたい／行きたい／伝えたい等）",
+        "evaluation_criteria_id": "EC-P1-05",
+        "passing_score": 80,
+        "miniWorkId": "MW-P1-05",
+        "parentLessonId": "P1-05",
+        "workId": "MW-P1-05",
+        "workTitle": "P1-05 ミニワーク：両極端ワーク",
+        "workPurpose": "本当にやりたいこと・真の目的を言語化する",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "Step 1・2が具体的に書かれている／「本当にやりたいこと」が1つに絞られている／期限が設定されている（または期限の考え方が示されている）"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "両極端ワークを行ってください。①制限がなければ何をしたいか②今日が最後の1日なら何をするか③Step1・2を踏まえ、本当に叶えたいことを1つと期限を書いてください。",
+        "answer_placeholder": "例: 制限がなければ◯◯をしたいです。今日が最後なら◯◯をします。そこから、本当に叶えたいことは◯◯で、期限は◯月末です。"
+      },
+      {
+        "mini_work_id": "MW-P1-06",
+        "phase_id": "P1",
+        "lesson_id": "P1-06",
+        "mini_work_order": 6,
+        "theme": "自責思考の罠",
+        "title": "問いかけを2つ同時に持つ",
+        "goal": "自責に偏らず本質的な原因を見極める",
+        "prompt": "問題発生時に「自分にできることは？」と「構造・環境の要因は？」の2視点を併用",
+        "expected_output": "直近の問題に対する2視点の記述",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：自責に偏らず本質的な原因を見極める\n提出の目安：直近の問題に対する2視点の記述",
+        "evaluation_criteria_id": "EC-P1-06",
+        "passing_score": 80,
+        "miniWorkId": "MW-P1-06",
+        "parentLessonId": "P1-06",
+        "workId": "MW-P1-06",
+        "workTitle": "P1-06 ミニワーク：問いかけを2つ同時に持つ",
+        "workPurpose": "自責に偏らず本質的な原因を見極める",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "出来事が具体的／自責の視点と構造・環境の視点の両方が書かれている／どちらか一方に偏らず、バランスよく考えられている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "最近うまくいかなかった出来事を1つ思い浮かべ、①出来事②自分にできること③構造・環境など他の要因、の3点で回答してください。",
+        "answer_placeholder": "例: 直近の出来事は◯◯です。自分にできることは◯◯です。一方で、手順/環境/構造として◯◯も要因だと思います。"
+      },
+      {
+        "mini_work_id": "MW-P1-07",
+        "phase_id": "P1",
+        "lesson_id": "P1-07",
+        "mini_work_order": 7,
+        "theme": "概念的思考力",
+        "title": "具体化・抽象化の往復練習",
+        "goal": "具体と抽象を行き来する思考の筋トレ",
+        "prompt": "①具体化：今週の課題を部署／時間帯／工程で絞る ②抽象化：目に入った2つの共通点を1つ探す",
+        "expected_output": "各練習の記述例",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：具体と抽象を行き来する思考の筋トレ\n提出の目安：各練習の記述例",
+        "evaluation_criteria_id": "EC-P1-07",
+        "passing_score": 80,
+        "miniWorkId": "MW-P1-07",
+        "parentLessonId": "P1-07",
+        "workId": "MW-P1-07",
+        "workTitle": "P1-07 ミニワーク：具体化・抽象化の往復練習",
+        "workPurpose": "具体と抽象を行き来する思考の筋トレ",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "練習①②どちらも書かれている／具体化は「詳しく書く」ではなく「範囲を絞っている」／抽象化の共通点が表面的な特徴でなく、本質的な性質・機能・構造を捉えている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "今週、具体化と抽象化の練習をしてください。①今週の課題を部署・時間帯・工程のどれかで絞る②今日目に入った2つのものの共通点を1つ探す。",
+        "answer_placeholder": "例: うまくいった場面は◯◯です。再現できそうな行動は◯◯で、次は◯曜日の◯◯の場面で試します。"
+      },
+      {
+        "mini_work_id": "MW-P1-08",
+        "phase_id": "P1",
+        "lesson_id": "P1-08",
+        "mini_work_order": 8,
+        "theme": "クリティカルシンキング",
+        "title": "今週から1つ取り入れる",
+        "goal": "前提・自分・他者視点を問う習慣をつける",
+        "prompt": "3つ（前提と目的を問う／自分の意見を疑う／他の立場で考える）から1つ選んで実行",
+        "expected_output": "選んだ問いかけ＋実行した場面",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：前提・自分・他者視点を問う習慣をつける\n提出の目安：選んだ問いかけ＋実行した場面",
+        "evaluation_criteria_id": "EC-P1-08",
+        "passing_score": 80,
+        "miniWorkId": "MW-P1-08",
+        "parentLessonId": "P1-08",
+        "workId": "MW-P1-08",
+        "workTitle": "P1-08 ミニワーク：今週から1つ取り入れる",
+        "workPurpose": "前提・自分・他者視点を問う習慣をつける",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "練習が1つに絞られている／選んだ理由が自分の仕事・状況と結びついている／具体的な場面が書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "3つの練習のうち1つを選んで回答してください。A:何のためかを聞く B:自分の意見に問いかける C:相手はどう感じるか考える。①選んだ練習②理由③試す場面。",
+        "answer_placeholder": "例: フェーズ1で残す習慣は◯◯です。やめる行動は◯◯です。次の1週間は◯曜日に◯◯を確認します。"
+      },
+      {
+        "mini_work_id": "MW-P2-01",
+        "phase_id": "P2",
+        "lesson_id": "P2-01",
+        "mini_work_order": 1,
+        "theme": "数値化の鬼",
+        "title": "仕事を数字で見る",
+        "goal": "感覚ではなく数字で評価・目標設計する",
+        "prompt": "①目標を数値化 ②今日の仕事を数字で振り返る ③本当に変数か問う ④行動量で目標再設定",
+        "expected_output": "4項目それぞれの記述",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：感覚ではなく数字で評価・目標設計する\n提出の目安：4項目それぞれの記述",
+        "evaluation_criteria_id": "EC-P2-01",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-01",
+        "parentLessonId": "P2-01",
+        "workId": "MW-P2-01",
+        "workTitle": "P2-01 ミニワーク：仕事を数字で見る",
+        "workPurpose": "感覚ではなく数字で評価・目標設計する",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "具体的なタスクが1つ選ばれている／行動量が数値（回数・件数・時間など）で表されている／振り返りのタイミングや方法が具体的に書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "自分の仕事に数値化の鬼の考え方を当てはめてください。①取り組んでいる仕事・タスク②行動量を数値で表すと何をどれくらいやるか③その数値をいつ・どう振り返るか。"
+      },
+      {
+        "mini_work_id": "MW-P2-02",
+        "phase_id": "P2",
+        "lesson_id": "P2-02",
+        "mini_work_order": 2,
+        "theme": "戦略と戦術",
+        "title": "3層で整理する",
+        "goal": "戦略／戦術／実行の層を区別して行動の優先順位を見直す",
+        "prompt": "今の取り組み1つを 目的→戦略→戦術 の3層で書き出す",
+        "expected_output": "3層構造の記述",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：戦略／戦術／実行の層を区別して行動の優先順位を見直す\n提出の目安：3層構造の記述",
+        "evaluation_criteria_id": "EC-P2-02",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-02",
+        "parentLessonId": "P2-02",
+        "workId": "MW-P2-02",
+        "workTitle": "P2-02 ミニワーク：3層で整理する",
+        "workPurpose": "戦略／戦術／実行の層を区別して行動の優先順位を見直す",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "目的・戦略・戦術の3つが揃っている／戦略が「やること（戦術）」ではなく「方向性・ポジション」として書かれている／自分の仕事に具体的に当てはめられている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "今の取り組みを1つ選び、目的・戦略・戦術の3層で整理してください。戦略は方向性、戦術は具体的な打ち手として分けてください。"
+      },
+      {
+        "mini_work_id": "MW-P2-03",
+        "phase_id": "P2",
+        "lesson_id": "P2-03",
+        "mini_work_order": 3,
+        "theme": "KPI",
+        "title": "自分のKPIを点検",
+        "goal": "良いKPIの条件を満たしているかチェック",
+        "prompt": "①経営目標とつながるか ②プロセス紐づき ③責任者 ④目標値と期限、の4点確認",
+        "expected_output": "4項目のYES/NO＋未達箇所の改善案",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：良いKPIの条件を満たしているかチェック\n提出の目安：4項目のYES/NO＋未達箇所の改善案",
+        "evaluation_criteria_id": "EC-P2-03",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-03",
+        "parentLessonId": "P2-03",
+        "workId": "MW-P2-03",
+        "workTitle": "P2-03 ミニワーク：自分のKPIを点検",
+        "workPurpose": "良いKPIの条件を満たしているかチェック",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "具体的なKPIが1つ書かれている／KGIとのつながりが説明されている／追跡の状態（できている・できていない理由）が具体的に書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "自分のKPIを1つ点検してください。①具体的なKPI②KGIとのつながり③追跡できているか・できていない理由④確認頻度や責任者。"
+      },
+      {
+        "mini_work_id": "MW-P2-04",
+        "phase_id": "P2",
+        "lesson_id": "P2-04",
+        "mini_work_order": 4,
+        "theme": "KPI地獄を避ける方法",
+        "title": "チームのKPIを絞る",
+        "goal": "KGI→KSF→KPIの構造で指標を1〜3個に絞る",
+        "prompt": "①今のKPI個数を数える ②KGIの明文化確認 ③KSFを1〜2つ ④KPIを1〜3つに絞る",
+        "expected_output": "KGI／KSF／KPI一覧",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：KGI→KSF→KPIの構造で指標を1〜3個に絞る\n提出の目安：KGI／KSF／KPI一覧",
+        "evaluation_criteria_id": "EC-P2-04",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-04",
+        "parentLessonId": "P2-04",
+        "workId": "MW-P2-04",
+        "workTitle": "P2-04 ミニワーク：チームのKPIを絞る",
+        "workPurpose": "KGI→KSF→KPIの構造で指標を1〜3個に絞る",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "複数のKPIが書き出されている／KGIへの直結度で整理されている／1つに絞った理由が自分の言葉で書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "チームや自分のKPIを見直してください。①今あるKPIを複数書き出す②KGIへの直結度で整理する③最優先のKPIを1つに絞り、その理由を書く。"
+      },
+      {
+        "mini_work_id": "MW-P2-05",
+        "phase_id": "P2",
+        "lesson_id": "P2-05",
+        "mini_work_order": 5,
+        "theme": "イシューからはじめよ",
+        "title": "イシューを仮説形で言語化",
+        "goal": "解くべき問いを特定しMECEに分解する",
+        "prompt": "①イシューを「〇〇ではないか？」で言語化 ②イシュー度確認 ③サブイシューに分解 ④優先順位",
+        "expected_output": "イシュー文＋サブイシューMECE分解",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：解くべき問いを特定しMECEに分解する\n提出の目安：イシュー文＋サブイシューMECE分解",
+        "evaluation_criteria_id": "EC-P2-05",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-05",
+        "parentLessonId": "P2-05",
+        "workId": "MW-P2-05",
+        "workTitle": "P2-05 ミニワーク：イシューを仮説形で言語化",
+        "workPurpose": "解くべき問いを特定しMECEに分解する",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "課題が1つに絞られている／「問いの形」に変換できている／サブイシューが課題解決に向けた具体的な問いとして書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "課題を1つ選び、イシューとして問いの形に変換してください。①課題②「〇〇ではないか？」の問い③サブイシュー④優先順位。"
+      },
+      {
+        "mini_work_id": "MW-P2-06",
+        "phase_id": "P2",
+        "lesson_id": "P2-06",
+        "mini_work_order": 6,
+        "theme": "仮説思考",
+        "title": "2つの思考習慣を取り入れる",
+        "goal": "仮説力の筋トレを日常化する",
+        "prompt": "①「だから何？」を繰り返す ②「なぜ？」を5回問う",
+        "expected_output": "実例1つでの「だから何？」連鎖＋なぜ5回",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：仮説力の筋トレを日常化する\n提出の目安：実例1つでの「だから何？」連鎖＋なぜ5回",
+        "evaluation_criteria_id": "EC-P2-06",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-06",
+        "parentLessonId": "P2-06",
+        "workId": "MW-P2-06",
+        "workTitle": "P2-06 ミニワーク：2つの思考習慣を取り入れる",
+        "workPurpose": "仮説力の筋トレを日常化する",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "課題が1つ書かれている／仮説が「〜ではないか？」の形で立てられている（原因・メカニズムへの推論が含まれている）／検証方法が具体的に書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "課題を1つ選び、仮説を立ててください。①課題②原因やメカニズムの仮説「〜ではないか？」③それを検証する方法。"
+      },
+      {
+        "mini_work_id": "MW-P2-07",
+        "phase_id": "P2",
+        "lesson_id": "P2-07",
+        "mini_work_order": 7,
+        "theme": "なぜなぜ分析",
+        "title": "繰り返し問題の真因特定",
+        "goal": "根本原因にたどり着き再発防止策を立てる",
+        "prompt": "①事象の具体化 ②なぜ5回 ③真因特定（人のせいで止まっていないか）④対策 ⑤仕組み化",
+        "expected_output": "なぜなぜ分析シート一式",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：根本原因にたどり着き再発防止策を立てる\n提出の目安：なぜなぜ分析シート一式",
+        "evaluation_criteria_id": "EC-P2-07",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-07",
+        "parentLessonId": "P2-07",
+        "workId": "MW-P2-07",
+        "workTitle": "P2-07 ミニワーク：繰り返し問題の真因特定",
+        "workPurpose": "根本原因にたどり着き再発防止策を立てる",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "事象が書かれていない／なぜなぜの試みがない／極端に内容が薄い"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "繰り返し起きている問題を1つ選び、なぜを5回目安で深掘りしてください。①具体的な事象②なぜの連鎖③真因④対策⑤仕組み化。"
+      },
+      {
+        "mini_work_id": "MW-P2-08",
+        "phase_id": "P2",
+        "lesson_id": "P2-08",
+        "mini_work_order": 8,
+        "theme": "ふりかえりフレームワーク（KPT/YWTM）",
+        "title": "KPTで発散→YWTMで深掘り",
+        "goal": "次のアクションにつなげる振り返り習慣をつくる",
+        "prompt": "①KPTでK/P/T（TK・TP）を書く ②YWTMでY→W→T→Mの流れで整理",
+        "expected_output": "KPT＋YWTMの両シート",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：次のアクションにつなげる振り返り習慣をつくる\n提出の目安：KPT＋YWTMの両シート",
+        "evaluation_criteria_id": "EC-P2-08",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-08",
+        "parentLessonId": "P2-08",
+        "workId": "MW-P2-08",
+        "workTitle": "P2-08 ミニワーク：KPTで発散→YWTMで深掘り",
+        "workPurpose": "次のアクションにつなげる振り返り習慣をつくる",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "K・P・T・YWTMの5項目が揃っている／Tryが1つに絞られている／YWTの「わかったこと」が行動（やったこと）から引き出した学びになっている／MがTryに対応した期待効果として書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "KPTで発散し、YWTMで深掘りしてください。①Keep②Problem③Try④やったこと⑤わかったこと⑥次にやること⑦期待する効果。"
+      },
+      {
+        "mini_work_id": "MW-P2-09",
+        "phase_id": "P2",
+        "lesson_id": "P2-09",
+        "mini_work_order": 9,
+        "theme": "ピラミッドストラクチャー",
+        "title": "自分のテーマで作る",
+        "goal": "伝える構造を作れるようにする",
+        "prompt": "①目的設定 ②情報書き出し ③MECEでグルーピング ④各グループのメッセージ抽出 ⑤So What?で主張",
+        "expected_output": "ピラミッド図1枚",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：伝える構造を作れるようにする\n提出の目安：ピラミッド図1枚",
+        "evaluation_criteria_id": "EC-P2-09",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-09",
+        "parentLessonId": "P2-09",
+        "workId": "MW-P2-09",
+        "workTitle": "P2-09 ミニワーク：自分のテーマで作る",
+        "workPurpose": "伝える構造を作れるようにする",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "テーマが明確／根拠が3点書かれている／「So What?」が根拠から論理的に導かれた1文になっている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "自分のテーマでピラミッドストラクチャーを作ってください。①テーマ②根拠3点③根拠から導いたSo What?の1文。"
+      },
+      {
+        "mini_work_id": "MW-P2-10",
+        "phase_id": "P2",
+        "lesson_id": "P2-10",
+        "mini_work_order": 10,
+        "theme": "ロジックツリー",
+        "title": "What/Why/Howで分解",
+        "goal": "問題解決の特定・原因分析・解決策立案に使える",
+        "prompt": "直近の問題を ①Whatツリー（全体分解）②Whyツリー（原因）③Howツリー（解決策）で整理",
+        "expected_output": "3種のツリー図",
+        "work_type": "mini_work",
+        "display_label": "ミニワーク",
+        "source": "プチワーク一覧_評価基準たたき台.xlsx",
+        "helper_text": "目的：問題解決の特定・原因分析・解決策立案に使える\n提出の目安：3種のツリー図",
+        "evaluation_criteria_id": "EC-P2-10",
+        "passing_score": 80,
+        "miniWorkId": "MW-P2-10",
+        "parentLessonId": "P2-10",
+        "workId": "MW-P2-10",
+        "workTitle": "P2-10 ミニワーク：What/Why/Howで分解",
+        "workPurpose": "問題解決の特定・原因分析・解決策立案に使える",
+        "criteria": [
+          "動画内容と関係する観点で回答している",
+          "自分の業務・状況に置き換えている",
+          "課題が1つ書かれている／WhyまたはHowツリーで2段階以上分解されている／分解結果から優先ポイントが1つ選ばれ、理由が書かれている"
+        ],
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "maxRetryBeforeReview": 3,
+        "pass_threshold": 80,
+        "retry_threshold": 60,
+        "max_retry_before_review": 3,
+        "ai_response_schema": "barise-mini-work-evaluation-v1",
+        "learner_prompt_full": "ロジックツリーで今の課題を分解してください。①解決したい課題②WhyまたはHowツリーで2〜3段階分解③最初に手をつけるポイントと理由。"
+      }
+    ],
+    "works": [
+      {
+        "work_id": "W-P1-05",
+        "phase_id": "P1",
+        "related_lesson_ids": [
+          "P1-05"
+        ],
+        "work_order": 1,
+        "title": "目標・目的設定：ビジョン整理ワーク",
+        "purpose": "フェーズ1中盤の節目で、本当にやりたいこと/目的を言語化する",
+        "prompt": "テーマ、現状、理想、課題を入力すると、AIがあなた向けのワーク問題文を生成します。",
+        "unlock_condition": "MW-P1-05 passed",
+        "display_before_unlock": "name_only",
+        "status": "ready",
+        "source": "動画別3層棚卸したたき台",
+        "related_lesson_id": "P1-05",
+        "display_label": "ワーク",
+        "display_status": "confirmed",
+        "hidden_from_learner": false,
+        "is_candidate": false,
+        "helper_text": "テーマ入力から追加質問、最終フィードバックまでこの学習ページ内で進めます。",
+        "passing_score": 75,
+        "work_goal": "曖昧な目標を、自分のテーマに合わせて現状・理想・3ヶ月行動へ落とし込む",
+        "target_skill": "目標設定 / 現状把握 / 次アクション化",
+        "questions": [
+          "理想の状態を言語化する",
+          "現状との差分を整理する",
+          "3ヶ月以内の行動へ落とす"
+        ],
+        "show_to_learner": true,
+        "entry_description": "あなた自身の仕事・副業・営業・CSなどのテーマに合わせて取り組みます。",
+        "theme_intake_questions": [
+          "今回改善したいテーマは何ですか？",
+          "現在どのような状況ですか？",
+          "理想の状態は何ですか？",
+          "今いちばん困っていることは何ですか？"
+        ],
+        "ai_prompt_policy": "入力テーマに合わせて問題文と追加質問を生成する。",
+        "ai_work_prompt_template": "受講者のテーマ・現状・理想・課題に合わせて、現状整理、GAP、仮説、検証行動を問うワークを生成する。",
+        "completion_condition": "AIが最終フィードバックと次アクションを返した状態",
+        "evaluation_knowledge": {
+          "workId": "W-P1-05",
+          "title": "目標・目的設定：ビジョン整理ワーク",
+          "workGoal": "明確な目標を、自分のテーマに合わせて現状・理想・3ヶ月行動へ落とし込む",
+          "passRequiredElements": [
+            "改善したいテーマが1つに絞られている",
+            "現状と理想の差分が、具体場面または具体状態で説明されている",
+            "理想に向かう理由・目的が自分の言葉で書かれている",
+            "3ヶ月以内の到達状態または成果物が定義されている",
+            "今週または次回に実行する具体アクションが1つ以上ある"
+          ],
+          "aCriteria": [
+            "テーマ・現状・理想・GAP・3ヶ月行動が一貫している",
+            "数値は必須ではないが、期限・対象者・成果物・回数など実行判断に使える具体性がある",
+            "なぜそれをやりたいかが価値観・仕事上の目的と接続している",
+            "次アクションが日時または完了条件つきで実行可能になっている"
+          ],
+          "bCriteria": [
+            "現状と理想はあるが、GAPまたは3ヶ月行動が抽象的",
+            "行動案はあるが、期限・対象者・成果物のどれかが不足",
+            "目的はあるが、自分のテーマとのつながりが弱い"
+          ],
+          "cCriteria": [
+            "夢・目標の一般論だけで、現状や次行動がない",
+            "複数テーマが散らばっていて、何を進めるワークか分からない",
+            "頑張る・考えるだけで3ヶ月行動に落ちていない"
+          ],
+          "commonMisconceptions": [
+            "ビジョンを大きく書けばAになると誤解する",
+            "現状の棚卸しをせず、理想だけを書く",
+            "数値目標だけを書き、なぜ取り組むかを書かない"
+          ],
+          "modelAnswerChecklist": [
+            "テーマ",
+            "直近の具体場面/現状",
+            "理想",
+            "GAP",
+            "3ヶ月到達状態",
+            "今週の1アクション"
+          ],
+          "badAnswerPatterns": [
+            "自由に働きたいので頑張ります",
+            "AIで稼げるようになりたいです",
+            "目標はまだ未定です"
+          ],
+          "modelAnswerExample": "テーマは営業経験とAI活用を組み合わせた若手営業向け60分講座です。現状は、先週後輩から商談前準備を聞かれましたが、口頭説明だけで再利用できる型がありませんでした。理想は、初心者が商談前に現状・理想・障害を整理できるシートを自分で使える状態です。理由は、後輩が自分で準備の抜け漏れに気づけるようになると、毎回の口頭説明が減り、商談品質を安定させられるからです。3ヶ月以内に初回講座を作り、モニター3名に実施します。今週金曜20:00までに対象者、講座ゴール、当日の流れを1枚にまとめます。"
+        },
+        "completion_criteria": [
+          "改善したいテーマが1つに絞られている",
+          "現状と理想の差分が、具体場面または具体状態で説明されている",
+          "理想に向かう理由・目的が自分の言葉で書かれている",
+          "3ヶ月以内の到達状態または成果物が定義されている",
+          "今週または次回に実行する具体アクションが1つ以上ある"
+        ]
+      },
+      {
+        "work_id": "W-P1-09",
+        "phase_id": "P1",
+        "related_lesson_ids": [
+          "P1-09",
+          "P1-10"
+        ],
+        "work_order": 2,
+        "title": "フェーズ1総括ワーク",
+        "purpose": "フェーズ1で得た実行力の土台を統合し、次フェーズへ接続する",
+        "prompt": "テーマ、現状、理想、課題を入力すると、AIがあなた向けのワーク問題文を生成します。",
+        "unlock_condition": "P1 key mini works passed",
+        "display_before_unlock": "name_only",
+        "status": "ready",
+        "source": "動画別3層棚卸したたき台",
+        "related_lesson_id": "P1-09",
+        "display_label": "ワーク",
+        "display_status": "confirmed",
+        "hidden_from_learner": false,
+        "is_candidate": false,
+        "helper_text": "テーマ入力から追加質問、最終フィードバックまでこの学習ページ内で進めます。",
+        "passing_score": 75,
+        "work_goal": "実行力の土台を振り返り、自分の仕事・副業・現場で続ける行動を決める",
+        "target_skill": "PDCA / 自己管理 / 実行設計",
+        "questions": [
+          "フェーズ1で実際に使えた考え方/習慣を1つ選んでください。",
+          "その習慣を使った場面、またはこれから使う場面を具体化してください。",
+          "続ける行動と、やめる/減らす行動をそれぞれ1つ決めてください。",
+          "次フェーズで確認する数字・期限・振り返り方法を決めてください。"
+        ],
+        "show_to_learner": true,
+        "entry_description": "あなた自身の仕事・副業・営業・CSなどのテーマに合わせて取り組みます。",
+        "theme_intake_questions": [
+          "今回改善したいテーマは何ですか？",
+          "現在どのような状況ですか？",
+          "理想の状態は何ですか？",
+          "今いちばん困っていることは何ですか？"
+        ],
+        "ai_prompt_policy": "入力テーマに合わせて問題文と追加質問を生成する。",
+        "ai_work_prompt_template": "受講者のテーマ・現状・理想・課題に合わせて、現状整理、GAP、仮説、検証行動を問うワークを生成する。",
+        "completion_condition": "AIが最終フィードバックと次アクションを返した状態",
+        "evaluation_knowledge": {
+          "workId": "W-P1-09",
+          "title": "フェーズ1総括ワーク",
+          "workGoal": "実行力の土台を振り返り、自分の仕事・副業・現場で続ける行動を決める",
+          "passRequiredElements": [
+            "フェーズ1で使えた考え方/習慣が1つ選ばれている",
+            "その習慣を使った場面、またはこれから使う場面が具体化されている",
+            "続ける行動と、やめる/減らす行動がそれぞれ1つある",
+            "次フェーズで確認する数字・期限・振り返り方法が決まっている"
+          ],
+          "aCriteria": [
+            "継続行動・停止行動・次フェーズ行動が具体的な業務場面に接続している",
+            "なぜその行動を続ける/やめるのかの判断理由がある",
+            "確認頻度、期限、指標のいずれかで実行管理できる"
+          ],
+          "bCriteria": [
+            "学びは書けているが、続ける/やめる行動が曖昧",
+            "実行計画はあるが確認方法がない",
+            "次フェーズとの接続が弱い"
+          ],
+          "cCriteria": [
+            "感想だけで行動がない",
+            "全部大事・全部続けるで優先順位がない",
+            "実行の確認タイミングがなく、現場で使えない"
+          ],
+          "commonMisconceptions": [
+            "総括なので感想を書けばよいと誤解する",
+            "続けることだけ書き、やめることを決めない",
+            "次フェーズの判断力ワークへつながる数字・振り返りを入れない"
+          ],
+          "modelAnswerChecklist": [
+            "使えた習慣",
+            "具体場面",
+            "続ける行動",
+            "やめる/減らす行動",
+            "次フェーズの数字・期限・振り返り"
+          ],
+          "badAnswerPatterns": [
+            "フェーズ1で色々学べました",
+            "報連相を頑張ります",
+            "全部意識します"
+          ],
+          "modelAnswerExample": "フェーズ1で一番使えた学びは、重要タスクを先に決めて着手・中間・完了で報連相することです。今週月曜は商談準備よりチャット返信を優先し、準備時間が20分しか残りませんでした。続ける行動は、毎朝9:30に当日の最重要タスクを1つ選び、着手時と12:00に進捗をSlackで報告することです。やめる行動は、朝一番にチャットを見続けることです。次フェーズでは商談準備の成果を数字で見たいので、毎週金曜に初回商談数、次回提案数、準備チェックリスト実施数を確認します。"
+        },
+        "completion_criteria": [
+          "フェーズ1で使えた考え方/習慣が1つ選ばれている",
+          "その習慣を使った場面、またはこれから使う場面が具体化されている",
+          "続ける行動と、やめる/減らす行動がそれぞれ1つある",
+          "次フェーズで確認する数字・期限・振り返り方法が決まっている"
+        ],
+        "required_lesson_ids": [
+          "P1-09",
+          "P1-10"
+        ],
+        "required_mini_work_ids": [
+          "MW-P1-01",
+          "MW-P1-02",
+          "MW-P1-03",
+          "MW-P1-04",
+          "MW-P1-05",
+          "MW-P1-06",
+          "MW-P1-07",
+          "MW-P1-08"
+        ],
+        "unlock_policy": {
+          "type": "all_required_items",
+          "required_lesson_ids": [
+            "P1-09",
+            "P1-10"
+          ],
+          "required_mini_work_ids": [
+            "MW-P1-01",
+            "MW-P1-02",
+            "MW-P1-03",
+            "MW-P1-04",
+            "MW-P1-05",
+            "MW-P1-06",
+            "MW-P1-07",
+            "MW-P1-08"
+          ],
+          "learner_message": "P1-01〜P1-08の主要ミニワーク通過と、P1-09/P1-10の動画視聴後に開始できます。"
+        },
+        "answer_placeholder": "フェーズ1で使えた習慣、使った/使う場面、続ける行動、やめる行動、次フェーズで見る数字・期限を書いてください。",
+        "modelAnswerFields": {
+          "learner_theme": "フェーズ1で身につけた行動習慣を次フェーズへつなげたい",
+          "current_situation": "今週月曜は商談準備よりチャット返信を優先し、準備時間が20分しか残りませんでした。",
+          "goal": "毎朝9:30に最重要タスクを1つ決め、着手・中間・完了を報告する習慣を続けます。",
+          "problem": "朝一番にチャットを見続けて重要タスクが後回しになることを減らします。次フェーズでは毎週金曜に初回商談数、次回提案数、準備チェックリスト実施数を確認します。"
+        }
+      },
+      {
+        "work_id": "W-P2-01",
+        "phase_id": "P2",
+        "related_lesson_ids": [
+          "P2-01",
+          "P2-02"
+        ],
+        "work_order": 1,
+        "title": "W1：現状構造化ワーク",
+        "purpose": "業務や活動を、戦略・戦術・実行・数値の構造で説明できるようにする",
+        "questions": [
+          "現在の業務・活動を具体化する",
+          "測定できる数値を選ぶ",
+          "戦略・戦術・実行を分ける",
+          "行動が成果につながる理由を説明する"
+        ],
+        "unlock_condition": "MW-P2-01 and MW-P2-02 passed",
+        "display_before_unlock": "name_only",
+        "source": "Phase2_W1-W5_判断力を養う思考教育_統合版.md",
+        "related_lesson_id": "P2-01",
+        "display_label": "ワーク",
+        "display_status": "confirmed",
+        "hidden_from_learner": false,
+        "is_candidate": false,
+        "prompt": "初回ヒアリングを入力すると、AIがあなたの文脈に合わせてワークの問いを整えます。",
+        "helper_text": "追加質問・再回答・最終フィードバックまで、この学習ページ内で進めます。",
+        "passing_score": 80,
+        "work_goal": "自分の業務や活動を、戦略・戦術・実行・数値の構造で説明できるようにする",
+        "target_skill": "数値化 / 戦略分解 / 行動と成果の構造説明",
+        "show_to_learner": true,
+        "status": "ready",
+        "entry_description": "現在の業務・活動を数値と構造で整理し、次の理想定義へつなげます。",
+        "theme_intake_questions": [
+          "今回改善したいテーマは何ですか？",
+          "現在どのような状況ですか？",
+          "理想の状態は何ですか？",
+          "今いちばん困っていることは何ですか？"
+        ],
+        "ai_prompt_policy": "ワークの本質は変えず、受講者の職種・テーマ・回答状況に合わせて例示、問いかけ、再回答誘導を調整する。",
+        "ai_work_prompt_template": "W1では、受講者のテーマを数値化し、戦略・戦術・実行に分け、行動が成果につながる理由を構造で説明する問いを生成する。",
+        "completion_condition": "W別の完了条件を満たし、AI最終フィードバックが届いた状態",
+        "core_essence": "現状を構造化し、行動がなぜ成果につながるのかを説明する",
+        "required_intake_keys": [
+          "learner_role",
+          "current_activity",
+          "learner_theme",
+          "current_situation",
+          "current_actions",
+          "available_metrics",
+          "target_result",
+          "strategy_tactic_execution"
+        ],
+        "completion_criteria": [
+          "現在の業務/活動が具体的に書かれている",
+          "測定すべき数値がある",
+          "戦略・戦術・実行が区別されている",
+          "行動が成果につながる理由を説明できている"
+        ],
+        "learner_output": "戦略・戦術・実行・数値で整理した現状構造メモ",
+        "previous_work_connection": "Phase2の入口として、以降のワークで扱うテーマと現状を整えます。",
+        "next_work_connection": "W2では、W1で整理した現状をもとに理想状態とKGI/KPI/KDIを定義します。",
+        "intake_fields": [
+          {
+            "key": "profile_role_industry",
+            "label": "職種 / 業種",
+            "placeholder": "例: 法人営業 / IT、人事担当 / 教育、店舗責任者 / 小売など",
+            "rows": 3,
+            "common_profile": true
+          },
+          {
+            "key": "profile_current_work",
+            "label": "現在の主な業務",
+            "placeholder": "普段担当している業務や活動を、匿名化して書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_theme",
+            "label": "今回扱いたいテーマ",
+            "placeholder": "このワーク全体で改善・整理したいテーマを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_problem",
+            "label": "いま困っていること / 改善したいこと",
+            "placeholder": "公開できない顧客名・個人名は入れず、役割名で書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_goal",
+            "label": "目標・達成したい状態",
+            "placeholder": "どの状態になれば前進と言えるかを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_case_example",
+            "label": "具体例に使ってよい業務ケース",
+            "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "learner_role",
+            "label": "現在の立場/役割",
+            "placeholder": "営業、CS、管理職、副業、現場担当など",
+            "rows": 4
+          },
+          {
+            "key": "current_activity",
+            "label": "現在取り組んでいる業務・活動",
+            "placeholder": "例: 初回商談、問い合わせ対応、チーム育成、副業の集客など",
+            "rows": 4
+          },
+          {
+            "key": "learner_theme",
+            "label": "今回改善したいテーマ",
+            "placeholder": "例: 初回商談で課題を深掘りできるようにしたい",
+            "rows": 4
+          },
+          {
+            "key": "current_situation",
+            "label": "現在の状況",
+            "placeholder": "今起きていること、直近の場面、分かっている数字を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "current_actions",
+            "label": "現在行っている行動",
+            "placeholder": "今どのような準備・対応・確認をしているかを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "available_metrics",
+            "label": "測定できそうな数値",
+            "placeholder": "件数、率、時間、金額、満足度、ミス数など",
+            "rows": 4
+          },
+          {
+            "key": "target_result",
+            "label": "成果として見たいもの",
+            "placeholder": "どの結果が変われば前進と言えるかを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "strategy_tactic_execution",
+            "label": "戦略・戦術・実行の仮分解",
+            "placeholder": "戦略=大きな方針、戦術=打ち手、実行=明日やる行動として分けてみてください",
+            "rows": 4
+          }
+        ],
+        "answer_placeholder": "現在の業務、見るべき数値、戦略/戦術/実行の分解、行動が成果につながる理由を書いてください。",
+        "learner_guidance": [
+          "個人名・顧客名・会社の機密情報は入れず、匿名化した表現や役割名で入力してください",
+          "あなたの職種に合わせて、ワークの問いかけを調整します",
+          "回答が足りない場合は、AIが追加で質問します",
+          "正解を当てるワークではなく、自分の状況を構造化するワークです",
+          "抽象的な回答の場合は、もう一度整理してもらうことがあります"
+        ],
+        "personalization_policy": "受講者の職種・業務・テーマに合わせて例示と問いかけを調整する。ただしワークの本質、順序、完了条件は変えない。",
+        "ai_evaluation_enabled": true,
+        "ai_response_schema": "barise-work-evaluation-v1",
+        "evaluation_knowledge": {
+          "workId": "W-P2-01",
+          "title": "W1：現状構造化ワーク",
+          "workGoal": "自分の業務や活動を、戦略・戦術・実行・数値の構造で説明できるようにする",
+          "passRequiredElements": [
+            "現在の業務/活動が具体的に書かれている",
+            "測定すべき数値がある",
+            "戦略・戦術・実行が区別されている",
+            "行動が成果につながる理由を説明できている"
+          ],
+          "aCriteria": [
+            "業務テーマ、現状数値、見るべき指標が対応している",
+            "戦略=方針、戦術=打ち手、実行=具体行動として混同なく分けられている",
+            "なぜその行動が成果/KGIに効くのかの因果が書かれている",
+            "次に測る数値または記録タイミングがある"
+          ],
+          "bCriteria": [
+            "数値はあるが、戦略/戦術/実行が混ざっている",
+            "行動はあるが、成果につながる理由が薄い",
+            "測る指標はあるが確認頻度がない"
+          ],
+          "cCriteria": [
+            "業務の説明だけで数値がない",
+            "戦略・戦術・実行のラベルだけで中身がない",
+            "行動と成果のつながりを説明していない"
+          ],
+          "commonMisconceptions": [
+            "実行タスクを戦略と呼んでしまう",
+            "KPIをたくさん並べればよいと考える",
+            "成果につながる理由を書かない"
+          ],
+          "modelAnswerChecklist": [
+            "現在業務",
+            "現状数値",
+            "戦略",
+            "戦術",
+            "実行",
+            "成果につながる理由",
+            "測定タイミング"
+          ],
+          "badAnswerPatterns": [
+            "営業を頑張ります",
+            "戦略は商談数を増やすことです",
+            "KPIは売上です"
+          ],
+          "modelAnswerExample": "現在の活動は法人営業の初回商談です。月20件の初回商談のうち次回提案につながるのは約6件、提案化率30%です。戦略は商品説明より先に顧客の現状・理想・障害を整理する相談相手の位置を取ることです。戦術は商談前に業界・職種別の仮説質問を3つ用意することです。実行は明日10:00の商談で冒頭10分に現状、理想、障害、決裁条件を聞き、確認できた項目数と次回提案の有無を記録します。質問が深くなるほど顧客の優先課題に合う提案になり、提案化率が上がると考えます。"
+        }
+      },
+      {
+        "work_id": "W-P2-02",
+        "phase_id": "P2",
+        "related_lesson_ids": [
+          "P2-03",
+          "P2-04"
+        ],
+        "work_order": 2,
+        "title": "W2：理想定義ワーク",
+        "purpose": "うまくいっている状態を、定性と定量の両方で定義する",
+        "questions": [
+          "理想状態を定性・定量で定義する",
+          "KGI/KPI/KDIを分ける",
+          "行動で変えられる指標を選ぶ",
+          "見せかけの数字をチェックする"
+        ],
+        "unlock_condition": "MW-P2-03 and MW-P2-04 passed",
+        "display_before_unlock": "name_only",
+        "source": "Phase2_W1-W5_判断力を養う思考教育_統合版.md",
+        "related_lesson_id": "P2-03",
+        "display_label": "ワーク",
+        "display_status": "confirmed",
+        "hidden_from_learner": false,
+        "is_candidate": false,
+        "prompt": "初回ヒアリングを入力すると、AIがあなたの文脈に合わせてワークの問いを整えます。",
+        "helper_text": "追加質問・再回答・最終フィードバックまで、この学習ページ内で進めます。",
+        "passing_score": 80,
+        "work_goal": "うまくいっている状態をKGI/KPI/KDIで定義し、見せかけの数字を避ける",
+        "target_skill": "理想定義 / KGI・KPI・KDI設計 / 指標判断",
+        "show_to_learner": true,
+        "status": "ready",
+        "entry_description": "W1で整理した現状をもとに、うまくいっている状態と見るべき数字を定義します。",
+        "theme_intake_questions": [
+          "今回改善したいテーマは何ですか？",
+          "現在どのような状況ですか？",
+          "理想の状態は何ですか？",
+          "今いちばん困っていることは何ですか？"
+        ],
+        "ai_prompt_policy": "ワークの本質は変えず、受講者の職種・テーマ・回答状況に合わせて例示、問いかけ、再回答誘導を調整する。",
+        "ai_work_prompt_template": "W2では、理想状態、KGI/KPI/KDI、行動で変えられる指標、見せかけの数字チェックを問うワークを生成する。",
+        "completion_condition": "W別の完了条件を満たし、AI最終フィードバックが届いた状態",
+        "core_essence": "うまくいっている状態をKGI/KPI/KDIで定義し、見せかけの数字を避ける",
+        "required_intake_keys": [
+          "learner_theme",
+          "ideal_state",
+          "kgi_candidate",
+          "kpi_candidate",
+          "kdi_candidate",
+          "vanity_metric_risk"
+        ],
+        "completion_criteria": [
+          "理想状態が具体化されている",
+          "KGI/KPI/KDIが区別されている",
+          "行動で変えられる指標がある",
+          "見せかけの数字へのチェックが入っている"
+        ],
+        "learner_output": "理想状態とKGI/KPI/KDIの定義メモ",
+        "previous_work_connection": "W1で整理した現状構造を受けて、何が変われば理想に近づくかを定義します。",
+        "next_work_connection": "W3では、理想に届かない原因を深掘りし、取り組むべきイシューを特定します。",
+        "intake_fields": [
+          {
+            "key": "profile_role_industry",
+            "label": "職種 / 業種",
+            "placeholder": "例: 法人営業 / IT、人事担当 / 教育、店舗責任者 / 小売など",
+            "rows": 3,
+            "common_profile": true
+          },
+          {
+            "key": "profile_current_work",
+            "label": "現在の主な業務",
+            "placeholder": "普段担当している業務や活動を、匿名化して書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_theme",
+            "label": "今回扱いたいテーマ",
+            "placeholder": "このワーク全体で改善・整理したいテーマを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_problem",
+            "label": "いま困っていること / 改善したいこと",
+            "placeholder": "公開できない顧客名・個人名は入れず、役割名で書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_goal",
+            "label": "目標・達成したい状態",
+            "placeholder": "どの状態になれば前進と言えるかを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_case_example",
+            "label": "具体例に使ってよい業務ケース",
+            "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "learner_theme",
+            "label": "今回改善したいテーマ",
+            "placeholder": "例: 初回商談で課題を深掘りできるようにしたい",
+            "rows": 4
+          },
+          {
+            "key": "current_situation",
+            "label": "現在の状況",
+            "placeholder": "今起きていること、直近の場面、分かっている数字を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "ideal_state",
+            "label": "理想の状態",
+            "placeholder": "うまくいっている状態を、定性・定量の両方で書いてください",
+            "rows": 4
+          },
+          {
+            "key": "kgi_candidate",
+            "label": "KGI候補",
+            "placeholder": "最終成果として見る数字や状態を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "kpi_candidate",
+            "label": "KPI候補",
+            "placeholder": "成果に近づいているかを見る途中指標を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "kdi_candidate",
+            "label": "KDI候補",
+            "placeholder": "自分の行動で変えられる行動指標を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "vanity_metric_risk",
+            "label": "見せかけの数字候補",
+            "placeholder": "増えても本質的な改善とは限らない数字があれば書いてください",
+            "rows": 4
+          }
+        ],
+        "answer_placeholder": "理想状態、KGI/KPI/KDI、行動で変えられる指標、見せかけの数字へのチェックを書いてください。",
+        "learner_guidance": [
+          "個人名・顧客名・会社の機密情報は入れず、匿名化した表現や役割名で入力してください",
+          "あなたの職種に合わせて、ワークの問いかけを調整します",
+          "回答が足りない場合は、AIが追加で質問します",
+          "正解を当てるワークではなく、自分の状況を構造化するワークです",
+          "抽象的な回答の場合は、もう一度整理してもらうことがあります"
+        ],
+        "personalization_policy": "受講者の職種・業務・テーマに合わせて例示と問いかけを調整する。ただしワークの本質、順序、完了条件は変えない。",
+        "ai_evaluation_enabled": true,
+        "ai_response_schema": "barise-work-evaluation-v1",
+        "evaluation_knowledge": {
+          "workId": "W-P2-02",
+          "title": "W2：理想定義ワーク",
+          "workGoal": "うまくいっている状態をKGI/KPI/KDIで定義し、見せかけの数字を避ける",
+          "passRequiredElements": [
+            "理想状態が定性・定量の両方で具体化されている",
+            "KGI/KPI/KDIが区別されている",
+            "行動で変えられる指標がある",
+            "見せかけの数字へのチェックが入っている"
+          ],
+          "aCriteria": [
+            "KGI=最終成果、KPI=途中成果、KDI=行動量/行動品質として定義されている",
+            "理想状態が現状との比較で分かる",
+            "自分が変えられるKDIが入っている",
+            "増えても成果に直結しない数字を見せかけ指標として除外/注意している"
+          ],
+          "bCriteria": [
+            "KGI/KPI/KDIはあるが一部混同している",
+            "理想はあるが定量・定性の片方が弱い",
+            "見せかけ指標への注意が抽象的"
+          ],
+          "cCriteria": [
+            "理想が売上を上げるだけで具体性がない",
+            "KGI/KPI/KDIの区別がない",
+            "行動で変えられる指標がない"
+          ],
+          "commonMisconceptions": [
+            "売上だけ見ればよいと考える",
+            "KPIとKDIを混同する",
+            "架電数など行動量だけを成果指標にする"
+          ],
+          "modelAnswerChecklist": [
+            "理想状態",
+            "KGI",
+            "KPI",
+            "KDI",
+            "見せかけ指標",
+            "確認頻度"
+          ],
+          "badAnswerPatterns": [
+            "KGIは頑張ることです",
+            "KPIは売上と架電数です",
+            "フォロワーが増えれば成功です"
+          ],
+          "modelAnswerExample": "理想状態は、初回商談後に顧客の優先課題と次回提案の目的が合意され、3ヶ月後に提案化率が30%から45%、月6件から9件へ増えている状態です。KGIは月間受注3件です。KPIは初回商談から次回提案に進んだ件数と提案化率です。KDIは商談前に仮説質問3つを準備した件数、商談中に現状・理想・障害・決裁条件を確認できた項目数です。見せかけの数字は架電数だけです。架電数が増えても提案化率が上がらなければ本質改善ではないため、毎週金曜にKPIとKDIをセットで見ます。"
+        }
+      },
+      {
+        "work_id": "W-P2-03",
+        "phase_id": "P2",
+        "related_lesson_ids": [
+          "P2-05",
+          "P2-06"
+        ],
+        "work_order": 3,
+        "title": "W3：問題の深掘りとイシュー特定ワーク",
+        "purpose": "問題の真因を掘り下げ、取り組むべき最重要イシューを特定する",
+        "questions": [
+          "うまくいかなかった具体例を選ぶ",
+          "なぜなぜ分析で真因へ近づく",
+          "取り組むべきイシューを特定する",
+          "最重要KPIを決める"
+        ],
+        "unlock_condition": "MW-P2-05 and MW-P2-06 passed",
+        "display_before_unlock": "name_only",
+        "source": "Phase2_W1-W5_判断力を養う思考教育_統合版.md",
+        "related_lesson_id": "P2-05",
+        "display_label": "ワーク",
+        "display_status": "confirmed",
+        "hidden_from_learner": false,
+        "is_candidate": false,
+        "prompt": "初回ヒアリングを入力すると、AIがあなたの文脈に合わせてワークの問いを整えます。",
+        "helper_text": "追加質問・再回答・最終フィードバックまで、この学習ページ内で進めます。",
+        "passing_score": 80,
+        "work_goal": "問題の真因を深掘りし、取り組むべきイシューを特定する",
+        "target_skill": "なぜなぜ分析 / 真因特定 / イシュー思考",
+        "show_to_learner": true,
+        "status": "ready",
+        "entry_description": "W2の理想に届かない原因を掘り下げ、解くべき問題を絞ります。",
+        "theme_intake_questions": [
+          "今回改善したいテーマは何ですか？",
+          "現在どのような状況ですか？",
+          "理想の状態は何ですか？",
+          "今いちばん困っていることは何ですか？"
+        ],
+        "ai_prompt_policy": "ワークの本質は変えず、受講者の職種・テーマ・回答状況に合わせて例示、問いかけ、再回答誘導を調整する。",
+        "ai_work_prompt_template": "W3では、具体的な失敗場面を起点に、なぜなぜ分析、真因特定、イシュー/最重要KPI特定を問うワークを生成する。",
+        "completion_condition": "W別の完了条件を満たし、AI最終フィードバックが届いた状態",
+        "core_essence": "問題の真因を深掘りし、取り組むべきイシューを特定する",
+        "required_intake_keys": [
+          "learner_theme",
+          "failure_case",
+          "why_analysis",
+          "root_cause_candidate",
+          "issue_candidate",
+          "key_metric"
+        ],
+        "completion_criteria": [
+          "うまくいかなかった具体例がある",
+          "なぜなぜ分析が表面的で終わっていない",
+          "真因が実行可能な改善につながる粒度になっている",
+          "取り組むべきイシューが特定されている"
+        ],
+        "learner_output": "真因と最重要イシューの整理メモ",
+        "previous_work_connection": "W2で定義した理想状態と指標をもとに、どこが詰まっているかを深掘りします。",
+        "next_work_connection": "W4では、特定したイシューに対して仮説と検証計画を立てます。",
+        "intake_fields": [
+          {
+            "key": "profile_role_industry",
+            "label": "職種 / 業種",
+            "placeholder": "例: 法人営業 / IT、人事担当 / 教育、店舗責任者 / 小売など",
+            "rows": 3,
+            "common_profile": true
+          },
+          {
+            "key": "profile_current_work",
+            "label": "現在の主な業務",
+            "placeholder": "普段担当している業務や活動を、匿名化して書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_theme",
+            "label": "今回扱いたいテーマ",
+            "placeholder": "このワーク全体で改善・整理したいテーマを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_problem",
+            "label": "いま困っていること / 改善したいこと",
+            "placeholder": "公開できない顧客名・個人名は入れず、役割名で書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_goal",
+            "label": "目標・達成したい状態",
+            "placeholder": "どの状態になれば前進と言えるかを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_case_example",
+            "label": "具体例に使ってよい業務ケース",
+            "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "learner_theme",
+            "label": "今回改善したいテーマ",
+            "placeholder": "例: 初回商談で課題を深掘りできるようにしたい",
+            "rows": 4
+          },
+          {
+            "key": "failure_case",
+            "label": "うまくいかなかった具体例",
+            "placeholder": "直近の失敗・停滞・違和感が出た場面を1つ書いてください",
+            "rows": 4
+          },
+          {
+            "key": "why_analysis",
+            "label": "なぜなぜ分析のメモ",
+            "placeholder": "なぜ起きたのかを2〜3段階で掘ってみてください",
+            "rows": 5
+          },
+          {
+            "key": "root_cause_candidate",
+            "label": "真因候補",
+            "placeholder": "構造・プロセス・環境・準備のどこに原因がありそうかを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "issue_candidate",
+            "label": "取り組むべきイシュー候補",
+            "placeholder": "白黒つけるべき最重要課題を1つ選んでください",
+            "rows": 4
+          },
+          {
+            "key": "key_metric",
+            "label": "最重要KPI候補",
+            "placeholder": "この問題が改善したかを見る数字を書いてください",
+            "rows": 4
+          }
+        ],
+        "answer_placeholder": "具体例、なぜなぜ分析、真因候補、取り組むべきイシュー、最重要KPIを書いてください。",
+        "learner_guidance": [
+          "個人名・顧客名・会社の機密情報は入れず、匿名化した表現や役割名で入力してください",
+          "あなたの職種に合わせて、ワークの問いかけを調整します",
+          "回答が足りない場合は、AIが追加で質問します",
+          "正解を当てるワークではなく、自分の状況を構造化するワークです",
+          "抽象的な回答の場合は、もう一度整理してもらうことがあります"
+        ],
+        "personalization_policy": "受講者の職種・業務・テーマに合わせて例示と問いかけを調整する。ただしワークの本質、順序、完了条件は変えない。",
+        "ai_evaluation_enabled": true,
+        "ai_response_schema": "barise-work-evaluation-v1",
+        "evaluation_knowledge": {
+          "workId": "W-P2-03",
+          "title": "W3：問題の深掘りとイシュー特定ワーク",
+          "workGoal": "問題の真因を深掘りし、取り組むべきイシューを特定する",
+          "passRequiredElements": [
+            "うまくいかなかった具体例がある",
+            "なぜなぜ分析が表面的で終わっていない",
+            "真因が実行可能な改善につながる粒度になっている",
+            "取り組むべきイシューが特定されている",
+            "最重要KPIまたは改善確認指標がある"
+          ],
+          "aCriteria": [
+            "具体的な失敗/停滞場面から始まっている",
+            "人の能力不足で終わらず、準備・仕組み・プロセスなど改善可能な真因に到達している",
+            "解くべき問いが1つに絞られている",
+            "改善したか確認できる数値がある"
+          ],
+          "bCriteria": [
+            "具体例はあるが、なぜ分析が2段階程度で浅い",
+            "イシュー候補はあるが真因との接続が弱い",
+            "KPIがあるが測定方法が曖昧"
+          ],
+          "cCriteria": [
+            "失敗例がない",
+            "真因が気合不足・忙しいで止まっている",
+            "複数課題が並び、取り組むべきイシューが決まっていない"
+          ],
+          "commonMisconceptions": [
+            "なぜなぜ分析を反省文にする",
+            "仕組みではなく性格原因で終わる",
+            "イシューではなくToDoを書く"
+          ],
+          "modelAnswerChecklist": [
+            "具体例",
+            "なぜなぜ分析",
+            "真因",
+            "イシュー",
+            "最重要KPI",
+            "次に確かめること"
+          ],
+          "badAnswerPatterns": [
+            "原因は準備不足です",
+            "もっと頑張る必要があります",
+            "全部改善します"
+          ],
+          "modelAnswerExample": "先週月曜のA社商談で、サービス説明後に検討しますと言われ返信が止まりました。直近10件の商談で次回提案に進んだのは3件です。なぜ止まったか。提案が顧客の優先課題に結びつかなかったからです。なぜ結びつかなかったか。商談中に現状・理想・障害を聞けていなかったからです。なぜ聞けなかったか。商談前に仮説質問を準備していなかったからです。真因は、商談前の仮説質問準備プロセスがないことです。イシューは、商談前に3つの仮説質問を用意すれば提案化率が上がるのではないか、です。最重要KPIは次回提案化率です。"
+        }
+      },
+      {
+        "work_id": "W-P2-04",
+        "phase_id": "P2",
+        "related_lesson_ids": [
+          "P2-07",
+          "P2-08"
+        ],
+        "work_order": 4,
+        "title": "W4：仮説設計と検証修正ワーク",
+        "purpose": "イシューに対して仮説を立て、検証し、結果から修正できるようにする",
+        "questions": [
+          "イシューに対する仮説を立てる",
+          "根拠と検証方法を整理する",
+          "期限と必要データを決める",
+          "結果から修正ポイントを説明する"
+        ],
+        "unlock_condition": "MW-P2-07 and MW-P2-08 passed",
+        "display_before_unlock": "name_only",
+        "source": "Phase2_W1-W5_判断力を養う思考教育_統合版.md",
+        "related_lesson_id": "P2-07",
+        "display_label": "ワーク",
+        "display_status": "confirmed",
+        "hidden_from_learner": false,
+        "is_candidate": false,
+        "prompt": "初回ヒアリングを入力すると、AIがあなたの文脈に合わせてワークの問いを整えます。",
+        "helper_text": "追加質問・再回答・最終フィードバックまで、この学習ページ内で進めます。",
+        "passing_score": 80,
+        "work_goal": "イシューに対する仮説を立て、検証し、結果から修正できるようにする",
+        "target_skill": "仮説設計 / 検証計画 / KPT・YWTM / 修正思考",
+        "show_to_learner": true,
+        "status": "ready",
+        "entry_description": "W3で選んだイシューに対して、検証できる仮説と修正の道筋を作ります。",
+        "theme_intake_questions": [
+          "今回改善したいテーマは何ですか？",
+          "現在どのような状況ですか？",
+          "理想の状態は何ですか？",
+          "今いちばん困っていることは何ですか？"
+        ],
+        "ai_prompt_policy": "ワークの本質は変えず、受講者の職種・テーマ・回答状況に合わせて例示、問いかけ、再回答誘導を調整する。",
+        "ai_work_prompt_template": "W4では、イシューに対する仮説、根拠、検証計画、KPT/YWTM、結果に応じた修正ポイントを問うワークを生成する。",
+        "completion_condition": "W別の完了条件を満たし、AI最終フィードバックが届いた状態",
+        "core_essence": "イシューに対する仮説を立て、検証し、結果から修正できるようにする",
+        "required_intake_keys": [
+          "issue",
+          "hypothesis",
+          "hypothesis_reason",
+          "verification_plan",
+          "required_data",
+          "deadline",
+          "next_action_by_result"
+        ],
+        "completion_criteria": [
+          "イシューに対する仮説がある",
+          "仮説の根拠がある",
+          "検証方法・必要データ・期限がある",
+          "検証結果に応じた次アクションがある",
+          "修正ポイントを構造で説明できる"
+        ],
+        "learner_output": "仮説・検証計画・修正ポイントの設計メモ",
+        "previous_work_connection": "W3で特定したイシューに対して、何を検証すれば前に進むかを設計します。",
+        "next_work_connection": "W5では、W1〜W4の思考プロセスを他者の課題分析に応用します。",
+        "intake_fields": [
+          {
+            "key": "profile_role_industry",
+            "label": "職種 / 業種",
+            "placeholder": "例: 法人営業 / IT、人事担当 / 教育、店舗責任者 / 小売など",
+            "rows": 3,
+            "common_profile": true
+          },
+          {
+            "key": "profile_current_work",
+            "label": "現在の主な業務",
+            "placeholder": "普段担当している業務や活動を、匿名化して書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_theme",
+            "label": "今回扱いたいテーマ",
+            "placeholder": "このワーク全体で改善・整理したいテーマを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_problem",
+            "label": "いま困っていること / 改善したいこと",
+            "placeholder": "公開できない顧客名・個人名は入れず、役割名で書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_goal",
+            "label": "目標・達成したい状態",
+            "placeholder": "どの状態になれば前進と言えるかを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_case_example",
+            "label": "具体例に使ってよい業務ケース",
+            "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "issue",
+            "label": "検証したいイシュー",
+            "placeholder": "W3で見つけた課題、または今回検証したい課題を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "hypothesis",
+            "label": "仮説",
+            "placeholder": "もし何を変えれば、どの結果が変わると考えていますか",
+            "rows": 4
+          },
+          {
+            "key": "hypothesis_reason",
+            "label": "仮説の根拠",
+            "placeholder": "その仮説を立てた理由、観察、データ、事実を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "verification_plan",
+            "label": "検証方法",
+            "placeholder": "何を、いつ、どのデータで確認するかを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "required_data",
+            "label": "必要なデータ",
+            "placeholder": "確認する数字、相手の反応、記録する内容を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "deadline",
+            "label": "検証期限",
+            "placeholder": "いつまでに結果を確認するかを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "result_or_learning",
+            "label": "結果または学び",
+            "placeholder": "すでに試した場合は結果を、未実施なら想定される学びを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "next_action_by_result",
+            "label": "結果に応じた次アクション",
+            "placeholder": "当たった場合/外れた場合に次に何をするかを書いてください",
+            "rows": 4
+          }
+        ],
+        "answer_placeholder": "イシュー、仮説、根拠、検証方法、必要データ、期限、結果に応じた次アクション、修正ポイントを書いてください。検証結果は未実施でも構いません。",
+        "learner_guidance": [
+          "個人名・顧客名・会社の機密情報は入れず、匿名化した表現や役割名で入力してください",
+          "あなたの職種に合わせて、ワークの問いかけを調整します",
+          "回答が足りない場合は、AIが追加で質問します",
+          "正解を当てるワークではなく、自分の状況を構造化するワークです",
+          "抽象的な回答の場合は、もう一度整理してもらうことがあります"
+        ],
+        "personalization_policy": "受講者の職種・業務・テーマに合わせて例示と問いかけを調整する。ただしワークの本質、順序、完了条件は変えない。",
+        "ai_evaluation_enabled": true,
+        "ai_response_schema": "barise-work-evaluation-v1",
+        "w4_verification_result_required": false,
+        "w4_passable_with_verification_plan": true,
+        "evaluation_knowledge": {
+          "workId": "W-P2-04",
+          "title": "W4：仮説設計と検証修正ワーク",
+          "workGoal": "イシューに対する仮説を立て、検証し、結果から修正できるようにする",
+          "passRequiredElements": [
+            "イシューに対する仮説がある",
+            "仮説の根拠がある",
+            "検証方法・必要データ・期限がある",
+            "検証結果に応じた次アクションがある",
+            "修正ポイントを構造で説明できる"
+          ],
+          "aCriteria": [
+            "未実施でも、仮説・検証方法・期限・見る指標が具体的ならA/pass候補",
+            "当たった場合/外れた場合の次アクションが分かれている",
+            "検証で何を学ぶかが書かれている",
+            "KPT/YWTMなどの振り返り観点が修正につながっている"
+          ],
+          "bCriteria": [
+            "仮説と検証方法はあるが期限または必要データが不足",
+            "結果後の次アクションが1パターンしかない",
+            "修正ポイントが抽象的"
+          ],
+          "cCriteria": [
+            "仮説ではなく願望になっている",
+            "検証方法がない",
+            "未実施という理由だけで計画が具体化されていない"
+          ],
+          "commonMisconceptions": [
+            "検証済み結果がないと通過できないと誤解する",
+            "仮説と施策を混同する",
+            "外れた場合の修正案を書かない"
+          ],
+          "modelAnswerChecklist": [
+            "イシュー",
+            "仮説",
+            "根拠",
+            "検証方法",
+            "必要データ",
+            "期限",
+            "当たり/外れ時の次アクション"
+          ],
+          "badAnswerPatterns": [
+            "質問を増やせばよくなると思います",
+            "来週試します",
+            "結果を見て考えます"
+          ],
+          "modelAnswerExample": "イシューは、商談前の仮説質問準備が次回提案化率を上げるかです。仮説は、商談前に現状・理想・障害の質問を3つ準備すれば、顧客の優先課題を確認でき、提案化率が上がるのではないか、です。根拠は、過去に質問を準備した2件はどちらも次回提案へ進み、準備なしの商談では導入時期や決裁条件を聞けず止まったからです。検証は今週の商談3件で行い、質問準備の有無、確認できた項目数、3営業日以内の返信有無、次回提案化を記録します。期限は金曜18:00です。当たった場合は質問テンプレート化し、外れた場合は質問内容ではなく相手選定・決裁条件確認に仮説を修正します。"
+        }
+      },
+      {
+        "work_id": "W-P2-05",
+        "phase_id": "P2",
+        "related_lesson_ids": [
+          "P2-09",
+          "P2-10"
+        ],
+        "work_order": 5,
+        "title": "W5：他者適用ワーク",
+        "purpose": "W1〜W4の思考プロセスを、他者の課題分析・介入・説明に応用する",
+        "questions": [
+          "他者の状況を構造化する",
+          "結論と根拠を整理する",
+          "W1〜W4の観点で問題段階を特定する",
+          "介入ポイントと期待変化を決める"
+        ],
+        "unlock_condition": "MW-P2-09 and MW-P2-10 passed",
+        "display_before_unlock": "name_only",
+        "source": "Phase2_W1-W5_判断力を養う思考教育_統合版.md",
+        "related_lesson_id": "P2-09",
+        "display_label": "ワーク",
+        "display_status": "confirmed",
+        "hidden_from_learner": false,
+        "is_candidate": false,
+        "prompt": "初回ヒアリングを入力すると、AIがあなたの文脈に合わせてワークの問いを整えます。",
+        "helper_text": "追加質問・再回答・最終フィードバックまで、この学習ページ内で進めます。",
+        "passing_score": 80,
+        "work_goal": "W1〜W4の思考プロセスを、他者の課題分析・介入・説明に応用する",
+        "target_skill": "他者状況の構造化 / ピラミッドストラクチャー / 介入設計",
+        "show_to_learner": true,
+        "status": "ready",
+        "entry_description": "自分で扱った思考プロセスを、他者・顧客・現場の課題分析へ展開します。",
+        "theme_intake_questions": [
+          "今回改善したいテーマは何ですか？",
+          "現在どのような状況ですか？",
+          "理想の状態は何ですか？",
+          "今いちばん困っていることは何ですか？"
+        ],
+        "ai_prompt_policy": "ワークの本質は変えず、受講者の職種・テーマ・回答状況に合わせて例示、問いかけ、再回答誘導を調整する。",
+        "ai_work_prompt_template": "W5では、他者状況の構造化、結論と根拠、W1〜W4観点での問題段階、介入ポイント、第三者への説明を問うワークを生成する。",
+        "completion_condition": "W別の完了条件を満たし、AI最終フィードバックが届いた状態",
+        "core_essence": "W1〜W4の思考プロセスを、他者の課題分析・介入・説明に応用する",
+        "required_intake_keys": [
+          "target_person",
+          "target_problem",
+          "evidence",
+          "w1_w4_stage",
+          "intervention_point",
+          "expected_change",
+          "explanation_summary"
+        ],
+        "completion_criteria": [
+          "他者の課題が具体化されている",
+          "結論と根拠が整理されている",
+          "W1〜W4の観点で問題段階を特定できている",
+          "介入ポイントと期待変化が明確になっている",
+          "第三者に説明できる形でまとめられている"
+        ],
+        "learner_output": "他者課題の構造分析と介入ポイントの説明メモ",
+        "previous_work_connection": "W1〜W4で扱った現状・理想・イシュー・仮説検証の型を、他者のケースへ適用します。",
+        "next_work_connection": "Phase2の総仕上げとして、第三者にも説明できる判断プロセスへ整えます。",
+        "intake_fields": [
+          {
+            "key": "profile_role_industry",
+            "label": "職種 / 業種",
+            "placeholder": "例: 法人営業 / IT、人事担当 / 教育、店舗責任者 / 小売など",
+            "rows": 3,
+            "common_profile": true
+          },
+          {
+            "key": "profile_current_work",
+            "label": "現在の主な業務",
+            "placeholder": "普段担当している業務や活動を、匿名化して書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_theme",
+            "label": "今回扱いたいテーマ",
+            "placeholder": "このワーク全体で改善・整理したいテーマを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_problem",
+            "label": "いま困っていること / 改善したいこと",
+            "placeholder": "公開できない顧客名・個人名は入れず、役割名で書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_goal",
+            "label": "目標・達成したい状態",
+            "placeholder": "どの状態になれば前進と言えるかを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_case_example",
+            "label": "具体例に使ってよい業務ケース",
+            "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "target_person",
+            "label": "対象者",
+            "placeholder": "分析したい相手、顧客、チーム、現場などを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "target_problem",
+            "label": "対象者の課題",
+            "placeholder": "相手が困っていること、成果が出ていない場面を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "evidence",
+            "label": "根拠情報",
+            "placeholder": "観察した事実、相手の発言、数字、行動を書いてください",
+            "rows": 4
+          },
+          {
+            "key": "w1_w4_stage",
+            "label": "W1〜W4で見た問題段階",
+            "placeholder": "現状構造、理想定義、イシュー、仮説検証のどこに問題がありそうかを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "intervention_point",
+            "label": "介入ポイント",
+            "placeholder": "どこに働きかけると変化が起きそうかを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "expected_change",
+            "label": "期待する変化",
+            "placeholder": "介入後に何がどう変わればよいかを書いてください",
+            "rows": 4
+          },
+          {
+            "key": "explanation_summary",
+            "label": "第三者への説明メモ",
+            "placeholder": "結論、根拠、介入案を短く説明してください",
+            "rows": 5
+          }
+        ],
+        "answer_placeholder": "対象者の課題、根拠、W1〜W4のどこに問題があるか、介入ポイント、期待変化、第三者への説明を書いてください。",
+        "learner_guidance": [
+          "個人名・顧客名・会社の機密情報は入れず、匿名化した表現や役割名で入力してください",
+          "あなたの職種に合わせて、ワークの問いかけを調整します",
+          "回答が足りない場合は、AIが追加で質問します",
+          "正解を当てるワークではなく、自分の状況を構造化するワークです",
+          "抽象的な回答の場合は、もう一度整理してもらうことがあります"
+        ],
+        "personalization_policy": "受講者の職種・業務・テーマに合わせて例示と問いかけを調整する。ただしワークの本質、順序、完了条件は変えない。",
+        "ai_evaluation_enabled": true,
+        "ai_response_schema": "barise-work-evaluation-v1",
+        "evaluation_knowledge": {
+          "workId": "W-P2-05",
+          "title": "W5：他者適用ワーク",
+          "workGoal": "W1〜W4の思考プロセスを、他者の課題分析・介入・説明に応用する",
+          "passRequiredElements": [
+            "他者の課題が具体化されている",
+            "結論と根拠が整理されている",
+            "W1〜W4の観点で問題段階を特定できている",
+            "介入ポイントと期待変化が明確になっている",
+            "第三者に説明できる形でまとめられている"
+          ],
+          "aCriteria": [
+            "対象者・状況・観察事実/数字がある",
+            "結論→根拠→介入案の順で説明できる",
+            "W1現状構造、W2理想/指標、W3イシュー、W4仮説検証のどこで詰まっているかを特定している",
+            "介入後に何が変わるかを数値または行動変化で説明している"
+          ],
+          "bCriteria": [
+            "他者課題はあるが根拠が薄い",
+            "W1〜W4の段階特定が曖昧",
+            "介入案はあるが期待変化が抽象的"
+          ],
+          "cCriteria": [
+            "他者への感想・助言だけで分析になっていない",
+            "根拠がなく決めつけている",
+            "介入ポイントが頑張らせるなど行動不能"
+          ],
+          "commonMisconceptions": [
+            "相手へのアドバイスを書けばよいと誤解する",
+            "本人の能力不足で終える",
+            "W1〜W4の型を使わない"
+          ],
+          "modelAnswerChecklist": [
+            "対象者",
+            "課題",
+            "根拠",
+            "問題段階",
+            "介入ポイント",
+            "期待変化",
+            "説明メモ"
+          ],
+          "badAnswerPatterns": [
+            "新人にもっと準備してもらいます",
+            "顧客対応が苦手そうです",
+            "全体的に改善が必要です"
+          ],
+          "modelAnswerExample": "対象者は入社3ヶ月の営業担当Bさんです。先週の商談3件中2件が検討しますで止まり、商談メモにはサービス説明はありますが現状・理想・障害・決裁条件がほぼありません。結論は、Bさんの問題はトーク力ではなく、W1の現状構造化とW3のイシュー特定の前段で詰まっていることです。根拠は、商談数は足りていますが次回提案化が20%前後で、顧客課題の記録が不足しているためです。介入ポイントは商談前に仮説質問3つを一緒に作ることです。期待変化は、確認項目数が1件あたり1個から4個に増え、次回提案化率が20%から30%以上に上がることです。第三者には、準備不足を責めるのではなく、質問設計の型を入れる支援が必要と説明します。"
+        }
+      }
+    ],
+    "progress": [],
+    "submissions": [],
+    "evaluationResults": [],
+    "evaluationCriteria": [
+      {
+        "criteria_id": "EC-P1-01",
+        "phase_id": "P1",
+        "target_type": "mini_work",
+        "target_id": "MW-P1-01",
+        "lesson_id": "P1-01",
+        "title": "ビジネス遂行力",
+        "learner_prompt_source": "> 今日の動画で学んだ5つの行動から、**明日から実践すること**を1つ選んで回答してください。\n>\n> - 自分から先に挨拶をする\n> - 枕言葉を1つ使ってみる\n> - 報連相を「着手・中間・完了」の3点で行う\n> - 会議・研修で意識的に頷く・笑顔を出す（強化子）\n> - 職場で誰かが見てみぬふりをしていることを1つ拾う（徳を積む）\n>\n> **回答形式：**\n> ① 選んだ行動はどれですか？\n> ② なぜその行動を選びましたか？\n> ③ 具体的にいつ・どんな場面で試しますか？",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A：よくできました）",
+            "criteria": "行動が1つに絞られている／選んだ理由が自分の言葉で書かれている／いつ・どこで・どんな場面で試すかが具体的に書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B：もう一歩）",
+            "criteria": "行動は選べているが、理由や場面の説明が抽象的または短い（「やってみます」「大切だと思ったから」など）"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C：再挑戦しよう）",
+            "criteria": "複数の行動を選んでいる／行動が選ばれていない／「全部やります」「特になし」など内容がない"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_プチワーク評価基準_サンプル_フェーズ1_01.md.txt",
+        "learner_prompt_full": "今日の動画で学んだ行動から、明日から実践することを1つ選んで回答してください。①選んだ行動はどれですか？②なぜその行動を選びましたか？③具体的にいつ・どんな場面で試しますか？",
+        "core_messages": [
+          "小さな行動を1つに絞り、明日の実践場面まで決めることで、学びを行動に変える。"
+        ],
+        "common_misconceptions": [
+          "全部やります、は実行につながりにくい。",
+          "大切だと思っただけでは、行動理由や実践場面が不足する。"
+        ],
+        "required_elements": [
+          "行動が1つに絞られている",
+          "選んだ理由が自分の言葉で書かれている",
+          "いつ・どこで・どんな場面で試すかが具体的に書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P1-02",
+        "phase_id": "P1",
+        "target_type": "mini_work",
+        "target_id": "MW-P1-02",
+        "lesson_id": "P1-02",
+        "title": "自己管理・セルフマネジメント",
+        "learner_prompt_source": "> 今日の動画で学んだ5つの方法から、**今日から試すこと**を1つ選んで回答してください。\n>\n> - 「5分だけやってみる」ルールを決める\n> - 集中できる「作業場所」を1つ決める\n> - やりたいことの前に小さなご褒美を設定する\n> - SNSアプリを1つ削除、または通知をオフにする\n> - 今日のタスクを4つ以内に絞ってみる\n>\n> **回答形式：**\n> ① 選んだ方法はどれですか？\n> ② なぜその方法を選びましたか？\n> ③ 具体的にどんな場面・状況で試しますか？",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A：よくできました）",
+            "criteria": "方法が1つに絞られている／選んだ理由が自分の言葉で書かれている（「仕組みで動く」という本質への理解が感じられる）／具体的な場面や状況が書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B：もう一歩）",
+            "criteria": "方法は選べているが、理由や場面が抽象的または短い。または「やる気が出てきたら試す」「気が向いたらやる」など、やる気を待つ姿勢が残っている"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C：再挑戦しよう）",
+            "criteria": "複数選択／何も選んでいない／「全部やります」など1つに絞れていない／内容が極端に薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_プチワーク評価基準_フェーズ1_02.md.txt",
+        "learner_prompt_full": "今日の動画で学んだ5つの方法から、今日から試すことを1つ選んで回答してください。①選んだ方法はどれですか？②なぜその方法を選びましたか？③具体的にどんな場面・状況で試しますか？",
+        "core_messages": [
+          "モチベーションは感情ではなく仕組みでつくる。",
+          "やる気は行動の原因ではなく結果。行動が先、感情があと。",
+          "意志力ではなく環境や仕組みを整える。"
+        ],
+        "common_misconceptions": [
+          "やる気が出たら試す、は動画の教えと逆。",
+          "モチベーションを上げるではなく、仕組みで動くことが本質。",
+          "全部試すより、1つに絞ることが習慣化につながる。"
+        ],
+        "required_elements": [
+          "方法が1つに絞られている",
+          "選んだ理由が自分の言葉で書かれている（「仕組みで動く」という本質への理解が感じられる）",
+          "具体的な場面や状況が書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P1-03",
+        "phase_id": "P1",
+        "target_type": "mini_work",
+        "target_id": "MW-P1-03",
+        "lesson_id": "P1-03",
+        "title": "タスク管理",
+        "learner_prompt_source": "> 今日の動画で学んだ方法の中から、**今日試すこと**を1つ選んで回答してください。\n>\n> - 「将来的意義があるか？」でタスクを選別する\n> - 今週断れる頼まれごとを1つ断ってみる\n> - 繰り返しやっていることを1つ自動化・外注する\n> - タスクに取り掛かる前に「後回しできるか？」を問いかける\n>\n> **回答形式：**\n> ① 選んだ方法はどれですか？\n> ② なぜその方法を選びましたか？\n> ③ 具体的にどのタスク・場面で試しますか？",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A）",
+            "criteria": "方法が1つに絞られている／理由が自分の言葉で書かれている／どのタスク・場面で試すか具体的に書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B）",
+            "criteria": "方法は選べているが、「なぜ選んだか」「どの場面で使うか」が抽象的または薄い"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C・再提出必須）",
+            "criteria": "複数選択・未選択・「全部やります」・内容が極端に薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ1_03.md.txt",
+        "learner_prompt_full": "今日の動画で学んだ方法から、今日試すことを1つ選んで回答してください。①選んだ方法はどれですか？②なぜその方法を選びましたか？③具体的にどのタスク・場面で試しますか？",
+        "core_messages": [
+          "時間は有限な資産であり、投資対効果で考える。",
+          "全部やるのではなく、将来的意義があるかで選別する。",
+          "忙しいことと生産的であることは別。"
+        ],
+        "common_misconceptions": [
+          "断る、自動化するなどの方法だけを書き、どの場面で使うかがない。",
+          "全部試します、で1つに絞れていない。"
+        ],
+        "required_elements": [
+          "方法が1つに絞られている",
+          "理由が自分の言葉で書かれている",
+          "どのタスク・場面で試すか具体的に書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P1-04",
+        "phase_id": "P1",
+        "target_type": "mini_work",
+        "target_id": "MW-P1-04",
+        "lesson_id": "P1-04",
+        "title": "マスト1思考",
+        "learner_prompt_source": "> 今日のワークを実際にやってみてください。\n>\n> **やること：**\n> 今日やるべきことを全部書き出す → その中から「一番重要なもの」を1つ選んで丸をつける\n>\n> **回答形式：**\n> ① 書き出したタスクの一覧（箇条書きでOK）\n> ② 「一番」に選んだタスクはどれですか？\n> ③ なぜそれが一番だと判断しましたか？",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A）",
+            "criteria": "タスクが複数書き出されている／「一番」が1つに絞られている／選んだ理由が「上司・顧客からの依頼優先」または「緊急度×重要度」の観点で書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B）",
+            "criteria": "タスクは書き出せているが「一番」の選び方の理由が薄い、または「急ぎだから」など緊急度のみで選んでいる"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C・再提出必須）",
+            "criteria": "タスクが1つしか書かれていない／一番が選ばれていない／「全部大事」で絞れていない"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ1_04.md.txt",
+        "learner_prompt_full": "今日やるべきことを全部書き出し、その中から一番重要なものを1つ選んでください。①書き出したタスク一覧②一番に選んだタスク③なぜそれが一番だと判断しましたか？",
+        "core_messages": [
+          "仕事が遅い人は全部やろうとする。マスト1は1つに集中する思考法。",
+          "一番は上司・顧客からの依頼優先、迷ったら緊急度×重要度で判断する。",
+          "朝一番にマスト1から始めることで生産性が変わる。"
+        ],
+        "common_misconceptions": [
+          "急ぎだから、だけで緊急度のみの判断になっている。",
+          "全部大事で絞れていない。",
+          "一番を複数選んでいる。"
+        ],
+        "required_elements": [
+          "タスクが複数書き出されている",
+          "「一番」が1つに絞られている",
+          "選んだ理由が「上司・顧客からの依頼優先」または「緊急度×重要度」の観点で書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P1-05",
+        "phase_id": "P1",
+        "target_type": "mini_work",
+        "target_id": "MW-P1-05",
+        "lesson_id": "P1-05",
+        "title": "目標・目的設定",
+        "learner_prompt_source": "> 両極端ワークをやってみましょう。\n>\n> **Step 1：無制限の世界**（もし何も制限がなければ）\n> - どこに行く？何をしたい？何が欲しい？誰を幸せにしたい？\n>\n> **Step 2：最後の1日**（もし今日が最後の1日なら）\n> - どこに行く？何をする？誰といる？やり残していることは？\n>\n> **Step 3：本当にやりたいことを1つに絞る**\n> - Step 1・2を踏まえて、あなたが本当に叶えたいことを1つ書いてください\n>\n> **回答形式：**\n> ① Step 1の回答（自由記述）\n> ② Step 2の回答（自由記述）\n> ③ 絞り込んだ「本当にやりたいこと」1つ＋それに期限をつけるとしたらいつ？",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A）",
+            "criteria": "Step 1・2が具体的に書かれている／「本当にやりたいこと」が1つに絞られている／期限が設定されている（または期限の考え方が示されている）"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B）",
+            "criteria": "Step 1・2は書けているが内容が現実的すぎる・抽象的すぎる、または「本当にやりたいこと」が絞れていない・期限がない"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C・再提出必須）",
+            "criteria": "Step 1か2どちらかしか書いていない／「やりたいことが分からない」のみ／内容が極端に薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ1_05.md.txt",
+        "learner_prompt_full": "両極端ワークを行ってください。①制限がなければ何をしたいか②今日が最後の1日なら何をするか③Step1・2を踏まえ、本当に叶えたいことを1つと期限を書いてください。",
+        "core_messages": [
+          "夢と目標の違いは期限があるかどうか。",
+          "強く描いたビジョンに脳が向かって動き出す。",
+          "制限なしと最後の1日の両端を見ることで本当にやりたいことが見える。"
+        ],
+        "common_misconceptions": [
+          "制限なしの回答が現実的すぎる。",
+          "やりたいことが分からない、だけで終わっている。",
+          "期限を設定していない。"
+        ],
+        "required_elements": [
+          "Step 1・2が具体的に書かれている",
+          "「本当にやりたいこと」が1つに絞られている",
+          "期限が設定されている（または期限の考え方が示されている）"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P1-06",
+        "phase_id": "P1",
+        "target_type": "mini_work",
+        "target_id": "MW-P1-06",
+        "lesson_id": "P1-06",
+        "title": "自責思考の罠",
+        "learner_prompt_source": "> 最近、自分が「うまくいかなかった」「失敗した」と感じた出来事を1つ思い浮かべてください。\n>\n> **回答形式：**\n> ① その出来事を簡単に教えてください（具体的に）\n> ② 「自分にできることは何か？」という自責の視点で考えると？\n> ③ 「構造・環境など、他の要因はないか？」という視点で考えると？",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A）",
+            "criteria": "出来事が具体的／自責の視点と構造・環境の視点の両方が書かれている／どちらか一方に偏らず、バランスよく考えられている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B）",
+            "criteria": "2つの視点は書いているが、一方が「全部自分が悪い」または「全部環境のせい」に偏っている"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C・再提出必須）",
+            "criteria": "出来事が書かれていない／どちらか1つの視点しか書いていない／「特になし」など内容がない"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ1_06.md.txt",
+        "learner_prompt_full": "最近うまくいかなかった出来事を1つ思い浮かべ、①出来事②自分にできること③構造・環境など他の要因、の3点で回答してください。",
+        "core_messages": [
+          "自責思考は大切だが、行き過ぎると全部自分が悪いという罠にはまる。",
+          "他責思考は成長を止める。",
+          "正しいのは自責の視点と構造・環境の視点を同時に持つこと。"
+        ],
+        "common_misconceptions": [
+          "自責と構造・環境の視点が同じ内容になっている。",
+          "構造・環境の視点を言い訳だと思って書けていない。",
+          "全部自分が悪い、で止まっている。"
+        ],
+        "required_elements": [
+          "出来事が具体的",
+          "自責の視点と構造・環境の視点の両方が書かれている",
+          "どちらか一方に偏らず、バランスよく考えられている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P1-07",
+        "phase_id": "P1",
+        "target_type": "mini_work",
+        "target_id": "MW-P1-07",
+        "lesson_id": "P1-07",
+        "title": "概念的思考力",
+        "learner_prompt_source": "> 今週、2つの練習をやってみてください。\n>\n> **練習①：具体化（抽象→具体）**\n> 今週取り組んでいる課題や仕事を1つ選び、「部署・時間帯・工程のどれか」で絞って考えてみてください。\n>\n> **練習②：抽象化（具体→抽象）**\n> 今日目に入った2つのものを選んで、共通点を1つ探してみてください。\n>\n> **回答形式：**\n> ① 練習①：選んだ課題と、絞り込んだ内容\n> ② 練習②：選んだ2つのものと、見つけた共通点",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A）",
+            "criteria": "練習①②どちらも書かれている／具体化は「詳しく書く」ではなく「範囲を絞っている」／抽象化の共通点が表面的な特徴でなく、本質的な性質・機能・構造を捉えている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B）",
+            "criteria": "両方書いているが、①が「詳しく書いただけ」か②の共通点が「似ている」「同じ色」など表面的にとどまっている"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C・再提出必須）",
+            "criteria": "練習①か②のどちらかしか書いていない／内容が極端に薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ1_07.md.txt",
+        "learner_prompt_full": "今週、具体化と抽象化の練習をしてください。①今週の課題を部署・時間帯・工程のどれかで絞る②今日目に入った2つのものの共通点を1つ探す。",
+        "core_messages": [
+          "できる人は具体と抽象の往復ができる。",
+          "具体化は詳しく書くことではなく範囲を絞ること。",
+          "抽象化は表面的特徴ではなく本質・構造・機能を取り出すこと。"
+        ],
+        "common_misconceptions": [
+          "具体化を詳しく書くだけだと捉えている。",
+          "抽象化の共通点が色や形など外見上の特徴にとどまっている。"
+        ],
+        "required_elements": [
+          "練習①②どちらも書かれている",
+          "具体化は「詳しく書く」ではなく「範囲を絞っている」",
+          "抽象化の共通点が表面的な特徴でなく、本質的な性質・機能・構造を捉えている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P1-08",
+        "phase_id": "P1",
+        "target_type": "mini_work",
+        "target_id": "MW-P1-08",
+        "lesson_id": "P1-08",
+        "title": "クリティカルシンキング",
+        "learner_prompt_source": "> 今週から、3つの練習のうち**1つ**を試してみてください。\n>\n> - **練習A**：依頼された仕事に「これは何のためですか？」を1回聞いてみる（前提と目的を問う）\n> - **練習B**：「これって今も通用するのかな？」と自分の意見に1回問いかけてみる（自分の意見を疑う）\n> - **練習C**：資料や提案を出す前に「相手はどう感じるか？」を30秒考えてみる（他の立場で考える）\n>\n> **回答形式：**\n> ① 選んだ練習はA・B・Cのどれですか？\n> ② なぜその練習を選びましたか？\n> ③ どんな場面・状況で試しますか？",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A）",
+            "criteria": "練習が1つに絞られている／選んだ理由が自分の仕事・状況と結びついている／具体的な場面が書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B）",
+            "criteria": "練習は選べているが、理由や場面が薄い。または「批判的思考＝相手を批判する」「疑う＝何でも否定する」などの誤解が感じられる"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C・再提出必須）",
+            "criteria": "複数選択・未選択・内容が薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ1_08.md.txt",
+        "learner_prompt_full": "3つの練習のうち1つを選んで回答してください。A:何のためかを聞く B:自分の意見に問いかける C:相手はどう感じるか考える。①選んだ練習②理由③試す場面。",
+        "core_messages": [
+          "クリティカルシンキングは相手を批判することではなく、前提・目的・立場を疑い本質を見極める思考。",
+          "疑うとは否定ではなく、本当にそうかと立ち止まること。",
+          "ロジカルシンキングと組み合わせると効果が高い。"
+        ],
+        "common_misconceptions": [
+          "批判的思考を相手を批判することと誤解している。",
+          "全部疑ったら何もできない、と誤解している。"
+        ],
+        "required_elements": [
+          "練習が1つに絞られている",
+          "選んだ理由が自分の仕事・状況と結びついている",
+          "具体的な場面が書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-01",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-01",
+        "lesson_id": "P2-01",
+        "title": "数値化の鬼",
+        "learner_prompt_source": "> 今日の動画で学んだ「数値化の鬼」の考え方を使って、自分の仕事に当てはめてみましょう。\n>\n> **回答形式：**\n> ① 今あなたが取り組んでいる（または直近の）仕事・タスクを1つ書いてください\n> ② そのタスクの「行動量」を数値で表すとしたら、何をどれくらいやる、と言えますか？\n> ③ その数値を「振り返り」に使うとしたら、いつ・どのように確認しますか？",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A：よくできました）",
+            "criteria": "具体的なタスクが1つ選ばれている／行動量が数値（回数・件数・時間など）で表されている／振り返りのタイミングや方法が具体的に書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B：もう一歩）",
+            "criteria": "タスクは書けているが、行動量が「頑張る」「なるべく多く」など数値になっていない。または振り返り方法が曖昧・未記入"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C：再挑戦しよう）",
+            "criteria": "タスクが書かれていない／数値化の試みがない／極端に内容が薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_01.md.txt",
+        "learner_prompt_full": "自分の仕事に数値化の鬼の考え方を当てはめてください。①取り組んでいる仕事・タスク②行動量を数値で表すと何をどれくらいやるか③その数値をいつ・どう振り返るか。",
+        "core_messages": [
+          "成果だけでなく行動量を数値化すると、改善すべき変数が見える。",
+          "数値は責めるためではなく振り返りと改善に使う。"
+        ],
+        "common_misconceptions": [
+          "頑張る、なるべく多く、など数値になっていない。",
+          "結果指標だけを書き、行動量がない。",
+          "振り返るタイミングや方法がない。"
+        ],
+        "required_elements": [
+          "具体的なタスクが1つ選ばれている",
+          "行動量が数値（回数・件数・時間など）で表されている",
+          "振り返りのタイミングや方法が具体的に書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-02",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-02",
+        "lesson_id": "P2-02",
+        "title": "戦略と戦術",
+        "learner_prompt_source": "> 今日の動画で学んだ「目的→戦略→戦術」の3層構造を、自分の仕事に当てはめてみましょう。\n>\n> **回答形式：**\n> ① 今取り組んでいるテーマや仕事の「目的（なんのため？）」を書いてください\n> ② その目的を達成するための「戦略（どのポジションで・どの方向で動くか）」を書いてください\n> ③ その戦略を実行するための「戦術（具体的な行動・手段）」を1〜2つ書いてください",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A：よくできました）",
+            "criteria": "目的・戦略・戦術の3つが揃っている／戦略が「やること（戦術）」ではなく「方向性・ポジション」として書かれている／自分の仕事に具体的に当てはめられている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B：もう一歩）",
+            "criteria": "3層は書けているが、戦略と戦術が混同されている（戦略欄に具体的なアクションが書かれているなど）。または目的が抽象的すぎる"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C：再挑戦しよう）",
+            "criteria": "3層のうち2つ以上が未記入、または「戦略＝戦術」として区別がつかない内容のみ"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_02.md.txt",
+        "learner_prompt_full": "今の取り組みを1つ選び、目的・戦略・戦術の3層で整理してください。戦略は方向性、戦術は具体的な打ち手として分けてください。",
+        "core_messages": [
+          "目的・戦略・戦術を分けると、行動が目的に接続する。",
+          "戦略は方向性やポジションであり、戦術は具体的な実行策。"
+        ],
+        "common_misconceptions": [
+          "戦略欄に具体的な作業を書き、戦術と混同している。",
+          "目的が抽象的で、何のための取り組みか分からない。"
+        ],
+        "required_elements": [
+          "目的・戦略・戦術の3つが揃っている",
+          "戦略が「やること（戦術）」ではなく「方向性・ポジション」として書かれている",
+          "自分の仕事に具体的に当てはめられている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-03",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-03",
+        "lesson_id": "P2-03",
+        "title": "KPI",
+        "learner_prompt_source": "> 今日の動画で学んだ「KPIの4つの問い」を使って、自分の仕事のKPIを点検してみましょう。\n>\n> **回答形式：**\n> ① 今あなたが持っているKPI（または目標数値）を1つ書いてください\n> ② そのKPIは「KGI（最終ゴール）」につながっていますか？どうつながっているか説明してください\n> ③ そのKPIを「毎日・毎週」追える状態になっていますか？追えているなら方法を、追えていないなら理由を書いてください",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A：よくできました）",
+            "criteria": "具体的なKPIが1つ書かれている／KGIとのつながりが説明されている／追跡の状態（できている・できていない理由）が具体的に書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B：もう一歩）",
+            "criteria": "KPIは書けているが、KGIとのつながりの説明が薄い。または「追えています」とだけ書かれており方法が不明"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C：再挑戦しよう）",
+            "criteria": "KPIが書かれていない／KGIとの関係が全く触れられていない／極端に内容が薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_03.md.txt",
+        "learner_prompt_full": "自分のKPIを1つ点検してください。①具体的なKPI②KGIとのつながり③追跡できているか・できていない理由④確認頻度や責任者。",
+        "core_messages": [
+          "KPIはKGIにつながる途中指標である。",
+          "追える状態にして初めて、改善行動へつなげられる。"
+        ],
+        "common_misconceptions": [
+          "KPIだけを書き、KGIとの関係がない。",
+          "追えています、だけで方法・頻度・理由がない。"
+        ],
+        "required_elements": [
+          "具体的なKPIが1つ書かれている",
+          "KGIとのつながりが説明されている",
+          "追跡の状態（できている・できていない理由）が具体的に書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-04",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-04",
+        "lesson_id": "P2-04",
+        "title": "KPI地獄",
+        "learner_prompt_source": "> 今日の動画で学んだ「KPI地獄」の脱出ステップを使って、自分の状況を点検してみましょう。\n>\n> **回答形式：**\n> ① 今あなたが持っているKPIをすべて書き出してください（多すぎる場合は代表的なものを5つ程度）\n> ② その中で「本当にKGI（最終ゴール）に直結しているKPI」はどれですか？\n> ③ もし絞るとしたら、今最も集中すべきKPIを1つ選んでください。その理由も書いてください",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "A: よくできました",
+            "criteria": "複数のKPIが書き出されている／KGIへの直結度で整理されている／1つに絞った理由が自分の言葉で書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "B: もう一歩",
+            "criteria": "KPIは書けているが、KGI視点での整理がされていない。または絞ったKPIの理由が『なんとなく』レベル"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "C: 再挑戦しよう",
+            "criteria": "KPIが1つも書かれていない、または絞り込みの試みがない"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_04.md.txt",
+        "learner_prompt_full": "チームや自分のKPIを見直してください。①今あるKPIを複数書き出す②KGIへの直結度で整理する③最優先のKPIを1つに絞り、その理由を書く。",
+        "core_messages": [
+          "KPIは多すぎると行動を迷わせる。",
+          "KGIへの直結度とKSFから、見るべきKPIを絞る。"
+        ],
+        "common_misconceptions": [
+          "KPIを多く並べるほど良いと考えている。",
+          "KGIへのつながりを見ずに、測りやすさだけで選んでいる。",
+          "数を減らしただけで理由がない。"
+        ],
+        "required_elements": [
+          "複数のKPIが書き出されている",
+          "KGIへの直結度で整理されている",
+          "1つに絞った理由が自分の言葉で書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-05",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-05",
+        "lesson_id": "P2-05",
+        "title": "イシュー",
+        "learner_prompt_source": "> 今日の動画で学んだ「イシュー思考」を使って、今抱えている課題を整理してみましょう。\n>\n> **回答形式：**\n> ① 今あなたが解決したいと思っている課題・悩みを1つ書いてください\n> ② その課題を「イシュー（答えを出すべき問い）」の形に言い換えてください（「〇〇ではないか？」という仮説の形）\n> ③ そのイシューを解くために「まず明らかにすべきこと（サブイシュー）」を1〜2つ書いてください",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A：よくできました）",
+            "criteria": "課題が1つに絞られている／「問いの形」に変換できている／サブイシューが課題解決に向けた具体的な問いとして書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B：もう一歩）",
+            "criteria": "課題は書けているが、イシュー化（問いの形への変換）が「〇〇をやる」という行動文になっている。またはサブイシューが行動リストになっている"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C：再挑戦しよう）",
+            "criteria": "課題が書かれていない／イシュー化の試みがない／極端に内容が薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_05.md.txt",
+        "learner_prompt_full": "課題を1つ選び、イシューとして問いの形に変換してください。①課題②「〇〇ではないか？」の問い③サブイシュー④優先順位。",
+        "core_messages": [
+          "イシューは解くべき問いであり、単なる作業リストではない。",
+          "サブイシューに分けることで、取り組む順番が見える。"
+        ],
+        "common_misconceptions": [
+          "イシューが「〇〇をやる」という行動文になっている。",
+          "サブイシューがToDoリストになっている。"
+        ],
+        "required_elements": [
+          "課題が1つに絞られている",
+          "「問いの形」に変換できている",
+          "サブイシューが課題解決に向けた具体的な問いとして書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-06",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-06",
+        "lesson_id": "P2-06",
+        "title": "仮説思考",
+        "learner_prompt_source": "> 今日の動画で学んだ「仮説思考」を、今抱えている課題や仕事に当てはめてみましょう。\n>\n> **回答形式：**\n> ① 今解決したい課題・うまくいっていないことを1つ書いてください\n> ② その課題の原因についての「仮説（〜ではないか？）」を1つ立ててください\n> ③ その仮説を検証するために「まず確認すること」を1つ書いてください",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A：よくできました）",
+            "criteria": "課題が1つ書かれている／仮説が「〜ではないか？」の形で立てられている（原因・メカニズムへの推論が含まれている）／検証方法が具体的に書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B：もう一歩）",
+            "criteria": "課題は書けているが、仮説が「〇〇をやれば解決する」という解決策になっている。または検証方法が「調べる」だけで具体性がない"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C：再挑戦しよう）",
+            "criteria": "課題が書かれていない／仮説の試みがない／極端に内容が薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_06.md.txt",
+        "learner_prompt_full": "課題を1つ選び、仮説を立ててください。①課題②原因やメカニズムの仮説「〜ではないか？」③それを検証する方法。",
+        "core_messages": [
+          "仮説思考は、原因やメカニズムを先に置いて検証する考え方。",
+          "So What?とWhy?を使い、結論と原因を行き来する。"
+        ],
+        "common_misconceptions": [
+          "仮説が解決策だけになっている。",
+          "検証方法が調べるだけで具体性がない。",
+          "なぜを問わず、思いつきの行動に飛んでいる。"
+        ],
+        "required_elements": [
+          "課題が1つ書かれている",
+          "仮説が「〜ではないか？」の形で立てられている（原因・メカニズムへの推論が含まれている）",
+          "検証方法が具体的に書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-07",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-07",
+        "lesson_id": "P2-07",
+        "title": "なぜなぜ分析",
+        "learner_prompt_source": "> 今日の動画で学んだ「なぜなぜ分析」を使って、最近起きた課題や失敗を分析してみましょう。\n>\n> **回答形式：**\n> ① 最近起きた課題・うまくいかなかったこと・失敗を1つ書いてください（できるだけ具体的に）\n> ② 「なぜそれが起きたか？」を5回を目安に繰り返してください（なぜ→なぜ→なぜ→なぜ→なぜ）\n> ③ 分析してみて「真因（根本原因）」だと思うことを1つ書いてください",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "A: よくできました",
+            "criteria": "具体的な事象が1つ書かれている／なぜが5回（目安）繰り返されている／真因が表面的な事象ではなく構造・仕組み・習慣レベルに到達している"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "B: もう一歩",
+            "criteria": "なぜなぜは試みているが、『なぜ』が3〜4回で止まっている。または真因が表面的な事象（『忙しかった』『忘れた』など）のレベルにとどまっている"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "C: 再挑戦しよう",
+            "criteria": "事象が書かれていない／なぜなぜの試みがない／極端に内容が薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_07.md.txt",
+        "learner_prompt_full": "繰り返し起きている問題を1つ選び、なぜを5回目安で深掘りしてください。①具体的な事象②なぜの連鎖③真因④対策⑤仕組み化。",
+        "core_messages": [
+          "なぜなぜ分析は表面的な原因で止めず、構造・仕組み・習慣レベルまで掘る。",
+          "人のせいで止めず、再発を防ぐ仕組みに変える。"
+        ],
+        "common_misconceptions": [
+          "なぜが1〜2回で止まり、深掘りが浅い。",
+          "真因が個人のせいで止まっている。",
+          "対策が注意する・頑張るだけになっている。"
+        ],
+        "required_elements": [
+          "具体的な事象が1つ書かれている",
+          "なぜが5回（目安）繰り返されている",
+          "真因が表面的な事象ではなく構造・仕組み・習慣レベルに到達している"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-08",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-08",
+        "lesson_id": "P2-08",
+        "title": "ふりかえり",
+        "learner_prompt_source": "> 今日の動画で学んだ「KPT＋YWTM」のフレームワークを使って、直近1週間を振り返ってみましょう。\n>\n> **回答形式：**\n> - **K（Keep）**：続けたいこと・うまくいっていること\n> - **P（Problem）**：課題・うまくいっていないこと\n> - **T（Try）**：次に試すこと（1つに絞る）\n> - **YWTM（やったこと・わかったこと・次にやること・メリット）**：今週の学びをまとめる（M＝次にやることの期待効果）",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A：よくできました）",
+            "criteria": "K・P・T・YWTMの5項目が揃っている／Tryが1つに絞られている／YWTの「わかったこと」が行動（やったこと）から引き出した学びになっている／MがTryに対応した期待効果として書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B：もう一歩）",
+            "criteria": "5項目は書けているが、Tryが複数ある、またはYWTの「わかったこと」が「やったこと」の言い換えにとどまっている。またはMがない・抽象的にとどまっている"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C：再挑戦しよう）",
+            "criteria": "5項目のうち2つ以上が空白、または「特になし」など内容が極端に薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_08.md.txt",
+        "learner_prompt_full": "KPTで発散し、YWTMで深掘りしてください。①Keep②Problem③Try④やったこと⑤わかったこと⑥次にやること⑦期待する効果。",
+        "core_messages": [
+          "KPTで振り返りを発散し、YWTMで学びと次の行動へ深める。",
+          "Tryは1つに絞ることで実行につながる。"
+        ],
+        "common_misconceptions": [
+          "Tryが複数あり、次の行動が散らかっている。",
+          "わかったことが、やったことの言い換えにとどまっている。",
+          "MがTryに対応した期待効果になっていない。"
+        ],
+        "required_elements": [
+          "K・P・T・YWTMの5項目が揃っている",
+          "Tryが1つに絞られている",
+          "YWTの「わかったこと」が行動（やったこと）から引き出した学びになっている",
+          "MがTryに対応した期待効果として書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-09",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-09",
+        "lesson_id": "P2-09",
+        "title": "ピラミッドストラクチャー",
+        "learner_prompt_source": "> 今日の動画で学んだ「ピラミッドストラクチャー」を使って、伝えたいことを整理してみましょう。\n>\n> **回答形式：**\n> ① 誰かに伝えたい・説得したいテーマを1つ書いてください（例：上司への提案、チームへの共有など）\n> ② そのテーマに関する「根拠・理由・事実」を3つ書き出してください\n> ③ それらをまとめた「結論・メインメッセージ（So What?）」を1文で書いてください",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "★★★（A：よくできました）",
+            "criteria": "テーマが明確／根拠が3点書かれている／「So What?」が根拠から論理的に導かれた1文になっている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "★★（B：もう一歩）",
+            "criteria": "テーマと根拠は書けているが、So What?が根拠の羅列・まとめになっていて「だから何？」への回答になっていない"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "★（C：再挑戦しよう）",
+            "criteria": "テーマが書かれていない／根拠が1つ以下／So What?がない、または極端に内容が薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_09.md.txt",
+        "learner_prompt_full": "自分のテーマでピラミッドストラクチャーを作ってください。①テーマ②根拠3点③根拠から導いたSo What?の1文。",
+        "core_messages": [
+          "ピラミッドストラクチャーは、主張と根拠を論理的に積み上げる型。",
+          "So What?は根拠の羅列ではなく、だから何かを1文で示す。"
+        ],
+        "common_misconceptions": [
+          "根拠が1つ以下で支えが弱い。",
+          "So What?が根拠のまとめにとどまっている。",
+          "テーマが曖昧で何を主張したいか分からない。"
+        ],
+        "required_elements": [
+          "テーマが明確",
+          "根拠が3点書かれている",
+          "「So What?」が根拠から論理的に導かれた1文になっている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      },
+      {
+        "criteria_id": "EC-P2-10",
+        "phase_id": "P2",
+        "target_type": "mini_work",
+        "target_id": "MW-P2-10",
+        "lesson_id": "P2-10",
+        "title": "ロジックツリー",
+        "learner_prompt_source": "> 今日の動画で学んだ「ロジックツリー」を使って、今の課題を分解してみましょう。\n>\n> **回答形式：**\n> ① 今解決したい課題を1つ書いてください\n> ② 「Why（なぜ起きているか）ツリー」または「How（どう解決するか）ツリー」のどちらかを選んで、課題を2〜3段階で分解してください\n> ③ 分解した結果から「最初に手をつけるべきポイント」を1つ選んでその理由を書いてください",
+        "rubric": [
+          {
+            "grade": "A",
+            "label": "よくできました",
+            "level": "A: よくできました",
+            "criteria": "課題が1つ書かれている／WhyまたはHowツリーで2段階以上分解されている／分解結果から優先ポイントが1つ選ばれ、理由が書かれている"
+          },
+          {
+            "grade": "B",
+            "label": "もう一歩",
+            "level": "B: もう一歩",
+            "criteria": "分解の試みはあるが、1段階のみで細分化が浅い。または優先ポイントの理由がなんとなくレベルにとどまっている"
+          },
+          {
+            "grade": "C",
+            "label": "再挑戦しよう",
+            "level": "C: 再挑戦しよう",
+            "criteria": "課題が書かれていない／分解の試みがない／極端に内容が薄い"
+          }
+        ],
+        "source_file": "latest_miniwork__プチワーク_プチワーク評価基準_評価基準_フェーズ2_10.md.txt",
+        "learner_prompt_full": "ロジックツリーで今の課題を分解してください。①解決したい課題②WhyまたはHowツリーで2〜3段階分解③最初に手をつけるポイントと理由。",
+        "core_messages": [
+          "ロジックツリーは複雑な課題を構造的に分解するツール。",
+          "Whatは構成要素、Whyは原因、Howは解決策を分解する。",
+          "MECEを意識すると漏れ・重複を減らせる。",
+          "分解すると、どこから手をつけるかが見える。"
+        ],
+        "common_misconceptions": [
+          "WhyとHowが混ざっている。",
+          "分解が1段階で終わっている。",
+          "枝に重複がある。",
+          "優先ポイントの理由がなんとなくで止まっている。"
+        ],
+        "required_elements": [
+          "課題が1つ書かれている",
+          "WhyまたはHowツリーで2段階以上分解されている",
+          "分解結果から優先ポイントが1つ選ばれ、理由が書かれている"
+        ],
+        "feedback_template_summary": {
+          "A": "必要な要素が揃っています。具体的な場面や理由も伝わるため、このまま次へ進めます。",
+          "B": "方向性は合っています。A基準に足りない理由・場面・判断根拠を1〜2点追記すると通過に近づきます。",
+          "C": "問いに対する材料が不足しています。選択・理由・具体場面など、必須要素から書き直してください。"
+        },
+        "passThreshold": 80,
+        "retryThreshold": 60,
+        "passing_score": 80,
+        "criteria_version": "puchi-original-2026-06-26"
+      }
+    ],
+    "mappings": [
+      {
+        "lesson_id": "P1-00",
+        "phase_id": "P1",
+        "mini_work_ids": [],
+        "work_ids": [],
+        "flow": "video -> completion -> next_lesson_or_phase_complete",
+        "notes": "No miniWork for this lesson; do not render miniWork evaluation card."
+      },
+      {
+        "lesson_id": "P1-01",
+        "phase_id": "P1",
+        "mini_work_ids": [
+          "MW-P1-01"
+        ],
+        "work_ids": [],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P1-02",
+        "phase_id": "P1",
+        "mini_work_ids": [
+          "MW-P1-02"
+        ],
+        "work_ids": [],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P1-03",
+        "phase_id": "P1",
+        "mini_work_ids": [
+          "MW-P1-03"
+        ],
+        "work_ids": [],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P1-04",
+        "phase_id": "P1",
+        "mini_work_ids": [
+          "MW-P1-04"
+        ],
+        "work_ids": [],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P1-05",
+        "phase_id": "P1",
+        "mini_work_ids": [
+          "MW-P1-05"
+        ],
+        "work_ids": [
+          "W-P1-05"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P1-06",
+        "phase_id": "P1",
+        "mini_work_ids": [
+          "MW-P1-06"
+        ],
+        "work_ids": [],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P1-07",
+        "phase_id": "P1",
+        "mini_work_ids": [
+          "MW-P1-07"
+        ],
+        "work_ids": [],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P1-08",
+        "phase_id": "P1",
+        "mini_work_ids": [
+          "MW-P1-08"
+        ],
+        "work_ids": [],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P1-09",
+        "phase_id": "P1",
+        "mini_work_ids": [],
+        "work_ids": [
+          "W-P1-09"
+        ],
+        "flow": "video -> completion -> work_preview_or_preparing(if candidate)",
+        "notes": "No miniWork for this lesson; do not render miniWork evaluation card."
+      },
+      {
+        "lesson_id": "P1-10",
+        "phase_id": "P1",
+        "mini_work_ids": [],
+        "work_ids": [
+          "W-P1-09"
+        ],
+        "flow": "video -> completion -> work_preview_or_preparing(if candidate)",
+        "notes": "No miniWork for this lesson; do not render miniWork evaluation card."
+      },
+      {
+        "lesson_id": "P2-00",
+        "phase_id": "P2",
+        "mini_work_ids": [],
+        "work_ids": [],
+        "flow": "video -> completion -> next_lesson_or_phase_complete",
+        "notes": "No miniWork for this lesson; do not render miniWork evaluation card."
+      },
+      {
+        "lesson_id": "P2-01",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-01"
+        ],
+        "work_ids": [
+          "W-P2-01"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-02",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-02"
+        ],
+        "work_ids": [
+          "W-P2-01"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-03",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-03"
+        ],
+        "work_ids": [
+          "W-P2-02"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-04",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-04"
+        ],
+        "work_ids": [
+          "W-P2-02"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-05",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-05"
+        ],
+        "work_ids": [
+          "W-P2-03"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-06",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-06"
+        ],
+        "work_ids": [
+          "W-P2-03"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-07",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-07"
+        ],
+        "work_ids": [
+          "W-P2-04"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-08",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-08"
+        ],
+        "work_ids": [
+          "W-P2-04"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-09",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-09"
+        ],
+        "work_ids": [
+          "W-P2-05"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-10",
+        "phase_id": "P2",
+        "mini_work_ids": [
+          "MW-P2-10"
+        ],
+        "work_ids": [
+          "W-P2-05"
+        ],
+        "flow": "video -> mini_work -> local_evaluation -> work(if related/unlocked)"
+      },
+      {
+        "lesson_id": "P2-11",
+        "phase_id": "P2",
+        "mini_work_ids": [],
+        "work_ids": [],
+        "flow": "video -> completion -> next_lesson_or_phase_complete",
+        "notes": "No miniWork for this lesson; do not render miniWork evaluation card."
+      },
+      {
+        "lesson_id": "FINAL-01",
+        "phase_id": "FINAL",
+        "mini_work_ids": [],
+        "work_ids": [],
+        "flow": "video -> completion -> next_lesson_or_phase_complete",
+        "notes": "No miniWork for this lesson; do not render miniWork evaluation card."
+      }
+    ],
+    "sourceMaterials": [
+      {
+        "name": "フェーズ1_2_動画構成一覧_最終版.xlsx",
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      },
+      {
+        "name": "プチワーク一覧.xlsx",
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      },
+      {
+        "name": "プチワーク一覧_評価基準たたき台.xlsx",
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      },
+      {
+        "name": "Phase2_動画学習ワーク_統合版_最新.md",
+        "mimeType": "text/markdown"
+      },
+      {
+        "name": "（最終）Phase2_動画学習ワーク_メンバー用_修正版 2.md",
+        "mimeType": "text/markdown"
+      }
+    ],
+    "extractionWarnings": [
+      "P1-05 and P1-10 video creation MD files were not confirmed; use video structure list as source of truth.",
+      "P1-09 differs between video structure list (AI活用) and video MD (フェーズ1まとめ); use video structure list as source of truth for Codex data insertion.",
+      "Some Phase2 evaluation criteria have incomplete A/B/C levels in source files; use provisional criteria from requirements document and mark them provisional in implementation notes.",
+      "Phase1 works W-P1-05/W-P1-09 are candidate/preparing items; prioritize confirmed Phase2 W1-W5."
+    ],
+    "implementationNotes": {
+      "miniWorkDisplayLabel": "ミニワーク",
+      "sourceTerm": "プチワーク",
+      "workUnlockRule": "ワーク詳細は関連ミニワーク通過後に表示。未通過時は名称/概要/ロック理由のみ表示。",
+      "aiWorkProvider": "local_json_provider",
+      "aiWorkStorage": "aiWorkSessions",
+      "apiKeyPolicy": "フロントエンドにAPIキーを置かず、GAS/API側で保持する想定。",
+      "localEvaluation": "受講者画面は 通過/もう少し具体化/サポート相談 などの表示文言に変換。",
+      "miniWorkAiGate": "V4.10.1ではミニワークもevaluate-work経由でAI判定し、通過まで次導線とワーク解放をロックする。",
+      "miniWorkPassRule": "pass相当のみ進捗完了。retry/review/failed相当は回答を保持し、再提出または担当者確認に進める。",
+      "miniWorkProgressProtection": "一度通過したミニワークは、再送信の判定が未通過でもprogressの通過状態を戻さない。回答履歴とAI評価ログには再送信結果を残す。",
+      "adminResetPolicy": "初期MVPでは受講者セルフリセットを付けない。管理者用Netlify Functionで_進捗サマリー/_視聴ログ_all/_ワークサマリー/_回答ログ_allの現在状態とlatest扱いだけをsoft resetし、reset_logsにbefore_snapshot_json付きで履歴を残す。",
+      "learningSyncPolicy": "通常操作はlearning-sync経由でSheetsに保存してからLocalStorageへ反映する。保存失敗時は完了扱いにせず、入力内容を画面に残す。"
+    },
+    "aiWorkSessions": [],
+    "aiEvaluationLogs": [],
+    "staffFeedbackQueue": [],
+    "workEvaluationCriteria": [
+      {
+        "workId": "W-P1-05",
+        "title": "目標・目的設定：ビジョン整理ワーク",
+        "workGoal": "明確な目標を、自分のテーマに合わせて現状・理想・3ヶ月行動へ落とし込む",
+        "passRequiredElements": [
+          "改善したいテーマが1つに絞られている",
+          "現状と理想の差分が、具体場面または具体状態で説明されている",
+          "理想に向かう理由・目的が自分の言葉で書かれている",
+          "3ヶ月以内の到達状態または成果物が定義されている",
+          "今週または次回に実行する具体アクションが1つ以上ある"
+        ],
+        "aCriteria": [
+          "テーマ・現状・理想・GAP・3ヶ月行動が一貫している",
+          "数値は必須ではないが、期限・対象者・成果物・回数など実行判断に使える具体性がある",
+          "なぜそれをやりたいかが価値観・仕事上の目的と接続している",
+          "次アクションが日時または完了条件つきで実行可能になっている"
+        ],
+        "bCriteria": [
+          "現状と理想はあるが、GAPまたは3ヶ月行動が抽象的",
+          "行動案はあるが、期限・対象者・成果物のどれかが不足",
+          "目的はあるが、自分のテーマとのつながりが弱い"
+        ],
+        "cCriteria": [
+          "夢・目標の一般論だけで、現状や次行動がない",
+          "複数テーマが散らばっていて、何を進めるワークか分からない",
+          "頑張る・考えるだけで3ヶ月行動に落ちていない"
+        ],
+        "commonMisconceptions": [
+          "ビジョンを大きく書けばAになると誤解する",
+          "現状の棚卸しをせず、理想だけを書く",
+          "数値目標だけを書き、なぜ取り組むかを書かない"
+        ],
+        "modelAnswerChecklist": [
+          "テーマ",
+          "直近の具体場面/現状",
+          "理想",
+          "GAP",
+          "3ヶ月到達状態",
+          "今週の1アクション"
+        ],
+        "badAnswerPatterns": [
+          "自由に働きたいので頑張ります",
+          "AIで稼げるようになりたいです",
+          "目標はまだ未定です"
+        ],
+        "modelAnswerExample": "テーマは営業経験とAI活用を組み合わせた若手営業向け60分講座です。現状は、先週後輩から商談前準備を聞かれましたが、口頭説明だけで再利用できる型がありませんでした。理想は、初心者が商談前に現状・理想・障害を整理できるシートを自分で使える状態です。理由は、後輩が自分で準備の抜け漏れに気づけるようになると、毎回の口頭説明が減り、商談品質を安定させられるからです。3ヶ月以内に初回講座を作り、モニター3名に実施します。今週金曜20:00までに対象者、講座ゴール、当日の流れを1枚にまとめます。"
+      },
+      {
+        "workId": "W-P1-09",
+        "title": "フェーズ1総括ワーク",
+        "workGoal": "実行力の土台を振り返り、自分の仕事・副業・現場で続ける行動を決める",
+        "passRequiredElements": [
+          "フェーズ1で使えた考え方/習慣が1つ選ばれている",
+          "その習慣を使った場面、またはこれから使う場面が具体化されている",
+          "続ける行動と、やめる/減らす行動がそれぞれ1つある",
+          "次フェーズで確認する数字・期限・振り返り方法が決まっている"
+        ],
+        "aCriteria": [
+          "継続行動・停止行動・次フェーズ行動が具体的な業務場面に接続している",
+          "なぜその行動を続ける/やめるのかの判断理由がある",
+          "確認頻度、期限、指標のいずれかで実行管理できる"
+        ],
+        "bCriteria": [
+          "学びは書けているが、続ける/やめる行動が曖昧",
+          "実行計画はあるが確認方法がない",
+          "次フェーズとの接続が弱い"
+        ],
+        "cCriteria": [
+          "感想だけで行動がない",
+          "全部大事・全部続けるで優先順位がない",
+          "実行の確認タイミングがなく、現場で使えない"
+        ],
+        "commonMisconceptions": [
+          "総括なので感想を書けばよいと誤解する",
+          "続けることだけ書き、やめることを決めない",
+          "次フェーズの判断力ワークへつながる数字・振り返りを入れない"
+        ],
+        "modelAnswerChecklist": [
+          "使えた習慣",
+          "具体場面",
+          "続ける行動",
+          "やめる/減らす行動",
+          "次フェーズの数字・期限・振り返り"
+        ],
+        "badAnswerPatterns": [
+          "フェーズ1で色々学べました",
+          "報連相を頑張ります",
+          "全部意識します"
+        ],
+        "modelAnswerExample": "フェーズ1で一番使えた学びは、重要タスクを先に決めて着手・中間・完了で報連相することです。今週月曜は商談準備よりチャット返信を優先し、準備時間が20分しか残りませんでした。続ける行動は、毎朝9:30に当日の最重要タスクを1つ選び、着手時と12:00に進捗をSlackで報告することです。やめる行動は、朝一番にチャットを見続けることです。次フェーズでは商談準備の成果を数字で見たいので、毎週金曜に初回商談数、次回提案数、準備チェックリスト実施数を確認します。",
+        "modelAnswerFields": {
+          "learner_theme": "フェーズ1で身につけた行動習慣を次フェーズへつなげたい",
+          "current_situation": "今週月曜は商談準備よりチャット返信を優先し、準備時間が20分しか残りませんでした。",
+          "goal": "毎朝9:30に最重要タスクを1つ決め、着手・中間・完了を報告する習慣を続けます。",
+          "problem": "朝一番にチャットを見続けて重要タスクが後回しになることを減らします。次フェーズでは毎週金曜に初回商談数、次回提案数、準備チェックリスト実施数を確認します。"
+        }
+      },
+      {
+        "workId": "W-P2-01",
+        "title": "W1：現状構造化ワーク",
+        "workGoal": "自分の業務や活動を、戦略・戦術・実行・数値の構造で説明できるようにする",
+        "passRequiredElements": [
+          "現在の業務/活動が具体的に書かれている",
+          "測定すべき数値がある",
+          "戦略・戦術・実行が区別されている",
+          "行動が成果につながる理由を説明できている"
+        ],
+        "aCriteria": [
+          "業務テーマ、現状数値、見るべき指標が対応している",
+          "戦略=方針、戦術=打ち手、実行=具体行動として混同なく分けられている",
+          "なぜその行動が成果/KGIに効くのかの因果が書かれている",
+          "次に測る数値または記録タイミングがある"
+        ],
+        "bCriteria": [
+          "数値はあるが、戦略/戦術/実行が混ざっている",
+          "行動はあるが、成果につながる理由が薄い",
+          "測る指標はあるが確認頻度がない"
+        ],
+        "cCriteria": [
+          "業務の説明だけで数値がない",
+          "戦略・戦術・実行のラベルだけで中身がない",
+          "行動と成果のつながりを説明していない"
+        ],
+        "commonMisconceptions": [
+          "実行タスクを戦略と呼んでしまう",
+          "KPIをたくさん並べればよいと考える",
+          "成果につながる理由を書かない"
+        ],
+        "modelAnswerChecklist": [
+          "現在業務",
+          "現状数値",
+          "戦略",
+          "戦術",
+          "実行",
+          "成果につながる理由",
+          "測定タイミング"
+        ],
+        "badAnswerPatterns": [
+          "営業を頑張ります",
+          "戦略は商談数を増やすことです",
+          "KPIは売上です"
+        ],
+        "modelAnswerExample": "現在の活動は法人営業の初回商談です。月20件の初回商談のうち次回提案につながるのは約6件、提案化率30%です。戦略は商品説明より先に顧客の現状・理想・障害を整理する相談相手の位置を取ることです。戦術は商談前に業界・職種別の仮説質問を3つ用意することです。実行は明日10:00の商談で冒頭10分に現状、理想、障害、決裁条件を聞き、確認できた項目数と次回提案の有無を記録します。質問が深くなるほど顧客の優先課題に合う提案になり、提案化率が上がると考えます。"
+      },
+      {
+        "workId": "W-P2-02",
+        "title": "W2：理想定義ワーク",
+        "workGoal": "うまくいっている状態をKGI/KPI/KDIで定義し、見せかけの数字を避ける",
+        "passRequiredElements": [
+          "理想状態が定性・定量の両方で具体化されている",
+          "KGI/KPI/KDIが区別されている",
+          "行動で変えられる指標がある",
+          "見せかけの数字へのチェックが入っている"
+        ],
+        "aCriteria": [
+          "KGI=最終成果、KPI=途中成果、KDI=行動量/行動品質として定義されている",
+          "理想状態が現状との比較で分かる",
+          "自分が変えられるKDIが入っている",
+          "増えても成果に直結しない数字を見せかけ指標として除外/注意している"
+        ],
+        "bCriteria": [
+          "KGI/KPI/KDIはあるが一部混同している",
+          "理想はあるが定量・定性の片方が弱い",
+          "見せかけ指標への注意が抽象的"
+        ],
+        "cCriteria": [
+          "理想が売上を上げるだけで具体性がない",
+          "KGI/KPI/KDIの区別がない",
+          "行動で変えられる指標がない"
+        ],
+        "commonMisconceptions": [
+          "売上だけ見ればよいと考える",
+          "KPIとKDIを混同する",
+          "架電数など行動量だけを成果指標にする"
+        ],
+        "modelAnswerChecklist": [
+          "理想状態",
+          "KGI",
+          "KPI",
+          "KDI",
+          "見せかけ指標",
+          "確認頻度"
+        ],
+        "badAnswerPatterns": [
+          "KGIは頑張ることです",
+          "KPIは売上と架電数です",
+          "フォロワーが増えれば成功です"
+        ],
+        "modelAnswerExample": "理想状態は、初回商談後に顧客の優先課題と次回提案の目的が合意され、3ヶ月後に提案化率が30%から45%、月6件から9件へ増えている状態です。KGIは月間受注3件です。KPIは初回商談から次回提案に進んだ件数と提案化率です。KDIは商談前に仮説質問3つを準備した件数、商談中に現状・理想・障害・決裁条件を確認できた項目数です。見せかけの数字は架電数だけです。架電数が増えても提案化率が上がらなければ本質改善ではないため、毎週金曜にKPIとKDIをセットで見ます。"
+      },
+      {
+        "workId": "W-P2-03",
+        "title": "W3：問題の深掘りとイシュー特定ワーク",
+        "workGoal": "問題の真因を深掘りし、取り組むべきイシューを特定する",
+        "passRequiredElements": [
+          "うまくいかなかった具体例がある",
+          "なぜなぜ分析が表面的で終わっていない",
+          "真因が実行可能な改善につながる粒度になっている",
+          "取り組むべきイシューが特定されている",
+          "最重要KPIまたは改善確認指標がある"
+        ],
+        "aCriteria": [
+          "具体的な失敗/停滞場面から始まっている",
+          "人の能力不足で終わらず、準備・仕組み・プロセスなど改善可能な真因に到達している",
+          "解くべき問いが1つに絞られている",
+          "改善したか確認できる数値がある"
+        ],
+        "bCriteria": [
+          "具体例はあるが、なぜ分析が2段階程度で浅い",
+          "イシュー候補はあるが真因との接続が弱い",
+          "KPIがあるが測定方法が曖昧"
+        ],
+        "cCriteria": [
+          "失敗例がない",
+          "真因が気合不足・忙しいで止まっている",
+          "複数課題が並び、取り組むべきイシューが決まっていない"
+        ],
+        "commonMisconceptions": [
+          "なぜなぜ分析を反省文にする",
+          "仕組みではなく性格原因で終わる",
+          "イシューではなくToDoを書く"
+        ],
+        "modelAnswerChecklist": [
+          "具体例",
+          "なぜなぜ分析",
+          "真因",
+          "イシュー",
+          "最重要KPI",
+          "次に確かめること"
+        ],
+        "badAnswerPatterns": [
+          "原因は準備不足です",
+          "もっと頑張る必要があります",
+          "全部改善します"
+        ],
+        "modelAnswerExample": "先週月曜のA社商談で、サービス説明後に検討しますと言われ返信が止まりました。直近10件の商談で次回提案に進んだのは3件です。なぜ止まったか。提案が顧客の優先課題に結びつかなかったからです。なぜ結びつかなかったか。商談中に現状・理想・障害を聞けていなかったからです。なぜ聞けなかったか。商談前に仮説質問を準備していなかったからです。真因は、商談前の仮説質問準備プロセスがないことです。イシューは、商談前に3つの仮説質問を用意すれば提案化率が上がるのではないか、です。最重要KPIは次回提案化率です。"
+      },
+      {
+        "workId": "W-P2-04",
+        "title": "W4：仮説設計と検証修正ワーク",
+        "workGoal": "イシューに対する仮説を立て、検証し、結果から修正できるようにする",
+        "passRequiredElements": [
+          "イシューに対する仮説がある",
+          "仮説の根拠がある",
+          "検証方法・必要データ・期限がある",
+          "検証結果に応じた次アクションがある",
+          "修正ポイントを構造で説明できる"
+        ],
+        "aCriteria": [
+          "未実施でも、仮説・検証方法・期限・見る指標が具体的ならA/pass候補",
+          "当たった場合/外れた場合の次アクションが分かれている",
+          "検証で何を学ぶかが書かれている",
+          "KPT/YWTMなどの振り返り観点が修正につながっている"
+        ],
+        "bCriteria": [
+          "仮説と検証方法はあるが期限または必要データが不足",
+          "結果後の次アクションが1パターンしかない",
+          "修正ポイントが抽象的"
+        ],
+        "cCriteria": [
+          "仮説ではなく願望になっている",
+          "検証方法がない",
+          "未実施という理由だけで計画が具体化されていない"
+        ],
+        "commonMisconceptions": [
+          "検証済み結果がないと通過できないと誤解する",
+          "仮説と施策を混同する",
+          "外れた場合の修正案を書かない"
+        ],
+        "modelAnswerChecklist": [
+          "イシュー",
+          "仮説",
+          "根拠",
+          "検証方法",
+          "必要データ",
+          "期限",
+          "当たり/外れ時の次アクション"
+        ],
+        "badAnswerPatterns": [
+          "質問を増やせばよくなると思います",
+          "来週試します",
+          "結果を見て考えます"
+        ],
+        "modelAnswerExample": "イシューは、商談前の仮説質問準備が次回提案化率を上げるかです。仮説は、商談前に現状・理想・障害の質問を3つ準備すれば、顧客の優先課題を確認でき、提案化率が上がるのではないか、です。根拠は、過去に質問を準備した2件はどちらも次回提案へ進み、準備なしの商談では導入時期や決裁条件を聞けず止まったからです。検証は今週の商談3件で行い、質問準備の有無、確認できた項目数、3営業日以内の返信有無、次回提案化を記録します。期限は金曜18:00です。当たった場合は質問テンプレート化し、外れた場合は質問内容ではなく相手選定・決裁条件確認に仮説を修正します。"
+      },
+      {
+        "workId": "W-P2-05",
+        "title": "W5：他者適用ワーク",
+        "workGoal": "W1〜W4の思考プロセスを、他者の課題分析・介入・説明に応用する",
+        "passRequiredElements": [
+          "他者の課題が具体化されている",
+          "結論と根拠が整理されている",
+          "W1〜W4の観点で問題段階を特定できている",
+          "介入ポイントと期待変化が明確になっている",
+          "第三者に説明できる形でまとめられている"
+        ],
+        "aCriteria": [
+          "対象者・状況・観察事実/数字がある",
+          "結論→根拠→介入案の順で説明できる",
+          "W1現状構造、W2理想/指標、W3イシュー、W4仮説検証のどこで詰まっているかを特定している",
+          "介入後に何が変わるかを数値または行動変化で説明している"
+        ],
+        "bCriteria": [
+          "他者課題はあるが根拠が薄い",
+          "W1〜W4の段階特定が曖昧",
+          "介入案はあるが期待変化が抽象的"
+        ],
+        "cCriteria": [
+          "他者への感想・助言だけで分析になっていない",
+          "根拠がなく決めつけている",
+          "介入ポイントが頑張らせるなど行動不能"
+        ],
+        "commonMisconceptions": [
+          "相手へのアドバイスを書けばよいと誤解する",
+          "本人の能力不足で終える",
+          "W1〜W4の型を使わない"
+        ],
+        "modelAnswerChecklist": [
+          "対象者",
+          "課題",
+          "根拠",
+          "問題段階",
+          "介入ポイント",
+          "期待変化",
+          "説明メモ"
+        ],
+        "badAnswerPatterns": [
+          "新人にもっと準備してもらいます",
+          "顧客対応が苦手そうです",
+          "全体的に改善が必要です"
+        ],
+        "modelAnswerExample": "対象者は入社3ヶ月の営業担当Bさんです。先週の商談3件中2件が検討しますで止まり、商談メモにはサービス説明はありますが現状・理想・障害・決裁条件がほぼありません。結論は、Bさんの問題はトーク力ではなく、W1の現状構造化とW3のイシュー特定の前段で詰まっていることです。根拠は、商談数は足りていますが次回提案化が20%前後で、顧客課題の記録が不足しているためです。介入ポイントは商談前に仮説質問3つを一緒に作ることです。期待変化は、確認項目数が1件あたり1個から4個に増え、次回提案化率が20%から30%以上に上がることです。第三者には、準備不足を責めるのではなく、質問設計の型を入れる支援が必要と説明します。"
+      }
+    ]
+  },
+  "apiActions": [
+    "login",
+    "getLearningState",
+    "markVideoWatched",
+    "submitMiniWork",
+    "submitWork",
+    "startAiWork",
+    "submitAiWorkAnswer",
+    "submitAiWorkFollowup",
+    "retryAiWork",
+    "submitAiWorkIntakeFollowup",
+    "submitAiWorkRevision",
+    "continueAiWorkWithIntakePlaceholders",
+    "evaluateAiWork",
+    "saveAiEvaluationLog",
+    "queueStaffFeedback",
+    "adminResetProgress"
+  ],
+  "confirmedAssumptions": {
+    "emailCapture": "Anybot automatically writes email addresses from official LINE registration to Google Spreadsheet.",
+    "emailPerUser": "1 user = 1 fixed email address.",
+    "entryPoint": "Official LINE rich menu links directly to the learning page.",
+    "videoCompletion": "MVP uses self-reported video completion button.",
+    "supportCta": "Support CTA returns user to official LINE.",
+    "verification": "No verification code, password, or LINE user identity check in initial MVP."
+  },
+  "designAssets": {
+    "priorityA": [
+      "transparent Barise logo",
+      "brand color codes",
+      "one key visual for login/learning home"
+    ],
+    "priorityB": [
+      "official LINE support CTA banner or icon",
+      "phase-level or lesson-level video thumbnails",
+      "phase icons"
+    ],
+    "canBePlaceholderInMvp": [
+      "support CTA image",
+      "video thumbnails",
+      "phase icons",
+      "completion badges",
+      "lock icons",
+      "AI evaluation icons"
+    ]
+  },
+  "aiGateway": {
+    "provider": "netlify_functions",
+    "endpointUrl": "/.netlify/functions/evaluate-work",
+    "useMockAi": false,
+    "mockMode": "server_optional_USE_MOCK_AI",
+    "requestAction": "evaluateAiWork",
+    "responseSchemaVersion": "barise-work-evaluation-v1",
+    "timeoutMs": 15000,
+    "secretPolicy": "OPENAI_API_KEY is kept in Netlify Environment Variables, GAS Script Properties, or server Secret, never in frontend.",
+    "miniWorkResponseSchemaVersion": "barise-mini-work-evaluation-v1",
+    "supportsMiniWorkGate": true,
+    "miniWorkPassThreshold": 80,
+    "miniWorkRetryThreshold": 60,
+    "miniWorkMaxRetryBeforeReview": 3
+  },
+  "commonProfileFields": [
+    {
+      "key": "profile_role_industry",
+      "storage_key": "role_industry",
+      "label": "職種 / 業種",
+      "placeholder": "例: 法人営業 / IT、人事担当 / 教育、店舗責任者 / 小売など",
+      "rows": 3
+    },
+    {
+      "key": "profile_current_work",
+      "storage_key": "current_work",
+      "label": "現在の主な業務",
+      "placeholder": "普段担当している業務や活動を、匿名化して書いてください",
+      "rows": 4
+    },
+    {
+      "key": "profile_theme",
+      "storage_key": "theme",
+      "label": "今回扱いたいテーマ",
+      "placeholder": "このワーク全体で改善・整理したいテーマを書いてください",
+      "rows": 4
+    },
+    {
+      "key": "profile_problem",
+      "storage_key": "current_problem",
+      "label": "いま困っていること / 改善したいこと",
+      "placeholder": "公開できない顧客名・個人名は入れず、役割名で書いてください",
+      "rows": 4
+    },
+    {
+      "key": "profile_goal",
+      "storage_key": "goal",
+      "label": "目標・達成したい状態",
+      "placeholder": "どの状態になれば前進と言えるかを書いてください",
+      "rows": 4
+    },
+    {
+      "key": "profile_case_example",
+      "storage_key": "case_example",
+      "label": "具体例に使ってよい業務ケース",
+      "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
+      "rows": 4
+    }
+  ],
+  "aiEvaluationResponseSchema": {
+    "schema_version": "barise-work-evaluation-v1",
+    "required_fields": [
+      "status",
+      "score",
+      "reason",
+      "feedback.summary",
+      "feedback.goodPoints",
+      "feedback.improvementPoints",
+      "nextQuestion",
+      "flags",
+      "criteria",
+      "meta.model",
+      "meta.schemaVersion",
+      "meta.evaluatedAt"
+    ],
+    "statuses": [
+      "pass",
+      "retry",
+      "review"
+    ],
+    "frontend_mapping": {
+      "pass": "passed",
+      "retry": "revision_required",
+      "review": "staff_feedback_ready_or_support_suggested"
+    },
+    "learner_label_policy": "受講者画面には英語ステータスや内部フラグを出さず、日本語ラベルとフィードバックだけを表示する。",
+    "mini_work_schema_version": "barise-mini-work-evaluation-v1",
+    "supported_work_types": [
+      "work",
+      "miniWork"
+    ],
+    "mini_work_required_fields": [
+      "workType",
+      "miniWorkId",
+      "parentLessonId",
+      "status",
+      "score",
+      "reason",
+      "feedback.summary",
+      "feedback.goodPoints",
+      "feedback.improvementPoints",
+      "nextQuestion",
+      "flags",
+      "criteria",
+      "meta.model",
+      "meta.schemaVersion",
+      "meta.evaluatedAt"
+    ],
+    "mini_work_frontend_mapping": {
+      "pass": "good",
+      "retry": "needs_more",
+      "review": "support_needed"
+    },
+    "mini_work_lock_policy": "ミニワークはpass相当になるまで、次動画・次セクション・関連ワーク・完了扱いをロックする。"
+  }
+}

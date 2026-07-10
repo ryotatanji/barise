@@ -1,0 +1,23 @@
+# Barise 学習ページ V5.1.1 — Netlify 設定
+# 静的サイト（ルート直下配信）＋ Netlify Functions
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+# 教材データは毎回最新を取得させる（キャッシュ由来の「動画が出ない」を防止）
+[[headers]]
+  for = "/data/learning-data.json"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"
+
+# スクリプトはcache-busterのクエリでバージョン管理する前提（長期キャッシュ可）
+[[headers]]
+  for = "/scripts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
