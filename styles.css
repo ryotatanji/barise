@@ -475,11 +475,18 @@ img {
   color: var(--red);
 }
 
-.ring-center span {
+.ring-center > span {
   font-size: 10px;
   letter-spacing: .22em;
   color: var(--faint);
   margin-top: 6px;
+}
+
+.ring-center b span {
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  letter-spacing: inherit;
 }
 
 .gauge-stats { display: grid; gap: 12px; }
