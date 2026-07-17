@@ -1104,7 +1104,22 @@ function miniRequirementMet(answer, element, payload) {
     return /([0-9０-９]+|KPI|KGI|数値|指標|率|件|回)/i.test(answer);
   }
 
-  return answer.length >= 30;
+  // V7.1採点是正: 特定マッチャの無い要素のフォールバック。
+  //   長さだけで「充足」とすると意見文（例:「頑張れば伸びます」）まで通してしまうため、
+  //   実質シグナル（数字・構造マーカー・複数論点）を併せて要求し、フロアの誤通過を防ぐ。
+  return answer.length >= 30 && hasSubstanceSignal(answer);
+}
+
+// 実質的な中身のシグナル: 数字/構造マーカー/思考フレーム語/複数論点のいずれか。
+function hasSubstanceSignal(answer) {
+  const text = safeText(answer);
+  if (/[0-9０-９]/.test(text)) return true;
+  if (/[・→①②③④⑤:：]|１\.|２\.|３\./.test(text)) return true;
+  if (/(結論|根拠|事実|理由|なぜ|イシュー|仮説|戦略|戦術|実行|KGI|KPI|KDI|So ?What|Why ?So|頂点|中間|土台)/i.test(text)) return true;
+  // 3つ以上の文（句点区切り）に具体名詞が伴うか
+  const sentences = text.split(/[。\n]/).map((s) => s.trim()).filter(Boolean);
+  if (sentences.length >= 3) return true;
+  return false;
 }
 
 function hasMiniWorkReason(answer, payload) {
