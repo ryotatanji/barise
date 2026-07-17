@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-1-0";
+} from "./data-provider.js?v=7-1-1";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -185,7 +185,7 @@ function ensureOverlayDom() {
           <div class="judge-center"><b id="judgeScore">0</b><span id="judgeScoreNote">SCORE / 合格80</span></div>
           <div class="spark" id="judgeSpark"></div>
         </div>
-        <span class="judge-stamp" id="judgeStamp">★ 通過</span>
+        <span class="judge-stamp" id="judgeStamp">★ クリア</span>
         <p class="judge-fb" id="judgeFb"></p>
         <button class="judge-next" id="judgeNext" type="button">次の一歩へ →</button>
       </div>
@@ -288,7 +288,7 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
     }
   });
 
-  /* 金の通過スタンプ（back.out(2.2)）＋粒子22個は good のときだけ */
+  /* 金のクリアスタンプ（back.out(2.2)）＋粒子22個は good のときだけ */
   if (passed) {
     sparkBurst();
     await tween({
@@ -571,7 +571,7 @@ function renderHome() {
           <div class="gauge-stats">
             <div class="gs"><b>${summary.doneSteps}<em> /${summary.totalSteps}</em></b><small>クリアステップ</small></div>
             <div class="gs"><b>${summary.videoDone}<em> /${summary.videoTotal}</em></b><small>視聴した動画</small></div>
-            <div class="gs hot"><b>${passCount}<em> /${passTotal}</em></b><small>通過したワーク</small></div>
+            <div class="gs hot"><b>${passCount}<em> /${passTotal}</em></b><small>クリアしたワーク</small></div>
           </div>
         </section>
 
@@ -782,7 +782,7 @@ function renderLessonRow(learning, phase, lesson) {
       ${ctaMarkup}
     </div>
     <h4>${escapeHtml(lesson.lesson_title)}</h4>
-    <p class="ls-sub">${escapeHtml(stationSubText(lesson))}${stateName === "locked" ? " ・ 前の教材の通過後にひらきます" : ""}</p>
+    <p class="ls-sub">${escapeHtml(stationSubText(lesson))}${stateName === "locked" ? " ・ 前の教材をクリアするとひらきます" : ""}</p>
   `;
 
   if (stateName === "locked") {
@@ -922,7 +922,7 @@ function renderLockedWorkNote(lesson) {
   return `
     <div class="mp-callout">
       <span>ひらくための条件</span>
-      関連するミニワークを通過すると、この本ワークがひらきます。
+      関連するミニワークをクリアすると、この本ワークがひらきます。
       ${lessonNames.length ? `<ul style="padding-left:18px;margin-top:4px;">${lessonNames.map((name) => `<li>${escapeHtml(name)}</li>`).join("")}</ul>` : ""}
     </div>
   `;
@@ -979,7 +979,7 @@ function renderLessonBottomNav(learning, lesson) {
 function renderSubmissionNote(submission) {
   return `
     <div class="submission-note">
-      <span>${escapeHtml(getStatusLabel(submission.status))}</span>
+      <span>${escapeHtml(learnerStatusLabel(submission.status))}</span>
       <time datetime="${escapeAttribute(submission.submitted_at)}">${escapeHtml(formatDate(submission.submitted_at))}</time>
     </div>
   `;
@@ -991,8 +991,8 @@ function getLessonNextLockState(learning, lesson) {
   if (lesson.miniWork && lesson.progress.mini_work_status !== "good") {
     return {
       locked: true,
-      label: "ミニワーク通過後にひらきます",
-      detail: "この教材のミニワークを通過すると、次の動画への道がひらきます。"
+      label: "ミニワークをクリアするとひらきます",
+      detail: "この教材のミニワークをクリアすると、次の動画への道がひらきます。"
     };
   }
   return { locked: false, label: "進めます" };
@@ -1234,13 +1234,13 @@ function renderAiWorkLockedGate(work) {
   return `
     <div class="ai-block ai-block--focus">
       <span>ひらくための条件があります</span>
-      <p>${escapeHtml(work.unlockReason || "関連する動画視聴とミニワーク通過後に始められます。")}</p>
+      <p>${escapeHtml(work.unlockReason || "関連する動画の視聴とミニワークのクリア後に始められます。")}</p>
       ${missingLessons.length ? `
         <p style="margin-top:8px;"><strong style="font-size:11px;">視聴が必要な動画</strong></p>
         <ul>${missingLessons.map((lessonId) => `<li><a class="text-link" href="${escapeAttribute(hashForLesson(lessonId, "video"))}">${escapeHtml(lessonId)} の動画へ</a></li>`).join("")}</ul>
       ` : ""}
       ${missingMiniWorks.length ? `
-        <p style="margin-top:8px;"><strong style="font-size:11px;">通過が必要なミニワーク</strong></p>
+        <p style="margin-top:8px;"><strong style="font-size:11px;">クリアが必要なミニワーク</strong></p>
         <ul>${missingMiniWorks.map((miniWorkId) => `<li>${escapeHtml(miniWorkId)}</li>`).join("")}</ul>
       ` : ""}
     </div>
@@ -1401,7 +1401,7 @@ function renderAiWorkRelatedPanel(work) {
           <span class="ls-id">${escapeHtml(lesson.lesson_id)}</span>
           <div class="ls-side"><span class="ls-state${lesson.video_status === "watched" ? " watched" : ""}">${escapeHtml(getVideoWatchLabel(lesson.video_status))}</span></div>
           <h4>${escapeHtml(lesson.lesson_title)}</h4>
-          <p class="ls-sub">ミニワーク: ${escapeHtml(lesson.mini_work_status === "none" ? "対象なし" : getStatusLabel(lesson.mini_work_status))}</p>
+          <p class="ls-sub">ミニワーク: ${escapeHtml(lesson.mini_work_status === "none" ? "対象なし" : learnerStatusLabel(lesson.mini_work_status))}</p>
         </a>
       `).join("")}
     </section>
@@ -1792,8 +1792,18 @@ function renderMetaChip(label, value) {
   `;
 }
 
+/* 受講者向けの状態ラベル。data-provider.js の statusLabels（データ層・変更禁止）は
+   Sheets値の解釈にも使われるため触らず、表示名だけをここで上書きする。 */
+const LEARNER_STATUS_LABEL = {
+  good: "クリア"
+};
+
+function learnerStatusLabel(status) {
+  return LEARNER_STATUS_LABEL[status] || getStatusLabel(status);
+}
+
 function renderStatusBadge(status) {
-  const label = getStatusLabel(status);
+  const label = learnerStatusLabel(status);
   const tone = status === "good" ? "gold" : getStatusTone(status);
   return `<span class="status-badge" data-tone="${escapeAttribute(tone)}">${escapeHtml(label)}</span>`;
 }
@@ -1849,8 +1859,8 @@ function getLessonWorkCtaLabel(status) {
 }
 
 function getEvaluationResultHelp(status) {
-  if (status === "good") return "通過: 基準を満たしています。次の教材へ進めます。";
-  if (status === "needs_more" || status === "failed") return "もう少し具体化: 数字・場面・行動を足すと通過に近づきます。";
+  if (status === "good") return "クリア: 基準を満たしています。次の教材へ進めます。";
+  if (status === "needs_more" || status === "failed") return "もう少し具体化: 数字・場面・行動を足すとクリアに近づきます。";
   if (status === "support_needed") return "サポート相談: 一人で抱えず、公式LINEで相談しながら整えましょう。";
   return "評価中: 提出内容を確認しています。";
 }
@@ -1886,7 +1896,7 @@ function getLessonCta(lesson) {
       label: "ミニワークを仕上げる",
       href: hashForLesson(lesson.lesson_id, "mini-work"),
       shortNote: "具体化して再提出",
-      summary: `「${lesson.lesson_title}」のミニワークを、もう少し具体化すれば通過です。`
+      summary: `「${lesson.lesson_title}」のミニワークを、もう少し具体化すればクリアです。`
     };
   }
 
@@ -1914,7 +1924,7 @@ function getLessonCta(lesson) {
       label: "次の動画へ進む",
       href: hashForLesson(lesson.nextUnlockLessonId, "video"),
       shortNote: "解放条件を進める",
-      summary: `関連ミニワーク通過後にワークがひらきます。次は「${nextContext?.lesson?.lesson_title || lesson.nextUnlockLessonId}」へ進みましょう。`
+      summary: `関連ミニワークをクリアするとワークがひらきます。次は「${nextContext?.lesson?.lesson_title || lesson.nextUnlockLessonId}」へ進みましょう。`
     };
   }
 
