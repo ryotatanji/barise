@@ -24,6 +24,7 @@ const EMAIL_HEADERS = [
 ];
 const STATUS_HEADERS = ["account_status", "status", "ステータス", "状態", "受講状態"];
 const NAME_HEADERS = ["display_name", "name", "氏名", "名前", "お名前", "受講者名"];
+const NICKNAME_HEADERS = ["nickname", "ニックネーム"];
 const ACTIVE_VALUES = new Set(["", "active", "有効", "受講中", "登録済み", "利用中", "enabled", "ok"]);
 
 exports.handler = async function handler(event) {
@@ -90,6 +91,7 @@ exports.handler = async function handler(event) {
         email: emailKey,
         email_key: emailKey,
         display_name: registration.displayName || "",
+        nickname: registration.nickname || "",
         account_status: "active",
         registration_row: registration.rowNumber
       }
@@ -110,6 +112,7 @@ function findRegistration(values = [], emailKey) {
   const emailIndex = findHeaderIndex(headers, EMAIL_HEADERS);
   const statusIndex = findHeaderIndex(headers, STATUS_HEADERS);
   const nameIndex = findHeaderIndex(headers, NAME_HEADERS);
+  const nicknameIndex = findHeaderIndex(headers, NICKNAME_HEADERS);
 
   for (let index = 1; index < values.length; index += 1) {
     const row = values[index] || [];
@@ -121,7 +124,8 @@ function findRegistration(values = [], emailKey) {
     return {
       rowNumber: index + 1,
       active: ACTIVE_VALUES.has(rawStatus),
-      displayName: nameIndex >= 0 ? String(row[nameIndex] || "").trim() : ""
+      displayName: nameIndex >= 0 ? String(row[nameIndex] || "").trim() : "",
+      nickname: nicknameIndex >= 0 ? String(row[nicknameIndex] || "").trim() : ""
     };
   }
 

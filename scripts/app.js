@@ -7,15 +7,14 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=5-1-2";
+} from "./data-provider.js?v=7-1-1";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
 
 const config = {
-  supportLineUrl: "https://line.me/R/",
-  brandLogo: "./assets/barise-logo.png",
-  heroImage: "./assets/barise-key-visual-quiet.png"
+  supportLineUrl: "https://lin.ee/7JnzBxE",
+  brandLogo: "./assets/barise-logo-white.png"
 };
 
 const LEARNER_FORBIDDEN_PATTERN = /\b(good|needs_more|support_needed|reviewing|failed|debug|mock|internal|pass|retry|review|evaluate-work|gpt-4o-mini|OPENAI_API_KEY|learner_theme|current_situation|current_actions|available_metrics|target_result|strategy_tactic_execution)\b/i;
@@ -28,7 +27,325 @@ const state = {
   selectedPhaseId: ""
 };
 
+/* ============================================================
+   ことば：章番号・語彙
+   ============================================================ */
+
+const KANJI_NUM = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+
+function kanjiChapter(order) {
+  const n = Number(order) || 0;
+  if (n >= 1 && n <= 10) return `第${KANJI_NUM[n]}章`;
+  return `第${n}章`;
+}
+
+function padChapter(order) {
+  return String(Number(order) || 0).padStart(2, "0");
+}
+
+/* ============================================================
+   モーション基盤：停止トグル（reduced-motion環境は停止ボタン方式）
+   ============================================================ */
+
+const MOTION_KEY = "barise_motion_off";
+
+function motionOff() {
+  return localStorage.getItem(MOTION_KEY) === "1";
+}
+
+function applyMotionPreference() {
+  document.documentElement.classList.toggle("motion-off", motionOff());
+  if (prefersReducedMotion()) {
+    document.documentElement.classList.add("show-motion-toggle");
+  }
+}
+
+function renderMotionToggle() {
+  if (!prefersReducedMotion()) return "";
+  return `
+    <button class="motion-toggle" type="button" data-action="toggle-motion">
+      ${motionOff() ? "アニメーションを再生する" : "アニメーションを停止する"}
+    </button>
+  `;
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
+}
+
+/* ============================================================
+   トゥイーンエンジン（デモのGSAP演出タイミングを移植・依存ゼロ）
+   ============================================================ */
+
+const easePower2Out = (t) => 1 - Math.pow(1 - t, 3);
+const easeBackOut = (s = 1.7) => (t) => {
+  const c = s + 1;
+  return 1 + c * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2);
+};
+
+function tween({ from = 0, to = 1, duration = 1000, delay = 0, ease = easePower2Out, onUpdate }) {
+  return new Promise((resolve) => {
+    if (motionOff() || prefersReducedMotion() || duration <= 0) {
+      onUpdate?.(to);
+      resolve();
+      return;
+    }
+    const start = performance.now() + delay;
+    const step = (now) => {
+      if (now < start) {
+        requestAnimationFrame(step);
+        return;
+      }
+      const t = Math.min(1, (now - start) / duration);
+      onUpdate?.(from + (to - from) * ease(t));
+      if (t < 1) {
+        requestAnimationFrame(step);
+      } else {
+        resolve();
+      }
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+/* ============================================================
+   標高リング（計器盤の中心）
+   ============================================================ */
+
+const HOME_RING_R = 64;
+const HOME_RING_C = 2 * Math.PI * HOME_RING_R;
+const JUDGE_RING_R = 82;
+const JUDGE_RING_C = 2 * Math.PI * JUDGE_RING_R;
+
+function ringOffset(circumference, pct) {
+  const safe = Math.max(0, Math.min(100, Number(pct) || 0));
+  return circumference * (1 - safe / 100);
+}
+
+function setHomeRing(pct) {
+  const ring = document.getElementById("homeRing");
+  const label = document.getElementById("homePct");
+  if (ring) ring.style.strokeDashoffset = ringOffset(HOME_RING_C, pct);
+  if (label) label.textContent = String(Math.round(pct));
+}
+
+let homeRingShown = false;
+let pendingGrowth = null;
+
+function svgElevationRing(startPct) {
+  const offset = ringOffset(HOME_RING_C, startPct);
+  return `
+    <svg width="150" height="150" viewBox="0 0 150 150">
+      <circle class="ring-bg" cx="75" cy="75" r="${HOME_RING_R}"></circle>
+      <circle class="ring-fg" id="homeRing" cx="75" cy="75" r="${HOME_RING_R}"
+        style="stroke-dasharray:${HOME_RING_C};stroke-dashoffset:${offset};"></circle>
+    </svg>
+  `;
+}
+
+/* ============================================================
+   画面遷移方向（横スライド+フェード .38s／デモgoto()準拠）
+   ============================================================ */
+
+const ROUTE_LEVEL = { login: 0, home: 0, learning: 1, works: 1, lesson: 2, work: 2 };
+let lastRouteLevel = 0;
+
+function enterDirection(routeName) {
+  const level = ROUTE_LEVEL[routeName] ?? 0;
+  const dir = level >= lastRouteLevel ? "fwd" : "back";
+  lastRouteLevel = level;
+  return dir;
+}
+
+/* ============================================================
+   AI採点オーバーレイ・トースト（#app外の常設DOM）
+   ============================================================ */
+
+let judgeDom = null;
+let toastDom = null;
+let toastTimer = 0;
+let judgeOnNext = null;
+
+function ensureOverlayDom() {
+  if (judgeDom) return;
+
+  judgeDom = document.createElement("div");
+  judgeDom.className = "judge";
+  judgeDom.id = "judge";
+  judgeDom.innerHTML = `
+    <div class="judge-in">
+      <p class="thinking" id="judgeThinking">AIが回答を確認しています<span class="dots"><i>.</i><i>.</i><i>.</i></span></p>
+      <div id="judgeResult" style="display:none;">
+        <div class="judge-ring" id="judgeRingWrap">
+          <svg width="190" height="190" viewBox="0 0 190 190">
+            <circle class="jr-bg" cx="95" cy="95" r="${JUDGE_RING_R}"></circle>
+            <circle class="jr-fg" id="judgeRing" cx="95" cy="95" r="${JUDGE_RING_R}"
+              style="stroke-dasharray:${JUDGE_RING_C};stroke-dashoffset:${JUDGE_RING_C};"></circle>
+          </svg>
+          <div class="judge-center"><b id="judgeScore">0</b><span id="judgeScoreNote">SCORE / 合格80</span></div>
+          <div class="spark" id="judgeSpark"></div>
+        </div>
+        <span class="judge-stamp" id="judgeStamp">★ クリア</span>
+        <p class="judge-fb" id="judgeFb"></p>
+        <button class="judge-next" id="judgeNext" type="button">次の一歩へ →</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(judgeDom);
+
+  document.getElementById("judgeNext").addEventListener("click", () => {
+    const handler = judgeOnNext;
+    judgeOnNext = null;
+    if (handler) {
+      handler();
+    } else {
+      closeJudgeOverlay();
+    }
+  });
+
+  toastDom = document.createElement("div");
+  toastDom.className = "toast";
+  document.body.appendChild(toastDom);
+}
+
+/* 表示前に必ず全リセット（点数・リング・スタンプ・コメント・ボタン）
+   ※承認デモ submitWork ハンドラ冒頭のリセット規律を移植。省略禁止。
+     再提出時に前回の表示が一瞬でも見えたらバグ扱い。 */
+function resetJudgeOverlay() {
+  const ring = document.getElementById("judgeRing");
+  const ringWrap = document.getElementById("judgeRingWrap");
+  const stamp = document.getElementById("judgeStamp");
+  const fb = document.getElementById("judgeFb");
+  const next = document.getElementById("judgeNext");
+  const spark = document.getElementById("judgeSpark");
+
+  document.getElementById("judgeScore").textContent = "0";
+  ring.style.strokeDashoffset = JUDGE_RING_C;
+  ringWrap.style.opacity = "1";
+  ringWrap.style.transform = "scale(1)";
+  stamp.style.opacity = "0";
+  stamp.style.transform = "scale(.8)";
+  fb.style.opacity = "0";
+  fb.textContent = "";
+  next.style.opacity = "0";
+  next.style.transform = "translateY(10px)";
+  next.style.pointerEvents = "none";
+  spark.innerHTML = "";
+  judgeOnNext = null;
+}
+
+function openJudgeOverlay(message = "AIが回答を確認しています") {
+  ensureOverlayDom();
+  resetJudgeOverlay();
+  document.getElementById("judgeThinking").innerHTML =
+    `${escapeHtml(message)}<span class="dots"><i>.</i><i>.</i><i>.</i></span>`;
+  document.getElementById("judgeThinking").style.display = "block";
+  document.getElementById("judgeResult").style.display = "none";
+  judgeDom.classList.add("on");
+  document.body.style.overflow = "hidden";
+}
+
+function closeJudgeOverlay() {
+  if (!judgeDom) return;
+  judgeDom.classList.remove("on");
+  document.body.style.overflow = "";
+  resetJudgeOverlay();
+}
+
+async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel, onNext }) {
+  ensureOverlayDom();
+  const ringWrap = document.getElementById("judgeRingWrap");
+  const ring = document.getElementById("judgeRing");
+  const scoreEl = document.getElementById("judgeScore");
+  const stamp = document.getElementById("judgeStamp");
+  const fb = document.getElementById("judgeFb");
+  const next = document.getElementById("judgeNext");
+
+  document.getElementById("judgeThinking").style.display = "none";
+  document.getElementById("judgeResult").style.display = "block";
+  document.getElementById("judgeScoreNote").textContent = scoreNote || "SCORE / 合格80";
+  fb.textContent = feedback || "";
+  next.textContent = buttonLabel || "次の一歩へ →";
+  judgeOnNext = onNext || null;
+
+  const target = Math.max(0, Math.min(100, Number(score) || 0));
+
+  /* リング立ち上がり（back.out(1.6) / .45s） */
+  await tween({
+    from: 0, to: 1, duration: 450, ease: easeBackOut(1.6),
+    onUpdate: (v) => {
+      ringWrap.style.opacity = String(Math.max(0, Math.min(1, v)));
+      ringWrap.style.transform = `scale(${.85 + .15 * v})`;
+    }
+  });
+
+  /* スコアは必ず0から実スコアへ満ちる（1.2s） */
+  await tween({
+    from: 0, to: target, duration: 1200, ease: easePower2Out,
+    onUpdate: (v) => {
+      scoreEl.textContent = String(Math.round(v));
+      ring.style.strokeDashoffset = ringOffset(JUDGE_RING_C, v);
+    }
+  });
+
+  /* 金のクリアスタンプ（back.out(2.2)）＋粒子22個は good のときだけ */
+  if (passed) {
+    sparkBurst();
+    await tween({
+      from: 0, to: 1, duration: 450, ease: easeBackOut(2.2),
+      onUpdate: (v) => {
+        stamp.style.opacity = String(Math.max(0, Math.min(1, v)));
+        stamp.style.transform = `scale(${.8 + .2 * v})`;
+      }
+    });
+  }
+
+  await tween({
+    from: 0, to: 1, duration: 500,
+    onUpdate: (v) => { fb.style.opacity = String(Math.max(0, Math.min(1, v))); }
+  });
+
+  await tween({
+    from: 0, to: 1, duration: 450,
+    onUpdate: (v) => {
+      next.style.opacity = String(Math.max(0, Math.min(1, v)));
+      next.style.transform = `translateY(${10 * (1 - v)}px)`;
+    }
+  });
+  next.style.pointerEvents = "auto";
+}
+
+function sparkBurst() {
+  if (motionOff() || prefersReducedMotion()) return;
+  const wrap = document.getElementById("judgeSpark");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  for (let i = 0; i < 22; i++) {
+    const s = document.createElement("i");
+    const a = (Math.PI * 2 * i) / 22 + Math.random() * .4;
+    const dist = 60 + Math.random() * 90;
+    s.style.setProperty("--x", `${Math.cos(a) * dist}px`);
+    s.style.setProperty("--y", `${Math.sin(a) * dist * .8}px`);
+    s.style.setProperty("--d", `${.7 + Math.random() * .6}s`);
+    if (i % 4 === 0) s.style.background = "#e0503f";
+    wrap.appendChild(s);
+  }
+}
+
+function showToast(html, duration = 3200) {
+  ensureOverlayDom();
+  toastDom.innerHTML = html;
+  toastDom.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastDom.classList.remove("on"), duration);
+}
+
+/* ============================================================
+   起動・ルーティング（ロジックは V5 準拠・変更禁止）
+   ============================================================ */
+
 async function boot() {
+  applyMotionPreference();
   renderLoading();
 
   try {
@@ -114,11 +431,15 @@ function parseRoute() {
   return { name: "home" };
 }
 
+/* ============================================================
+   画面：ローディング／エラー／ログイン
+   ============================================================ */
+
 function renderLoading() {
   app.innerHTML = `
     <main class="loading-screen">
-      <img src="${config.brandLogo}" alt="Barise" class="loading-logo">
-      <p>学習ページを開いています</p>
+      <span class="loading-ring" aria-hidden="true"></span>
+      <p>学習ページをひらいています</p>
     </main>
   `;
 }
@@ -126,38 +447,91 @@ function renderLoading() {
 function renderError(message) {
   app.innerHTML = `
     <main class="login-screen">
-      <div class="login-visual" style="background-image: url('${config.heroImage}')"></div>
+      <img src="${config.brandLogo}" alt="Barise" class="login-brand">
       <section class="login-panel" aria-labelledby="error-title">
-        <img src="${config.brandLogo}" alt="Barise" class="brand-logo">
-        <h1 id="error-title">ページを開けませんでした</h1>
-        <p>${escapeHtml(message)}</p>
-        <button class="primary-button" type="button" data-action="reload">再読み込み</button>
+        <p class="eyebrow">CONSOLE</p>
+        <h1 id="error-title">ページをひらけませんでした</h1>
+        <p class="lead">${escapeHtml(message)}</p>
+        <button class="primary-button" type="button" data-action="reload">もう一度ひらく</button>
       </section>
     </main>
+    ${renderMotionToggle()}
   `;
+  applyMotionPreference();
 }
 
 function renderLogin(errorMessage = "", emailValue = getLastEmail(), showSupport = false) {
   app.innerHTML = `
     <main class="login-screen">
-      <div class="login-visual" style="background-image: url('${config.heroImage}')"></div>
+      <img src="${config.brandLogo}" alt="Barise" class="login-brand">
+      <p class="login-tag">BASE + RISE — 土台から、確かな一歩を</p>
       <section class="login-panel" aria-labelledby="login-title">
-        <img src="${config.brandLogo}" alt="Barise" class="brand-logo">
-        <p class="eyebrow">Member Learning</p>
-        <h1 id="login-title">学習ページへログイン</h1>
-        <p class="lead">会員専用学習ページです。学習進捗・提出ワーク・フィードバックをここで確認できます。</p>
+        <p class="eyebrow">MEMBER LEARNING</p>
+        <h1 id="login-title">おかえりなさい</h1>
+        <p class="lead">ここは、あなた専用の学びの基地です。動画・ワーク・フィードバックのすべてが、この場所から始まります。</p>
         <form id="login-form" class="login-form">
           <label for="email">メールアドレス</label>
           <input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="公式LINEに登録したメールアドレス" value="${escapeHtml(emailValue)}" required>
           ${errorMessage ? `<div class="form-error">${escapeHtml(errorMessage)}</div>` : ""}
-          ${showSupport ? `<a class="line-button support-login-cta" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEでサポートに相談する</a>` : ""}
-          <button class="primary-button" type="submit">ログイン</button>
+          ${showSupport ? `<a class="line-button" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEでサポートに相談する</a>` : ""}
+          <button class="primary-button" type="submit">学習をはじめる</button>
         </form>
-        <p class="login-support-note">うまく入れない場合も、サポートが確認します。</p>
+        <p class="login-support-note">うまく入れないときも、サポートが確認しますのでご安心ください。</p>
       </section>
     </main>
+    ${renderMotionToggle()}
+  `;
+  applyMotionPreference();
+}
+
+/* ============================================================
+   共通：ヘッダー・タブナビ
+   ============================================================ */
+
+function renderHomeTop(learning) {
+  const d = new Date();
+  const currentPhase = learning.currentPhase;
+  const sub = `${d.getMonth() + 1}/${d.getDate()}${currentPhase ? ` ・ ${escapeHtml(kanjiChapter(currentPhase.phase_order))}` : ""}`;
+  return `
+    <div class="top">
+      <a href="#/home" aria-label="Barise ホーム"><img class="brand-img" src="${config.brandLogo}" alt="Barise" width="108"></a>
+      <span class="top-sub">${sub}</span>
+    </div>
   `;
 }
+
+function renderBackTop(href, label, sub = "") {
+  return `
+    <div class="top">
+      <a class="back" href="${escapeAttribute(href)}">← ${escapeHtml(label)}</a>
+      ${sub ? `<span class="top-sub">${escapeHtml(sub)}</span>` : ""}
+    </div>
+  `;
+}
+
+function renderTabbar(current) {
+  return `
+    <nav class="tabbar" aria-label="主要ナビゲーション">
+      <a href="#/home" ${current === "home" ? 'aria-current="page"' : ""}>ホーム</a>
+      <a href="#/learning" ${current === "learning" ? 'aria-current="page"' : ""}>学習</a>
+      <a href="#/works" ${current === "works" ? 'aria-current="page"' : ""}>ワーク</a>
+      <span class="tab-spacer"></span>
+      <button class="text-button" type="button" data-action="logout">ログアウト</button>
+    </nav>
+  `;
+}
+
+function greetingByHour() {
+  const hour = new Date().getHours();
+  if (hour < 4) return "こんばんは";
+  if (hour < 11) return "おはようございます";
+  if (hour < 18) return "こんにちは";
+  return "こんばんは";
+}
+
+/* ============================================================
+   ホーム（#/home）＝計器盤
+   ============================================================ */
 
 function renderHome() {
   const learning = state.learning;
@@ -166,69 +540,143 @@ function renderHome() {
     return;
   }
 
-  const selectedPhaseId = state.selectedPhaseId || learning.currentPhase?.phase_id;
-  const selectedPhase = learning.phases.find((phase) => phase.phase_id === selectedPhaseId) || learning.currentPhase;
-  const continueLesson = learning.currentLesson;
-  const continueCta = continueLesson ? getLessonCta(continueLesson) : null;
+  const summary = learning.progressSummary;
+  const percent = Math.max(0, Math.min(100, Number(summary.percent) || 0));
+  const name = String(learning.user.nickname || learning.user.display_name || "受講者").replace(/(さん|様)\s*$/, "");
+  const lesson = learning.currentLesson;
+  const cta = lesson ? getLessonCta(lesson) : null;
+  const dir = enterDirection("home");
+
+  const growth = pendingGrowth;
+  pendingGrowth = null;
+  const startPct = growth ? growth.from : (homeRingShown ? percent : 0);
+  const passCount = summary.miniDone + summary.workDone;
+  const passTotal = summary.miniTotal + summary.workTotal;
 
   app.innerHTML = `
-    ${renderHeader(learning.user)}
-    <main class="main-shell">
-      <section class="home-hero" style="background-image: linear-gradient(90deg, rgba(255,255,255,.96), rgba(255,255,255,.78), rgba(255,255,255,.36)), url('${config.heroImage}')">
-        <div class="hero-copy">
-          <p class="eyebrow">Barise Learning</p>
-          <h1>${escapeHtml(learning.user.display_name || "受講者さん")}、続きから始めましょう</h1>
-          <p>${escapeHtml(selectedPhase?.phase_summary || "今日の学習を進めましょう。")}</p>
-          ${continueCta ? `
-            <div class="next-action-panel">
-              <span>次にやること</span>
-              <strong>${escapeHtml(continueCta.summary)}</strong>
-              ${renderProgressBar(learning.progressSummary.percent, "総合進捗")}
+    <div class="stage" data-enter="${dir}">
+      ${renderHomeTop(learning)}
+      ${renderTabbar("home")}
+      <main>
+        <p class="greet">${escapeHtml(greetingByHour())}、<b>${escapeHtml(name)}さん</b>。今日も一段、登りましょう。</p>
+
+        <section class="gauge-card rise" aria-label="全体の進捗">
+          <div class="ring-wrap">
+            ${svgElevationRing(startPct)}
+            <div class="ring-center">
+              <b><span id="homePct">${Math.round(startPct)}</span><small>%</small></b>
+              <span>全行程</span>
             </div>
-          ` : ""}
-          <div class="hero-actions">
-            ${continueCta ? `<a class="primary-button primary-button--main" href="${escapeAttribute(continueCta.href)}"><span>続きから再開</span><small>${escapeHtml(continueCta.shortNote || "今日の教材へ進む")}</small></a>` : ""}
-            <a class="ghost-button" href="#/learning">学習へ</a>
-            <a class="ghost-button" href="#/works">ワークへ</a>
-            <a class="ghost-button" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
           </div>
-        </div>
-      </section>
-
-      <section class="summary-grid" aria-label="学習状況">
-        ${renderSummaryCard("総合進捗", `${learning.progressSummary.percent}%`, `${learning.progressSummary.doneSteps}/${learning.progressSummary.totalSteps}項目`, learning.progressSummary.percent, "総")}
-        ${renderSummaryCard("動画", `${learning.progressSummary.videoDone}/${learning.progressSummary.videoTotal}`, "視聴完了", null, "視")}
-        ${renderSummaryCard("ミニワーク", `${learning.progressSummary.miniDone}/${learning.progressSummary.miniTotal}`, "提出済み", null, "書")}
-        ${renderSummaryCard("ワーク", `${learning.progressSummary.workDone}/${learning.progressSummary.workTotal}`, "提出済み", null, "実")}
-      </section>
-
-      <section class="learning-layout">
-        <aside class="phase-nav" aria-label="フェーズ一覧">
-          <div class="section-heading">
-            <p class="eyebrow">Phase</p>
-            <h2>フェーズ一覧</h2>
-          </div>
-          <div class="phase-list">
-            ${learning.phases.map(renderPhaseButton).join("")}
-          </div>
-        </aside>
-
-        <section class="lesson-area" aria-labelledby="lesson-area-title">
-          <div class="section-heading section-heading-row">
-            <div>
-              <p class="eyebrow">${escapeHtml(selectedPhase?.phase_id || "")}</p>
-              <h2 id="lesson-area-title">${escapeHtml(selectedPhase?.phase_title || "現在のフェーズ")}</h2>
-            </div>
-            <span class="soft-badge">${selectedPhase?.completedCount || 0}/${selectedPhase?.lessonCount || 0} 完了</span>
-          </div>
-          <div class="lesson-grid">
-            ${(selectedPhase?.lessons || []).map(renderLessonCard).join("") || renderEmptyLessons()}
+          <div class="gauge-stats">
+            <div class="gs"><b>${summary.doneSteps}<em> /${summary.totalSteps}</em></b><small>クリアステップ</small></div>
+            <div class="gs"><b>${summary.videoDone}<em> /${summary.videoTotal}</em></b><small>視聴した動画</small></div>
+            <div class="gs hot"><b>${passCount}<em> /${passTotal}</em></b><small>クリアしたワーク</small></div>
           </div>
         </section>
-      </section>
-    </main>
+
+        ${cta ? `
+          <section class="today2 rise rise-1" aria-label="今日の一歩">
+            <p class="t2-k">今日の一歩</p>
+            <h2>${escapeHtml(lesson.lesson_title)}</h2>
+            <p class="t2-sub">${escapeHtml(cta.summary)}</p>
+            <a class="t2-btn" href="${escapeAttribute(cta.href)}">${escapeHtml(cta.label)} →</a>
+          </section>
+        ` : `
+          <section class="today2 rise rise-1" aria-label="今日の一歩">
+            <p class="t2-k">今日の一歩</p>
+            <h2>すべての行程を登りきりました</h2>
+            <p class="t2-sub">ここまでの歩みは、あなたの確かな土台です。復習やワークの振り返りにいつでも戻れます。</p>
+            <a class="t2-btn" href="#/learning">学習をふり返る →</a>
+          </section>
+        `}
+
+        <section class="ch-list rise rise-2" aria-label="章の一覧">
+          <p class="ch-h">CHAPTERS</p>
+          ${learning.phases
+            .slice()
+            .sort((a, b) => (a.phase_order || 0) - (b.phase_order || 0))
+            .map((phase) => renderChapterRow(learning, phase))
+            .join("")}
+        </section>
+
+        <div class="page-foot">
+          <a class="text-link" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
+        </div>
+      </main>
+    </div>
+    ${renderMotionToggle()}
   `;
+
+  requestAnimationFrame(() => {
+    if (growth) {
+      homeRingShown = true;
+      setTimeout(() => {
+        tween({
+          from: growth.from, to: growth.to, duration: 1100, ease: easePower2Out,
+          onUpdate: (v) => setHomeRing(v)
+        });
+        showToast(`標高が上がりました <span class="g">${growth.from}% → ${growth.to}%</span>`);
+      }, 450);
+    } else if (!homeRingShown) {
+      homeRingShown = true;
+      tween({
+        from: 0, to: percent, duration: 1300, delay: 250, ease: easePower2Out,
+        onUpdate: (v) => setHomeRing(v)
+      });
+    } else {
+      setHomeRing(percent);
+    }
+  });
 }
+
+function chapterState(learning, phase) {
+  if (!phase.isAccessible) return "locked";
+  const done = Number(phase.completedCount || 0);
+  const total = Number(phase.lessonCount || 0);
+  if (total > 0 && done >= total) return "done";
+  if (phase.phase_id === learning.currentPhase?.phase_id) return "current";
+  if (done > 0) return "current";
+  return "open";
+}
+
+function chapterTargetLesson(learning, phase) {
+  if (learning.currentLesson && phase.lessons.some((item) => item.lesson_id === learning.currentLesson.lesson_id)) {
+    return learning.currentLesson;
+  }
+  return phase.lessons.find((item) => !item.isComplete) || phase.lessons[0] || null;
+}
+
+function renderChapterRow(learning, phase) {
+  const stateName = chapterState(learning, phase);
+  const done = Number(phase.completedCount || 0);
+  const total = Number(phase.lessonCount || 0);
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const no = padChapter(phase.phase_order);
+
+  let stateMarkup = `<span class="ch-state">これから</span>`;
+  if (stateName === "done") stateMarkup = `<span class="ch-state done">★ クリア</span>`;
+  if (stateName === "current") stateMarkup = `<span class="ch-state here"><span class="here-dot" aria-hidden="true"></span>いまここ</span>`;
+  if (stateName === "locked") stateMarkup = `<span class="ch-state lock">🔒 解放待ち</span>`;
+
+  const inner = `
+    <b><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</b>
+    ${stateMarkup}
+    <div class="ch-mini"><div class="mbar"><span style="width:${pct}%"></span></div><em>${done}/${total}</em></div>
+  `;
+
+  if (stateName === "locked") {
+    return `<div class="ch-row is-locked" aria-label="${escapeAttribute(phase.phase_title)}（解放待ち）">${inner}</div>`;
+  }
+
+  const target = chapterTargetLesson(learning, phase);
+  const href = target ? hashForLesson(target.lesson_id) : "#/learning";
+  return `<a class="ch-row" href="${escapeAttribute(href)}">${inner}</a>`;
+}
+
+/* ============================================================
+   学習一覧（#/learning）
+   ============================================================ */
 
 function renderLearningPage() {
   const learning = state.learning;
@@ -237,93 +685,381 @@ function renderLearningPage() {
     return;
   }
 
-  const nextLesson = learning.currentLesson;
+  const dir = enterDirection("learning");
+  const phases = learning.phases
+    .slice()
+    .sort((a, b) => (a.phase_order || 0) - (b.phase_order || 0));
 
   app.innerHTML = `
-    ${renderHeader(learning.user)}
-    <main class="main-shell route-page">
-      ${renderRouteHero("Learning", "学習一覧", "公式LINEの学習メニューから直接入れる、動画教材の一覧です。", [
-        { label: "マイページへ戻る", href: "#/home" },
-        { label: "ワーク一覧へ", href: "#/works" }
-      ])}
-
-      ${nextLesson ? `
-        <section class="content-panel route-feature" aria-labelledby="next-video-title">
-          <div class="section-heading section-heading-row">
-            <div>
-              <p class="eyebrow">Next Video</p>
-              <h2 id="next-video-title">次に見るべき動画</h2>
-            </div>
-            ${renderVideoStatusBadge(nextLesson.progress.video_status)}
-          </div>
-          <h3>${escapeHtml(nextLesson.lesson_title)}</h3>
-          <p>${escapeHtml(nextLesson.lesson_summary)}</p>
-          <div class="route-card-actions">
-            <a class="primary-button" href="${escapeAttribute(hashForLesson(nextLesson.lesson_id, "video"))}">動画へ進む</a>
-            ${nextLesson.work ? `<a class="ghost-button" href="${escapeAttribute(hashForWork(nextLesson.work.work_id))}">関連ワークへ</a>` : ""}
-          </div>
-        </section>
-      ` : ""}
-
-      <section class="route-section" aria-labelledby="learning-list-title">
-        <div class="section-heading">
-          <p class="eyebrow">Video List</p>
-          <h2 id="learning-list-title">フェーズ別の動画一覧</h2>
+    <div class="stage" data-enter="${dir}">
+      ${renderHomeTop(learning)}
+      ${renderTabbar("learning")}
+      <main>
+        <p class="page-kicker">ROUTE</p>
+        <h1 class="page-title">登頂ルート</h1>
+        <p class="page-lead">動画を見て、ミニワークで言葉にする。その一歩ずつが、次の章への道になります。</p>
+        ${phases.map((phase, index) => renderPhaseGroup(learning, phase, index)).join("")}
+        <div class="page-foot">
+          <a class="text-link" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
         </div>
-        <div class="phase-learning-list">
-          ${learning.phases.map((phase) => renderLearningPhaseBlock(phase)).join("")}
-        </div>
-      </section>
-    </main>
+      </main>
+    </div>
+    ${renderMotionToggle()}
   `;
 
   requestAnimationFrame(() => scrollToPageTop());
 }
 
-function renderLearningPhaseBlock(phase) {
-  return `
-    <section class="content-panel learning-phase-block" aria-labelledby="learning-${escapeAttribute(phase.phase_id)}">
-      <div class="section-heading section-heading-row">
-        <div>
-          <p class="eyebrow">${escapeHtml(phase.phase_id)}</p>
-          <h3 id="learning-${escapeAttribute(phase.phase_id)}">${escapeHtml(phase.phase_title)}</h3>
+function renderPhaseGroup(learning, phase, index) {
+  const stateName = chapterState(learning, phase);
+  const done = Number(phase.completedCount || 0);
+  const total = Number(phase.lessonCount || 0);
+  const no = padChapter(phase.phase_order);
+  const riseClass = index < 4 ? ` rise rise-${index}` : "";
+
+  if (stateName === "locked") {
+    return `
+      <section class="phase-group${riseClass}" aria-label="${escapeAttribute(phase.phase_title)}（解放待ち）">
+        <div class="phase-head">
+          <span class="ph-title"><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</span>
+          <span class="ph-count">🔒 解放待ち</span>
         </div>
-        <span class="soft-badge">${escapeHtml(String(phase.completedCount || 0))}/${escapeHtml(String(phase.lessonCount || 0))} 完了</span>
+        <p class="phase-locked-note">${escapeHtml(phase.phase_summary || "前の章を登りきると、この章の景色がひらけます。")}</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="phase-group${riseClass}" aria-label="${escapeAttribute(phase.phase_title)}">
+      <div class="phase-head">
+        <span class="ph-title"><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</span>
+        <span class="ph-count${stateName === "done" ? " done" : ""}">${stateName === "done" ? "★ クリア " : ""}${done}/${total}</span>
       </div>
-      <div class="learning-row-list">
-        ${phase.lessons.map(renderLearningLessonRow).join("")}
+      ${phase.lessons.map((lesson) => renderLessonRow(learning, phase, lesson)).join("") || `<p class="phase-locked-note">この章の教材は順次ひらいていきます。</p>`}
+    </section>
+  `;
+}
+
+function stationState(learning, phase, lesson) {
+  if (!phase.isAccessible) return "locked";
+  if (lesson.isComplete) return "complete";
+  if (learning.currentLesson?.lesson_id === lesson.lesson_id) return "current";
+  if ([lesson.progress.video_status, lesson.progress.mini_work_status, lesson.progress.work_status]
+    .some((status) => ["watched", "submitted", "reviewing", "needs_more", "support_needed", "unlocked"].includes(status))) {
+    return "progress";
+  }
+  return "not-started";
+}
+
+function stationSubText(lesson) {
+  const duration = lesson.estimated_duration || "約10分";
+  const pieces = [`動画 ${duration}`];
+  if (lesson.miniWork) pieces.push("ミニワーク");
+  if (lesson.work) pieces.push("本ワーク");
+  return pieces.join(" ・ ");
+}
+
+function renderLessonRow(learning, phase, lesson) {
+  const stateName = stationState(learning, phase, lesson);
+  const cta = getLearningLessonCta(lesson);
+
+  let stateMarkup = `<span class="ls-state">これから</span>`;
+  if (stateName === "complete") stateMarkup = `<span class="ls-state done">★ クリア</span>`;
+  if (stateName === "current") stateMarkup = `<span class="ls-state here"><span class="here-dot" aria-hidden="true"></span>いまここ</span>`;
+  if (stateName === "progress") stateMarkup = `<span class="ls-state watched">進行中</span>`;
+  if (stateName === "locked") stateMarkup = `<span class="ls-state lock">🔒 解放待ち</span>`;
+
+  let ctaMarkup = "";
+  if (stateName === "complete") ctaMarkup = `<span class="ls-cta ls-cta--calm">ふり返る</span>`;
+  if (stateName === "current") ctaMarkup = `<span class="ls-cta">${escapeHtml(cta.label)}</span>`;
+  if (stateName === "progress") ctaMarkup = `<span class="ls-cta">つづきへ</span>`;
+  if (stateName === "not-started") ctaMarkup = `<span class="ls-cta ls-cta--calm">ひらく</span>`;
+
+  const inner = `
+    <span class="ls-id">${escapeHtml(lesson.lesson_id)}</span>
+    <div class="ls-side">
+      ${stateMarkup}
+      ${ctaMarkup}
+    </div>
+    <h4>${escapeHtml(lesson.lesson_title)}</h4>
+    <p class="ls-sub">${escapeHtml(stationSubText(lesson))}${stateName === "locked" ? " ・ 前の教材をクリアするとひらきます" : ""}</p>
+  `;
+
+  if (stateName === "locked") {
+    return `<div class="ls-row is-locked">${inner}</div>`;
+  }
+  return `<a class="ls-row${stateName === "current" ? " is-current" : ""}" href="${escapeAttribute(cta.href)}">${inner}</a>`;
+}
+
+/* ============================================================
+   レッスン（#/lesson/:id）
+   ============================================================ */
+
+function renderLesson(lessonId, section = "") {
+  const learning = state.learning;
+  const lessonContext = findLessonContext(learning, lessonId);
+  const lesson = lessonContext?.lesson;
+  const phase = lessonContext?.phase;
+
+  if (!lesson) {
+    renderHome();
+    return;
+  }
+
+  const dir = enterDirection("lesson");
+
+  app.innerHTML = `
+    <div class="stage" data-enter="${dir}">
+      ${renderBackTop("#/learning", "戻る", `${phase ? kanjiChapter(phase.phase_order) : ""} ・ ${lesson.lesson_id}`)}
+      <main>
+        <div class="lesson-title">
+          <p class="lt-k">CHAPTER ${padChapter(phase?.phase_order)}</p>
+          <h1>${escapeHtml(lesson.lesson_title)}</h1>
+          <p class="lt-sub">${escapeHtml(lesson.lesson_summary || lesson.purpose_watch || "この教材の目的を確認します。")}</p>
+        </div>
+
+        ${renderVideoBlock(lesson)}
+        ${renderMiniWorkBlock(lesson)}
+        ${renderWorkBlock(lesson)}
+        ${renderLearningDetailBlock(lesson)}
+        ${renderLessonBottomNav(learning, lesson)}
+      </main>
+    </div>
+    ${renderMotionToggle()}
+  `;
+
+  requestAnimationFrame(() => focusLessonSection(section));
+}
+
+function renderVideoBlock(lesson) {
+  const hasVideo = Boolean(lesson.video_url);
+  const isWatched = lesson.progress.video_status === "watched";
+  const duration = lesson.estimated_duration || "約10分";
+  const videoMarkup = hasVideo
+    ? `<iframe src="${escapeAttribute(toEmbedUrl(lesson.video_url))}" title="${escapeAttribute(lesson.lesson_title)}" allowfullscreen></iframe>`
+    : `<div class="video-placeholder"><span>▶</span><strong>このレッスンの動画</strong></div>`;
+
+  return `
+    <section id="section-video" data-section="video" tabindex="-1" aria-label="動画">
+      <div class="video2">${videoMarkup}</div>
+      ${isWatched
+        ? `<p class="watch-note"><i>✓</i> 視聴済み ・ 目安 ${escapeHtml(duration)}</p>`
+        : `
+          <button class="primary-button watch-button" type="button" data-action="mark-video" data-lesson-id="${escapeHtml(lesson.lesson_id)}">
+            動画を見たら視聴完了にする
+          </button>
+          <p class="submission-note">目安 ${escapeHtml(duration)}</p>
+        `}
+    </section>
+  `;
+}
+
+function renderMiniWorkBlock(lesson) {
+  if (!lesson.miniWork) return "";
+  const submission = lesson.latestMiniSubmission;
+  const value = submission?.answer_text || "";
+  const placeholder = getMiniWorkPlaceholder(lesson.miniWork);
+  const submitLabel = submission ? "もう一度確認してもらう" : "AIに確認してもらう";
+
+  return `
+    <section id="section-mini-work" class="mini-panel" data-section="mini-work" tabindex="-1" aria-labelledby="mini-work-title">
+      <p class="mp-k">MINI WORK ${renderStatusBadge(lesson.progress.mini_work_status)}</p>
+      <h3 id="mini-work-title">${escapeHtml(lesson.miniWork.title)}</h3>
+      <p class="mp-hint">${escapeHtml(lesson.miniWork.prompt)}</p>
+      ${lesson.practice_part ? `
+        <div class="mp-callout">
+          <span>実践の問い</span>
+          ${escapeHtml(lesson.practice_part)}
+        </div>
+      ` : ""}
+      <p class="mp-hint">${escapeHtml(lesson.miniWork.helper_text || "いつ・どこで・何をするかを、1つに絞って書くと評価されやすくなります。")}</p>
+      <form class="work-form" data-form="mini-work" data-target-id="${escapeHtml(lesson.miniWork.mini_work_id)}">
+        <label class="field-label" for="mini-${escapeAttribute(lesson.miniWork.mini_work_id)}">回答</label>
+        <textarea id="mini-${escapeAttribute(lesson.miniWork.mini_work_id)}" name="answer" rows="6" placeholder="${escapeAttribute(placeholder)}" required>${escapeHtml(value)}</textarea>
+        <button class="submit2 work-submit-button" type="submit">${submitLabel}</button>
+      </form>
+      ${submission ? renderSubmissionNote(submission) : ""}
+      ${lesson.latestMiniEvaluation ? renderEvaluationResultCard(lesson.latestMiniEvaluation, "ミニワーク") : ""}
+    </section>
+  `;
+}
+
+function getMiniWorkPlaceholder(miniWork = {}) {
+  if (miniWork.answer_placeholder) return miniWork.answer_placeholder;
+  if (miniWork.placeholder) return miniWork.placeholder;
+  if (miniWork.learner_prompt_full) {
+    return `${miniWork.learner_prompt_full.replace(/\s+/g, " ").slice(0, 90)}${miniWork.learner_prompt_full.length > 90 ? "…" : ""}`;
+  }
+  return "動画で学んだ考え方を、自分の実際の場面に置き換えて書いてください。";
+}
+
+function renderWorkBlock(lesson) {
+  if (!lesson.work) return "";
+  const questions = Array.isArray(lesson.work.questions) ? lesson.work.questions.filter(Boolean) : [];
+  const aiStatus = lesson.aiWorkStatus || "not_started";
+  const isUnlocked = lesson.canSubmitWork || lesson.progress.work_status === "good" || aiStatus === "completed";
+
+  return `
+    <section id="section-work" class="mini-panel" data-section="work" tabindex="-1" aria-labelledby="work-title">
+      <p class="mp-k">WORK ${renderAiWorkStatusBadge(aiStatus)}</p>
+      <h3 id="work-title">${escapeHtml(lesson.work.title)}</h3>
+      <p class="mp-hint">${escapeHtml(lesson.work.entry_description || lesson.work.purpose)}</p>
+      ${questions.length ? `<div class="mp-callout"><span>問い</span><ol style="padding-left:18px;">${questions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol></div>` : ""}
+      ${isUnlocked ? `
+        <a class="submit2" href="${escapeAttribute(hashForWork(lesson.work.work_id))}">${escapeHtml(getLessonWorkCtaLabel(aiStatus))}</a>
+        <a class="ghost-button" href="#/works">ワーク一覧へ</a>
+      ` : renderLockedWorkNote(lesson)}
+    </section>
+  `;
+}
+
+function renderLockedWorkNote(lesson) {
+  const remaining = lesson.workUnlockRemainingLessonIds || [];
+  const lessonNames = remaining
+    .map((lessonId) => findLessonContext(state.learning, lessonId)?.lesson?.lesson_title || lessonId)
+    .filter(Boolean);
+
+  return `
+    <div class="mp-callout">
+      <span>ひらくための条件</span>
+      関連するミニワークをクリアすると、この本ワークがひらきます。
+      ${lessonNames.length ? `<ul style="padding-left:18px;margin-top:4px;">${lessonNames.map((name) => `<li>${escapeHtml(name)}</li>`).join("")}</ul>` : ""}
+    </div>
+  `;
+}
+
+function renderLearningDetailBlock(lesson) {
+  const points = Array.isArray(lesson.material_points) ? lesson.material_points.filter(Boolean) : [];
+
+  return `
+    <section id="section-purpose" data-section="purpose" tabindex="-1" aria-labelledby="purpose-title">
+      <details class="learn-details">
+        <summary>
+          <span id="purpose-title">このレッスンで学ぶこと</span>
+          <small class="closed-label">ひらいて確認</small>
+          <small class="open-label">閉じる</small>
+        </summary>
+        <div class="ld-body">
+          <div class="ld-item">
+            <span>学習目的</span>
+            <p>${escapeHtml(lesson.lesson_summary || lesson.purpose_watch || "この教材の目的を確認します。")}</p>
+          </div>
+          ${points.length ? `
+            <div class="ld-item">
+              <span>主な内容</span>
+              <ul>${points.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+            </div>
+          ` : ""}
+          <div class="ld-item">
+            <span>視聴後にできるようになること</span>
+            <p>${escapeHtml(lesson.learning_outcome || lesson.category_or_work || lesson.purpose_write || "現場で使える視点を整理できます。")}</p>
+          </div>
+          ${lesson.purpose_watch ? `<div class="ld-item"><span>見る</span><p>${escapeHtml(lesson.purpose_watch)}</p></div>` : ""}
+          ${lesson.purpose_think ? `<div class="ld-item"><span>考える</span><p>${escapeHtml(lesson.purpose_think)}</p></div>` : ""}
+          ${lesson.purpose_write ? `<div class="ld-item"><span>書く</span><p>${escapeHtml(lesson.purpose_write)}</p></div>` : ""}
+        </div>
+      </details>
+    </section>
+  `;
+}
+
+function renderLessonBottomNav(learning, lesson) {
+  const nextLesson = getNextLesson(learning, lesson);
+  const nextLock = getLessonNextLockState(learning, lesson);
+  return `
+    <nav class="lesson-nav" aria-label="レッスン下部ナビゲーション">
+      ${nextLesson && !nextLock.locked ? `<a class="primary-button" href="${escapeAttribute(hashForLesson(nextLesson.lesson_id, "video"))}">次の一歩へ進む</a>` : ""}
+      ${nextLesson && nextLock.locked ? `<span class="locked-next-note">${escapeHtml(nextLock.detail || nextLock.label)}</span>` : ""}
+      <a class="ghost-button" href="#/learning">登頂ルートへ戻る</a>
+      <a class="line-button" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
+    </nav>
+  `;
+}
+
+function renderSubmissionNote(submission) {
+  return `
+    <div class="submission-note">
+      <span>${escapeHtml(learnerStatusLabel(submission.status))}</span>
+      <time datetime="${escapeAttribute(submission.submitted_at)}">${escapeHtml(formatDate(submission.submitted_at))}</time>
+    </div>
+  `;
+}
+
+function getLessonNextLockState(learning, lesson) {
+  const nextLesson = getNextLesson(learning, lesson);
+  if (!nextLesson) return { locked: false, label: "最終教材です" };
+  if (lesson.miniWork && lesson.progress.mini_work_status !== "good") {
+    return {
+      locked: true,
+      label: "ミニワークをクリアするとひらきます",
+      detail: "この教材のミニワークをクリアすると、次の動画への道がひらきます。"
+    };
+  }
+  return { locked: false, label: "進めます" };
+}
+
+/* ============================================================
+   評価結果カード（インライン・再訪時表示用）
+   ============================================================ */
+
+function renderEvaluationResultCard(evaluation, label) {
+  const score = Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : null;
+  const resultHelp = getEvaluationResultHelp(evaluation.result_status);
+  const isPassed = evaluation.result_status === "good";
+  const nextTitle = isPassed ? "次に進む前に" : "次に意識すること";
+  const resultKind = label === "ミニワーク" ? "mini-work" : "work";
+  const resultId = resultKind === "mini-work" ? ` id="mini-work-evaluation-result"` : "";
+  const goodPoints = uniqueLearnerItems(evaluation.good_points || []).slice(0, 3);
+  const improvementPoints = isPassed ? [] : uniqueLearnerItems(evaluation.improvement_points || []).filter((item) => !goodPoints.includes(item)).slice(0, 3);
+  const nextActionText = evaluation.next_action_text || (isPassed ? "次へ進みましょう" : "もう一度具体化する");
+  const nextQuestion = !isPassed && evaluation.next_question && evaluation.next_question !== nextActionText
+    ? evaluation.next_question
+    : "";
+
+  return `
+    <section${resultId} class="evaluation-card" data-result="${escapeAttribute(evaluation.result_status)}" data-evaluation-result="${escapeAttribute(resultKind)}" aria-label="${escapeAttribute(label)}の評価結果">
+      <p class="ev-k">FEEDBACK ${renderStatusBadge(evaluation.result_status)}</p>
+      <div class="ev-score">
+        <strong>${score === null ? "—" : score}</strong>
+        <small>SCORE / 合格80</small>
+      </div>
+      <p class="ev-help">${escapeHtml(resultHelp)}</p>
+      <div class="ev-cols">
+        <div>
+          <h4>良い点</h4>
+          <ul>${goodPoints.length ? goodPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : `<li>回答を出して、考える材料を言葉にできています。</li>`}</ul>
+        </div>
+        ${improvementPoints.length ? `
+          <div>
+            <h4>改善ポイント</h4>
+            <ul>${improvementPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          </div>
+        ` : ""}
+      </div>
+      <div class="ev-next">
+        <span>${escapeHtml(nextTitle)}</span>
+        <strong>${escapeHtml(nextActionText)}</strong>
+        ${nextQuestion ? `<p>${escapeHtml(nextQuestion)}</p>` : ""}
       </div>
     </section>
   `;
 }
 
-function renderLearningLessonRow(lesson) {
-  const relatedWork = findAiWorkForLesson(lesson.lesson_id);
-  const miniStatus = lesson.miniWork ? getStatusLabel(lesson.progress.mini_work_status) : "対象なし";
-  const workStatus = relatedWork ? relatedWork.aiStatusLabel : "対象なし";
-  const meta = getLessonMeta(lesson);
-  const cta = getLearningLessonCta(lesson);
-  return `
-    <article class="learning-row learning-row--compact">
-      <div class="learning-row-main">
-        <div class="learning-row-title">
-          <span>${escapeHtml(lesson.lesson_id)}</span>
-          <h4>${escapeHtml(lesson.lesson_title)}</h4>
-        </div>
-        <p class="learning-row-note">${escapeHtml(meta.duration)} / ${escapeHtml(lesson.lesson_summary)}</p>
-      </div>
-      <div class="learning-row-status">
-        ${renderMetaChip("動画", getVideoWatchLabel(lesson.progress.video_status))}
-        ${lesson.miniWork ? renderMetaChip("ミニワーク", miniStatus) : ""}
-        ${relatedWork ? renderMetaChip("関連ワーク", workStatus) : ""}
-      </div>
-      <div class="route-card-actions learning-row-actions">
-        <a class="primary-button" href="${escapeAttribute(cta.href)}">${escapeHtml(cta.label)}</a>
-        ${relatedWork ? `<a class="ghost-button" href="${escapeAttribute(hashForWork(relatedWork.work_id))}">ワーク</a>` : ""}
-      </div>
-    </article>
-  `;
+function uniqueLearnerItems(items = []) {
+  const seen = new Set();
+  return items
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
 }
+
+/* ============================================================
+   ワーク一覧（#/works）
+   ============================================================ */
 
 function renderWorksPage() {
   const learning = state.learning;
@@ -332,6 +1068,7 @@ function renderWorksPage() {
     return;
   }
 
+  const dir = enterDirection("works");
   const works = learning.works || [];
   const activeStatuses = ["theme_intake", "intake_required", "intake_reviewing", "intake_followup_required", "prompt_generated", "answering", "ai_reviewing", "followup_required", "revision_required", "final_feedback_ready", "error"];
   const nextWork =
@@ -347,55 +1084,48 @@ function renderWorksPage() {
   const completedWorks = sectionWorks.filter((work) => work.aiStatus === "completed");
 
   app.innerHTML = `
-    ${renderHeader(learning.user)}
-    <main class="main-shell route-page">
-      ${renderRouteHero("Works", "ワーク一覧", "AIヒアリングで、テーマ整理から最終フィードバックまで学習ページ内で進めます。", [
-        { label: "マイページへ戻る", href: "#/home" },
-        { label: "学習一覧へ", href: "#/learning" }
-      ])}
+    <div class="stage" data-enter="${dir}">
+      ${renderHomeTop(learning)}
+      ${renderTabbar("works")}
+      <main>
+        <p class="page-kicker">WORKS</p>
+        <h1 class="page-title">実践ワーク</h1>
+        <p class="page-lead">学んだ視点を、あなたの実務に落とし込む場所です。AIが伴走し、テーマ整理から最終フィードバックまでこのページ内で完結します。</p>
 
-      ${nextWork ? `
-        <section class="route-section route-feature" aria-labelledby="next-work-title">
-          <div class="section-heading section-heading-row">
-            <div>
-              <p class="eyebrow">Next Work</p>
-              <h2 id="next-work-title">今取り組むべきワーク</h2>
-            </div>
+        ${nextWork ? `
+          <div class="sec-h-row rise">
+            <span class="sec-h">いま取り組むワーク</span>
             ${renderAiWorkStatusBadge(nextWork.aiStatus)}
           </div>
-          ${renderWorkCard(nextWork, true)}
-        </section>
-      ` : renderEmptyLessons()}
+          <div class="rise rise-1">${renderWorkCard(nextWork, true)}</div>
+        ` : `<p class="empty-note">取り組めるワークは、学習が進むとここにひらきます。</p>`}
 
-      ${renderWorkSection("進行中ワーク", activeWorks)}
-      ${renderWorkSection("解放済みワーク", readyWorks, { compact: true })}
-      ${renderWorkSection("未着手ワーク", notStartedWorks, { collapsed: true, compact: true })}
-      ${renderWorkSection("完了済みワーク", completedWorks, { collapsed: true, compact: true })}
-    </main>
+        ${renderWorkSection("進行中のワーク", activeWorks)}
+        ${renderWorkSection("挑戦できるワーク", readyWorks)}
+        ${renderWorkSection("この先のワーク", notStartedWorks, { collapsed: true })}
+        ${renderWorkSection("クリアしたワーク", completedWorks, { collapsed: true })}
+        <div class="page-foot">
+          <a class="text-link" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
+        </div>
+      </main>
+    </div>
+    ${renderMotionToggle()}
   `;
 
   requestAnimationFrame(() => scrollToPageTop());
 }
 
 function renderWorkSection(title, works, options = {}) {
-  const sectionId = `work-section-${title}`;
-  const gridClass = `work-card-grid${options.compact ? " work-card-grid--compact" : ""}`;
-  const body = `
-    <div class="${gridClass}">
-      ${works.length ? works.map((work) => renderWorkCard(work, false, options)).join("") : `<p class="empty-route-note">該当するワークはありません。</p>`}
-    </div>
-  `;
+  if (!works.length) return "";
+  const body = works.map((work) => renderWorkCard(work)).join("");
 
-  if (options.collapsed && works.length) {
+  if (options.collapsed) {
     return `
-      <section class="route-section work-section" aria-labelledby="${escapeAttribute(sectionId)}">
-        <details class="work-section-details">
-          <summary class="section-heading section-heading-row">
-            <div>
-              <p class="eyebrow">Work</p>
-              <h2 id="${escapeAttribute(sectionId)}">${escapeHtml(title)}</h2>
-            </div>
-            <span class="soft-badge">${works.length}件</span>
+      <section class="works-section">
+        <details>
+          <summary>
+            <span class="sec-h">${escapeHtml(title)}</span>
+            <span class="sec-count">${works.length}件</span>
           </summary>
           ${body}
         </details>
@@ -404,48 +1134,45 @@ function renderWorkSection(title, works, options = {}) {
   }
 
   return `
-    <section class="route-section work-section" aria-labelledby="${escapeAttribute(sectionId)}">
-      <div class="section-heading section-heading-row">
-        <div>
-          <p class="eyebrow">Work</p>
-          <h2 id="${escapeAttribute(sectionId)}">${escapeHtml(title)}</h2>
-        </div>
-        <span class="soft-badge">${works.length}件</span>
+    <section class="works-section">
+      <div class="sec-h-row">
+        <span class="sec-h">${escapeHtml(title)}</span>
+        <span class="sec-count">${works.length}件</span>
       </div>
       ${body}
     </section>
   `;
 }
 
-function renderWorkCard(work, featured = false, options = {}) {
+function renderWorkCard(work, featured = false) {
   const relatedLessons = work.relatedLessons || [];
-  const compactClass = options.compact && !featured ? " work-card--compact" : "";
   const requirementLabel = getWorkRequirementLabel(work);
   return `
-    <article class="work-card${featured ? " work-card--featured" : ""}${compactClass}">
-      <div class="work-card-top">
+    <article class="work-card${featured ? " work-card--featured" : ""}">
+      <div class="wc-top">
         <span>${escapeHtml(work.work_id)}</span>
         ${renderAiWorkStatusBadge(work.aiStatus)}
       </div>
       <h3>${escapeHtml(work.title)}</h3>
-      ${featured ? `<p>${escapeHtml(work.entry_description || work.purpose)}</p>` : ""}
-      <dl class="lesson-meta work-card-meta">
+      ${featured ? `<p class="wc-desc">${escapeHtml(work.entry_description || work.purpose)}</p>` : ""}
+      <dl class="wc-meta">
         <div><dt>関連</dt><dd>${escapeHtml(work.phaseTitle || work.phase_id || "Barise")}</dd></div>
         <div><dt>条件</dt><dd>${escapeHtml(requirementLabel)}</dd></div>
-        <div><dt>状態</dt><dd>${escapeHtml(work.aiStatusLabel)}</dd></div>
       </dl>
       ${featured && relatedLessons.length ? `
-        <div class="related-link-list">
-          ${relatedLessons.map((lesson) => `<a href="${escapeAttribute(hashForLesson(lesson.lesson_id, "video"))}">${escapeHtml(lesson.lesson_id)} ${escapeHtml(lesson.lesson_title)}</a>`).join("")}
-        </div>
+        <dl class="wc-meta" style="margin-top:8px;">
+          ${relatedLessons.map((lesson) => `<div><dt>教材</dt><dd><a class="text-link" href="${escapeAttribute(hashForLesson(lesson.lesson_id, "video"))}">${escapeHtml(lesson.lesson_id)} ${escapeHtml(lesson.lesson_title)}</a></dd></div>`).join("")}
+        </dl>
       ` : ""}
-      <div class="route-card-actions">
-        <a class="primary-button" href="${escapeAttribute(hashForWork(work.work_id))}">${escapeHtml(getWorkCtaLabel(work))}</a>
-        ${work.primaryLessonId ? `<a class="ghost-button" href="${escapeAttribute(hashForLesson(work.primaryLessonId, "video"))}">関連動画へ</a>` : ""}
-      </div>
+      <a class="submit2" href="${escapeAttribute(hashForWork(work.work_id))}">${escapeHtml(getWorkCtaLabel(work))}</a>
+      ${featured && work.primaryLessonId ? `<a class="ghost-button" href="${escapeAttribute(hashForLesson(work.primaryLessonId, "video"))}">関連動画へ</a>` : ""}
     </article>
   `;
 }
+
+/* ============================================================
+   AIワーク（#/work/:id）
+   ============================================================ */
 
 function renderAiWorkPage(workId) {
   const learning = state.learning;
@@ -455,28 +1182,21 @@ function renderAiWorkPage(workId) {
     return;
   }
 
-  app.innerHTML = `
-    ${renderHeader(learning.user)}
-    <main class="lesson-page">
-      <nav class="breadcrumb" aria-label="ページ移動">
-        <a href="#/works">ワーク一覧へ戻る</a>
-        <span>${escapeHtml(work.title)}</span>
-      </nav>
+  const dir = enterDirection("work");
 
-      <section class="lesson-detail-grid ai-work-layout">
-        <div class="lesson-main">
-          ${renderAiWorkMain(work)}
-        </div>
-        <aside class="progress-panel" aria-label="関連教材">
-          <div class="section-heading">
-            <p class="eyebrow">Related</p>
-            <h2>関連動画/ミニワーク</h2>
-          </div>
-          ${renderAiWorkRelatedPanel(work)}
+  app.innerHTML = `
+    <div class="stage" data-enter="${dir}">
+      ${renderBackTop("#/works", "戻る", work.work_id)}
+      <main>
+        ${renderAiWorkMain(work)}
+        ${renderAiWorkRelatedPanel(work)}
+        <nav class="lesson-nav">
+          <a class="ghost-button" href="#/works">ワーク一覧へ戻る</a>
           <a class="line-button" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
-        </aside>
-      </section>
-    </main>
+        </nav>
+      </main>
+    </div>
+    ${renderMotionToggle()}
   `;
 
   requestAnimationFrame(() => scrollToPageTop());
@@ -487,24 +1207,22 @@ function renderAiWorkMain(work) {
   const status = work.aiStatus || "not_started";
   const locked = !work.canStartAiWork && !["completed", "final_feedback_ready"].includes(status);
   return `
-    <section class="content-panel ai-work-panel" aria-labelledby="ai-work-title">
-      <div class="panel-heading">
-        <div>
-          <p class="eyebrow">Work</p>
-          <h1 id="ai-work-title">${escapeHtml(work.title)}</h1>
-        </div>
-        ${renderAiWorkStatusBadge(status)}
-      </div>
-      <p class="work-purpose">${escapeHtml(work.work_goal || work.purpose)}</p>
-      <div class="ai-work-overview">
-        ${renderMetaChip("鍛える力", work.target_skill || "判断力 / 仮説検証 / PDCA")}
-        ${renderMetaChip("完了条件", work.completion_condition || "AIフィードバックが届いた状態")}
-      </div>
-      <div class="ai-work-context-grid">
-        ${renderAiWorkContextItem("このワークで作る成果物", work.learner_output || "自分の状況を構造化した回答")}
-        ${renderAiWorkContextItem("前ワークとのつながり", work.previous_work_connection || "ここまでの学習内容を踏まえて整理します。")}
-        ${renderAiWorkContextItem("次への接続", work.next_work_connection || "整理した内容を次の学習や実践へつなげます。")}
-      </div>
+    <div class="lesson-title">
+      <p class="lt-k">WORK</p>
+      <h1>${escapeHtml(work.title)}</h1>
+      <p class="lt-sub">${escapeHtml(work.work_goal || work.purpose)}</p>
+    </div>
+    <div class="meta-chips">
+      ${renderAiWorkStatusBadge(status)}
+      ${renderMetaChip("鍛える力", work.target_skill || "判断力 / 仮説検証 / PDCA")}
+      ${renderMetaChip("完了条件", work.completion_condition || "AIフィードバックが届いた状態")}
+    </div>
+    <div class="ai-context-grid">
+      ${renderAiWorkContextItem("このワークで作る成果物", work.learner_output || "自分の状況を構造化した回答")}
+      ${renderAiWorkContextItem("前ワークとのつながり", work.previous_work_connection || "ここまでの学習内容を踏まえて整理します。")}
+      ${renderAiWorkContextItem("次への接続", work.next_work_connection || "整理した内容を次の学習や実践へつなげます。")}
+    </div>
+    <section class="ai-panel" aria-label="ワークの進行">
       ${locked ? renderAiWorkLockedGate(work) : renderAiWorkStep(work, session)}
     </section>
   `;
@@ -514,26 +1232,19 @@ function renderAiWorkLockedGate(work) {
   const missingLessons = work.missingRequiredLessonIds || [];
   const missingMiniWorks = work.missingRequiredMiniWorkIds || [];
   return `
-    <div class="locked-note ai-work-lock-gate">
-      <span>開始条件があります</span>
-      <p>${escapeHtml(work.unlockReason || "関連する動画視聴とミニワーク通過後に開始できます。")}</p>
+    <div class="ai-block ai-block--focus">
+      <span>ひらくための条件があります</span>
+      <p>${escapeHtml(work.unlockReason || "関連する動画の視聴とミニワークのクリア後に始められます。")}</p>
       ${missingLessons.length ? `
-        <div>
-          <strong>視聴が必要な動画</strong>
-          <ul>${missingLessons.map((lessonId) => `<li><a href="${escapeAttribute(hashForLesson(lessonId, "video"))}">${escapeHtml(lessonId)} の動画へ</a></li>`).join("")}</ul>
-        </div>
+        <p style="margin-top:8px;"><strong style="font-size:11px;">視聴が必要な動画</strong></p>
+        <ul>${missingLessons.map((lessonId) => `<li><a class="text-link" href="${escapeAttribute(hashForLesson(lessonId, "video"))}">${escapeHtml(lessonId)} の動画へ</a></li>`).join("")}</ul>
       ` : ""}
       ${missingMiniWorks.length ? `
-        <div>
-          <strong>通過が必要なミニワーク</strong>
-          <ul>${missingMiniWorks.map((miniWorkId) => `<li>${escapeHtml(miniWorkId)}</li>`).join("")}</ul>
-        </div>
+        <p style="margin-top:8px;"><strong style="font-size:11px;">クリアが必要なミニワーク</strong></p>
+        <ul>${missingMiniWorks.map((miniWorkId) => `<li>${escapeHtml(miniWorkId)}</li>`).join("")}</ul>
       ` : ""}
-      <div class="route-card-actions">
-        <a class="primary-button" href="#/learning">学習一覧へ戻る</a>
-        <a class="ghost-button" href="#/works">ワーク一覧へ戻る</a>
-      </div>
     </div>
+    <a class="submit2" href="#/learning">登頂ルートへ戻る</a>
   `;
 }
 
@@ -556,11 +1267,12 @@ function renderAiWorkStep(work, session) {
   }
   if (status === "error") {
     return `
-      <div class="locked-note">
-        <p>一時的に処理できませんでした。保存済みの内容から再実行できます。</p>
-        ${renderAiEvaluationSummary(session)}
-        <button class="primary-button" type="button" data-action="retry-ai-work" data-work-id="${escapeAttribute(work.work_id)}">再実行する</button>
+      <div class="ai-block ai-block--focus">
+        <span>一時的に処理できませんでした</span>
+        <p>保存済みの内容から再実行できます。</p>
       </div>
+      ${renderAiEvaluationSummary(session)}
+      <button class="submit2" type="button" data-action="retry-ai-work" data-work-id="${escapeAttribute(work.work_id)}">再実行する</button>
     `;
   }
   return renderAiThemeForm(work, session);
@@ -571,16 +1283,14 @@ function renderAiThemeForm(work, session = null) {
   return `
     <form class="ai-work-form" data-form="ai-theme" data-work-id="${escapeAttribute(work.work_id)}">
       ${renderLearnerGuidance(work)}
-      <div class="ai-form-grid">
-        ${fields.map((field) => renderTextAreaField(
-          field.key,
-          field.label,
-          getAiContextValue(session, field.key),
-          field.placeholder,
-          field.rows || 4
-        )).join("")}
-      </div>
-      <button class="primary-button work-submit-button" type="submit">AIに問いを整えてもらう</button>
+      ${fields.map((field) => renderTextAreaField(
+        field.key,
+        field.label,
+        getAiContextValue(session, field.key),
+        field.placeholder,
+        field.rows || 4
+      )).join("")}
+      <button class="submit2 work-submit-button" type="submit">AIに問いを整えてもらう</button>
     </form>
   `;
 }
@@ -591,29 +1301,27 @@ function renderAiAnswerForm(work, session) {
     ${renderAiCriteriaGuide(work)}
     <form class="ai-work-form" data-form="ai-answer" data-work-id="${escapeAttribute(work.work_id)}">
       ${renderTextAreaField("answer", "回答", session.initial_answer || "", work.answer_placeholder || "場面、数字、判断理由、次の行動を具体的に書いてください", 8)}
-      <button class="primary-button work-submit-button" type="submit">回答をAIに確認してもらう</button>
+      <button class="submit2 work-submit-button" type="submit">回答をAIに確認してもらう</button>
     </form>
   `;
 }
 
 function renderAiIntakeFollowupForm(work, session) {
   return `
-    <div class="ai-followup-history ai-followup-focus">
-      <h3>今回答える質問</h3>
+    <div class="ai-block ai-block--focus">
+      <span>今回答える質問</span>
       <p>${escapeHtml(session.ai_summary || "ワークを始めるために、もう少し材料を集めます。")}</p>
-      ${renderFollowupQuestionPanel(session.followup_questions)}
-      ${renderMissingPoints(session.missing_points, "追記すべき観点")}
-      ${session.intake_placeholder_notice ? `<p class="ai-placeholder-note">${escapeHtml(session.intake_placeholder_notice)}</p>` : ""}
-      ${renderFollowupHistory(session.followup_history)}
     </div>
+    ${renderFollowupQuestionPanel(session.followup_questions)}
+    ${renderMissingPoints(session.missing_points, "追記すべき観点")}
+    ${session.intake_placeholder_notice ? `<div class="ai-block"><p>${escapeHtml(session.intake_placeholder_notice)}</p></div>` : ""}
+    ${renderFollowupHistory(session.followup_history)}
     <form class="ai-work-form" data-form="ai-intake-followup" data-work-id="${escapeAttribute(work.work_id)}">
       ${renderTextAreaField("intake_followup_answer", "今回答える内容", "", "上の質問に対して、あなたの実際の状況・数字・判断理由を追記してください", 7)}
-      <button class="primary-button work-submit-button" type="submit">追加回答を送る</button>
+      <button class="submit2 work-submit-button" type="submit">追加回答を送る</button>
     </form>
     ${session.can_continue_with_placeholders ? `
-      <div class="route-card-actions ai-placeholder-actions">
-        <button class="ghost-button" type="button" data-action="continue-ai-work-placeholders" data-work-id="${escapeAttribute(work.work_id)}">不足を仮置きしてワークへ進む</button>
-      </div>
+      <button class="ghost-button" type="button" data-action="continue-ai-work-placeholders" data-work-id="${escapeAttribute(work.work_id)}">不足を仮置きしてワークへ進む</button>
     ` : ""}
   `;
 }
@@ -623,16 +1331,16 @@ function renderAiFollowupForm(work, session) {
     ${renderAiGeneratedPrompt(session)}
     ${renderAiCriteriaProgress(session)}
     ${renderAiEvaluationSummary(session)}
-    <div class="ai-followup-history ai-followup-focus">
-      <h3>今回答える質問</h3>
+    <div class="ai-block ai-block--focus">
+      <span>今回答える質問</span>
       <p>${escapeHtml(session.ai_summary || "追加質問に回答してください。")}</p>
-      ${renderFollowupQuestionPanel(session.followup_questions)}
-      ${renderMissingPoints(session.unmet_criteria, "追記すべき観点")}
-      ${renderFollowupHistory(session.followup_history)}
     </div>
+    ${renderFollowupQuestionPanel(session.followup_questions)}
+    ${renderMissingPoints(session.unmet_criteria, "追記すべき観点")}
+    ${renderFollowupHistory(session.followup_history)}
     <form class="ai-work-form" data-form="ai-followup" data-work-id="${escapeAttribute(work.work_id)}">
       ${renderTextAreaField("followup_answer", "今回答える内容", "", "上の質問に対して、具体場面・数字・判断理由を足して回答してください", 8)}
-      <button class="primary-button work-submit-button" type="submit">追加回答をAIに確認してもらう</button>
+      <button class="submit2 work-submit-button" type="submit">追加回答をAIに確認してもらう</button>
     </form>
   `;
 }
@@ -640,22 +1348,18 @@ function renderAiFollowupForm(work, session) {
 function renderAiRevisionForm(work, session) {
   return `
     ${renderAiGeneratedPrompt(session)}
-    <section class="ai-revision-focus" aria-label="もう一度整理する内容">
-      <div class="ai-revision-focus__head">
-        <span>もう一度整理しましょう</span>
-        <p class="multiline-text">${escapeHtml(session.ai_feedback || session.ai_summary || "回答の観点を整えて、もう一度送ってください。")}</p>
-      </div>
-      ${renderMissingPoints(session.unmet_criteria, "追記すべき観点")}
-      ${renderStaffFeedbackNotice(session)}
-      ${(session.followup_questions || []).length ? `
-        ${renderFollowupQuestionPanel(session.followup_questions, "今回答える質問")}
-      ` : ""}
-      ${renderAiEvaluationSummary(session, { compact: true })}
-      ${renderRevisionHistory(session.revision_history, { collapsed: true })}
-    </section>
+    <div class="ai-block ai-block--focus">
+      <span>もう一度、いっしょに整理しましょう</span>
+      <p class="multiline-text">${escapeHtml(session.ai_feedback || session.ai_summary || "回答の観点を整えて、もう一度送ってください。")}</p>
+    </div>
+    ${renderMissingPoints(session.unmet_criteria, "追記すべき観点")}
+    ${renderStaffFeedbackNotice(session)}
+    ${(session.followup_questions || []).length ? renderFollowupQuestionPanel(session.followup_questions, "今回答える質問") : ""}
+    ${renderAiEvaluationSummary(session, { compact: true })}
+    ${renderRevisionHistory(session.revision_history, { collapsed: true })}
     <form class="ai-work-form" data-form="ai-revision" data-work-id="${escapeAttribute(work.work_id)}">
       ${renderTextAreaField("revision_answer", "再回答", session.latest_revision_answer || "", work.answer_placeholder || "不足している観点を足して、もう一度整理してください", 8)}
-      <button class="primary-button work-submit-button" type="submit">再回答をAIに確認してもらう</button>
+      <button class="submit2 work-submit-button" type="submit">再回答をAIに確認してもらう</button>
     </form>
   `;
 }
@@ -663,49 +1367,44 @@ function renderAiRevisionForm(work, session) {
 function renderAiFinalFeedback(work, session) {
   const nextWork = getNextWorkAfter(work);
   return `
-    <section class="evaluation-card ai-final-card" aria-label="AI最終フィードバック">
-      <div class="evaluation-head">
-        <span class="evaluation-icon" aria-hidden="true">✓</span>
-        <div>
-          <p class="eyebrow">AI Feedback</p>
-          <h3>AI最終フィードバック</h3>
-        </div>
-        ${renderAiWorkStatusBadge(session.status)}
-      </div>
+    <div class="ai-block ai-block--gold">
+      <span>AI最終フィードバック ${renderAiWorkStatusBadge(session.status)}</span>
       <p class="multiline-text">${escapeHtml(session.ai_final_feedback || "フィードバックを生成しました。")}</p>
-      ${renderAiEvaluationSummary(session)}
-      ${renderStaffFeedbackNotice(session)}
-      ${renderAiCriteriaProgress(session, "完了できた観点")}
-      <div class="evaluation-columns">
-        <div>
-          <h4>良い点</h4>
-          <ul>${(session.good_points || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-        </div>
-        <div>
-          <h4>次アクション</h4>
-          <ul>${(session.next_actions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-        </div>
+    </div>
+    ${renderAiEvaluationSummary(session)}
+    ${renderStaffFeedbackNotice(session)}
+    ${renderAiCriteriaProgress(session, "完了できた観点")}
+    ${(session.good_points || []).length ? `
+      <div class="ai-block">
+        <h4>良い点</h4>
+        <ul>${(session.good_points || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </div>
-      <div class="route-card-actions">
-        ${nextWork ? `<a class="primary-button" href="${escapeAttribute(hashForWork(nextWork.work_id))}">${escapeHtml(nextWork.title)}へ進む</a>` : `<a class="primary-button" href="#/learning">次の学習へ進む</a>`}
-        <a class="ghost-button" href="#/works">ワーク一覧へ戻る</a>
+    ` : ""}
+    ${(session.next_actions || []).length ? `
+      <div class="ai-block">
+        <h4>次アクション</h4>
+        <ul>${(session.next_actions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </div>
-    </section>
+    ` : ""}
+    ${nextWork ? `<a class="submit2" href="${escapeAttribute(hashForWork(nextWork.work_id))}">${escapeHtml(nextWork.title)}へ進む</a>` : `<a class="submit2" href="#/learning">次の学習へ進む</a>`}
   `;
 }
 
 function renderAiWorkRelatedPanel(work) {
   const relatedLessons = work.relatedLessons || [];
+  if (!relatedLessons.length) return "";
   return `
-    <div class="related-link-list related-link-list--panel">
-      ${relatedLessons.length ? relatedLessons.map((lesson) => `
-        <a href="${escapeAttribute(hashForLesson(lesson.lesson_id, "video"))}">
-          <span>${escapeHtml(lesson.lesson_id)}</span>
-          <strong>${escapeHtml(lesson.lesson_title)}</strong>
-          <small>動画: ${escapeHtml(getVideoWatchLabel(lesson.video_status))} / ミニワーク: ${escapeHtml(lesson.mini_work_status === "none" ? "対象なし" : getStatusLabel(lesson.mini_work_status))}</small>
+    <section class="ch-list" aria-label="関連の動画・ミニワーク">
+      <p class="ch-h">RELATED</p>
+      ${relatedLessons.map((lesson) => `
+        <a class="ls-row" href="${escapeAttribute(hashForLesson(lesson.lesson_id, "video"))}">
+          <span class="ls-id">${escapeHtml(lesson.lesson_id)}</span>
+          <div class="ls-side"><span class="ls-state${lesson.video_status === "watched" ? " watched" : ""}">${escapeHtml(getVideoWatchLabel(lesson.video_status))}</span></div>
+          <h4>${escapeHtml(lesson.lesson_title)}</h4>
+          <p class="ls-sub">ミニワーク: ${escapeHtml(lesson.mini_work_status === "none" ? "対象なし" : learnerStatusLabel(lesson.mini_work_status))}</p>
         </a>
-      `).join("") : `<p class="empty-route-note">関連教材はありません。</p>`}
-    </div>
+      `).join("")}
+    </section>
   `;
 }
 
@@ -726,33 +1425,35 @@ function renderLearnerGuidance(work) {
     "抽象的な回答の場合は、もう一度整理してもらうことがあります"
   ];
   return `
-    <div class="ai-guidance-list" aria-label="ワークの進め方">
+    <div class="ai-guidance" aria-label="ワークの進め方">
       ${guidance.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
     </div>
   `;
 }
+
+/* ============================================================
+   AIプロンプト表示・整形（V5ロジック準拠）
+   ============================================================ */
 
 function renderAiGeneratedPrompt(session) {
   const parts = normalizeAiPromptParts(session);
   if (!parts.title && !parts.questionItems.length && !parts.inputRows.length) return "";
 
   return `
-    <section class="ai-generated-prompt ai-generated-prompt--structured" aria-label="個別ワーク問題文">
-      <div class="ai-generated-prompt__head">
-        <span>個別ワーク問題文</span>
-        ${parts.title ? `<strong>${escapeHtml(parts.title)}</strong>` : ""}
-        ${parts.purpose ? `<p>${escapeHtml(parts.purpose)}</p>` : ""}
-      </div>
+    <section class="ai-prompt-box" aria-label="個別ワーク問題文">
+      <span>あなたのための問題文</span>
+      ${parts.title ? `<strong>${escapeHtml(parts.title)}</strong>` : ""}
+      ${parts.purpose ? `<p>${escapeHtml(parts.purpose)}</p>` : ""}
       ${(parts.essence || parts.previousConnection) ? `
-        <div class="ai-prompt-meta">
-          ${parts.essence ? `<p><small>守る本質</small>${escapeHtml(parts.essence)}</p>` : ""}
-          ${parts.previousConnection ? `<p><small>前ワークとのつながり</small>${escapeHtml(parts.previousConnection)}</p>` : ""}
+        <div class="apb-block">
+          ${parts.essence ? `<span>守る本質</span><p style="font-size:11.5px;color:rgba(245,245,247,.55);">${escapeHtml(parts.essence)}</p>` : ""}
+          ${parts.previousConnection ? `<span style="margin-top:6px;">前ワークとのつながり</span><p style="font-size:11.5px;color:rgba(245,245,247,.55);">${escapeHtml(parts.previousConnection)}</p>` : ""}
         </div>
       ` : ""}
       ${parts.inputRows.length ? `
-        <details class="ai-prompt-context" open>
+        <details class="apb-block" open>
           <summary>あなたの入力を確認</summary>
-          <dl>
+          <dl style="margin-top:8px;">
             ${parts.inputRows.map((row) => `
               <div>
                 <dt>${escapeHtml(row.label)}</dt>
@@ -763,7 +1464,7 @@ function renderAiGeneratedPrompt(session) {
         </details>
       ` : ""}
       ${parts.questionItems.length ? `
-        <div class="ai-prompt-question">
+        <div class="apb-block">
           <span>今回の問い</span>
           <ol>
             ${parts.questionItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
@@ -771,7 +1472,7 @@ function renderAiGeneratedPrompt(session) {
         </div>
       ` : ""}
       ${parts.criteria.length ? `
-        <div class="ai-prompt-criteria">
+        <div class="apb-block">
           <span>完了の目安</span>
           <ul>
             ${parts.criteria.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
@@ -904,8 +1605,8 @@ function renderAiCriteriaGuide(work) {
   const criteria = work.completion_criteria || [];
   if (!criteria.length) return "";
   return `
-    <div class="ai-criteria-card">
-      <h3>このワークで見る観点</h3>
+    <div class="ai-block">
+      <span>このワークで見る観点</span>
       <ul>
         ${criteria.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
       </ul>
@@ -918,18 +1619,14 @@ function renderAiCriteriaProgress(session, title = "現在満たせている観�
   const unmet = session?.unmet_criteria || [];
   if (!met.length && !unmet.length) return "";
   return `
-    <div class="ai-criteria-card ai-criteria-card--progress">
+    <div class="ai-block">
       ${met.length ? `
-        <div>
-          <h3>${escapeHtml(title)}</h3>
-          <ul>${met.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-        </div>
+        <span>${escapeHtml(title)}</span>
+        <ul>${met.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       ` : ""}
       ${unmet.length ? `
-        <div>
-          <h3>もう一度整理する観点</h3>
-          <ul>${unmet.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-        </div>
+        <span style="margin-top:8px;">もう一度整理する観点</span>
+        <ul>${unmet.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       ` : ""}
     </div>
   `;
@@ -946,22 +1643,19 @@ function renderAiEvaluationSummary(session, options = {}) {
     : "評価中";
 
   return `
-    <div class="ai-evaluation-summary${options.compact ? " ai-evaluation-summary--compact" : ""}" aria-label="評価結果">
-      <div class="ai-evaluation-summary__head">
-        <div>
-          <span>評価結果</span>
-          <strong>${escapeHtml(scoreText)}</strong>
-        </div>
+    <div class="ai-block" aria-label="評価結果">
+      <div class="ai-summary-head">
+        <strong>${escapeHtml(scoreText)}</strong>
         <em>${escapeHtml(evaluation.label || "確認中")}</em>
       </div>
       <p>${escapeHtml(evaluation.summary || "評価結果を保存しました。")}</p>
       ${options.compact ? `
-        <details class="ai-evaluation-summary__details">
+        <details class="ai-details">
           <summary>評価の詳細を見る</summary>
           ${renderAiEvaluationSummaryGrid(goodPoints, improvementPoints, unmetCriteria)}
         </details>
       ` : renderAiEvaluationSummaryGrid(goodPoints, improvementPoints, unmetCriteria)}
-      ${evaluation.next_action ? `<p class="ai-evaluation-next">${escapeHtml(evaluation.next_action)}</p>` : ""}
+      ${evaluation.next_action ? `<p style="margin-top:6px;">${escapeHtml(evaluation.next_action)}</p>` : ""}
     </div>
   `;
 }
@@ -969,7 +1663,7 @@ function renderAiEvaluationSummary(session, options = {}) {
 function renderAiEvaluationSummaryGrid(goodPoints, improvementPoints, unmetCriteria) {
   if (!goodPoints.length && !improvementPoints.length && !unmetCriteria.length) return "";
   return `
-    <div class="ai-evaluation-summary__grid">
+    <div style="display:grid;gap:8px;margin-top:8px;">
       ${goodPoints.length ? `
         <section>
           <h4>良い点</h4>
@@ -996,8 +1690,8 @@ function renderStaffFeedbackNotice(session) {
   const feedback = session?.staff_feedback;
   if (!feedback?.recommended) return "";
   return `
-    <div class="staff-feedback-notice">
-      <strong>${escapeHtml(feedback.message || "作成されたワークをもとに、担当者からフィードバックをいたします。")}</strong>
+    <div class="ai-block ai-block--gold">
+      <p><strong>${escapeHtml(feedback.message || "作成されたワークをもとに、担当者からフィードバックをいたします。")}</strong></p>
       ${feedback.reason ? `<p>${escapeHtml(feedback.reason)}</p>` : ""}
     </div>
   `;
@@ -1006,7 +1700,7 @@ function renderStaffFeedbackNotice(session) {
 function renderMissingPoints(points = [], title = "追加で確認したいこと") {
   if (!points.length) return "";
   return `
-    <div class="ai-missing-points">
+    <div class="ai-block">
       <span>${escapeHtml(title)}</span>
       <ul>${points.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
     </div>
@@ -1016,7 +1710,7 @@ function renderMissingPoints(points = [], title = "追加で確認したいこ�
 function renderFollowupQuestionPanel(questions = [], title = "今回答える質問") {
   if (!questions.length) return "";
   return `
-    <div class="ai-followup-question-panel">
+    <div class="ai-block ai-block--focus">
       <span>${escapeHtml(title)}</span>
       <ol>${questions.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}</ol>
     </div>
@@ -1041,7 +1735,7 @@ function getAiContextValue(session, key) {
 function renderTextAreaField(name, label, value, placeholder, rows = 5) {
   return `
     <label>
-      <span>${escapeHtml(label)}</span>
+      <span class="field-label">${escapeHtml(label)}</span>
       <textarea name="${escapeAttribute(name)}" rows="${rows}" placeholder="${escapeAttribute(placeholder)}" required>${escapeHtml(value)}</textarea>
     </label>
   `;
@@ -1050,9 +1744,9 @@ function renderTextAreaField(name, label, value, placeholder, rows = 5) {
 function renderFollowupHistory(history = []) {
   if (!history.length) return "";
   return `
-    <details class="ai-history-list ai-history-list--collapsed">
+    <details class="ai-details">
       <summary>前回までの回答を確認する</summary>
-      <div>
+      <div class="ai-history">
         ${history.map((item) => `
           <article>
             <span>${escapeHtml(formatDate(item.created_at))}</span>
@@ -1067,8 +1761,7 @@ function renderFollowupHistory(history = []) {
 function renderRevisionHistory(history = [], options = {}) {
   if (!history.length) return "";
   const content = `
-    <div class="ai-history-list">
-      <h4>これまでの再回答</h4>
+    <div class="ai-history">
       ${history.map((item) => `
         <article>
           <span>${escapeHtml(formatDate(item.created_at))}</span>
@@ -1079,95 +1772,16 @@ function renderRevisionHistory(history = [], options = {}) {
   `;
   if (!options.collapsed) return content;
   return `
-    <details class="ai-revision-details">
+    <details class="ai-details">
       <summary>これまでの再回答を見る</summary>
       ${content}
     </details>
   `;
 }
 
-function renderRouteHero(kicker, title, lead, actions = []) {
-  return `
-    <section class="route-hero">
-      <div>
-        <p class="eyebrow">${escapeHtml(kicker)}</p>
-        <h1>${escapeHtml(title)}</h1>
-        <p>${escapeHtml(lead)}</p>
-      </div>
-      <div class="hero-actions">
-        ${actions.map((action) => `<a class="ghost-button" href="${escapeAttribute(action.href)}">${escapeHtml(action.label)}</a>`).join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderLesson(lessonId, section = "") {
-  const learning = state.learning;
-  const lessonContext = findLessonContext(learning, lessonId);
-  const lesson = lessonContext?.lesson;
-  const phase = lessonContext?.phase;
-
-  if (!lesson) {
-    renderHome();
-    return;
-  }
-
-  app.innerHTML = `
-    ${renderHeader(learning.user)}
-    <main class="lesson-page">
-      <nav class="breadcrumb" aria-label="ページ移動">
-        <a href="#/home">マイページへ戻る</a>
-        <span>${escapeHtml(lesson.lesson_title)}</span>
-      </nav>
-
-      <section class="lesson-detail-grid">
-        <div class="lesson-main">
-          ${renderVideoBlock(lesson, phase)}
-          ${renderLearningDetailBlock(lesson)}
-          ${renderMiniWorkBlock(lesson)}
-          ${renderWorkBlock(lesson)}
-          ${renderLessonBottomNav(learning, lesson)}
-        </div>
-
-        ${renderLessonProgressPanel(learning, lesson, phase)}
-      </section>
-    </main>
-  `;
-
-  requestAnimationFrame(() => focusLessonSection(section));
-}
-
-function renderHeader(user) {
-  return `
-    <header class="site-header">
-      <a href="#/home" class="header-brand" aria-label="Barise 学習ページ">
-        <img src="${config.brandLogo}" alt="Barise">
-      </a>
-      <nav class="header-nav" aria-label="主要ナビゲーション">
-        <a href="#/learning">学習</a>
-        <a href="#/works">ワーク</a>
-      </nav>
-      <div class="header-actions">
-        <span>${escapeHtml(user.enrolled_course || "Barise")}</span>
-        <button class="text-button" type="button" data-action="logout">ログアウト</button>
-      </div>
-    </header>
-  `;
-}
-
-function renderSummaryCard(label, value, note, percent = null, icon = "") {
-  return `
-    <article class="summary-card">
-      <div class="summary-card-head">
-        <p>${escapeHtml(label)}</p>
-        ${icon ? `<span aria-hidden="true">${escapeHtml(icon)}</span>` : ""}
-      </div>
-      <strong>${escapeHtml(value)}</strong>
-      <small>${escapeHtml(note)}</small>
-      ${Number.isFinite(percent) ? renderProgressBar(percent, label) : ""}
-    </article>
-  `;
-}
+/* ============================================================
+   小さな表示ヘルパー
+   ============================================================ */
 
 function renderMetaChip(label, value) {
   return `
@@ -1178,485 +1792,29 @@ function renderMetaChip(label, value) {
   `;
 }
 
-function renderLessonProgressPanel(learning, lesson, phase) {
-  const nextLesson = getNextLesson(learning, lesson);
-  const nextLock = getLessonNextLockState(learning, lesson);
-  const phaseDone = Number(phase?.completedCount || 0);
-  const phaseTotal = Number(phase?.lessonCount || 0);
-  const chips = [
-    { label: "フェーズ", value: `${phase?.phase_id || "Phase"} ${phaseDone}/${phaseTotal}完了` },
-    { label: "動画", value: getVideoWatchLabel(lesson.progress.video_status) }
-  ];
+/* 受講者向けの状態ラベル。data-provider.js の statusLabels（データ層・変更禁止）は
+   Sheets値の解釈にも使われるため触らず、表示名だけをここで上書きする。 */
+const LEARNER_STATUS_LABEL = {
+  good: "クリア"
+};
 
-  if (lesson.miniWork) {
-    chips.push({ label: "ミニワーク", value: getStatusLabel(lesson.progress.mini_work_status) });
-  }
-
-  chips.push({
-    label: "次の教材",
-    value: nextLesson ? (nextLock.locked ? nextLock.label : "次へ進めます") : "最終教材です"
-  });
-
-  return `
-    <aside class="progress-panel progress-panel--compact" aria-label="この教材の進捗">
-      <div class="section-heading">
-        <p class="eyebrow">Progress</p>
-        <h2>この教材の進捗</h2>
-      </div>
-      <div class="lesson-progress-chip-list">
-        ${chips.map((chip) => `
-          <span class="lesson-progress-chip">
-            <small>${escapeHtml(chip.label)}</small>
-            <strong>${escapeHtml(chip.value)}</strong>
-          </span>
-        `).join("")}
-      </div>
-      <a class="line-button" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
-    </aside>
-  `;
-}
-
-function getLessonNextLockState(learning, lesson) {
-  const nextLesson = getNextLesson(learning, lesson);
-  if (!nextLesson) return { locked: false, label: "最終教材です" };
-  if (lesson.miniWork && lesson.progress.mini_work_status !== "good") {
-    return {
-      locked: true,
-      label: "ミニワーク通過後に進めます",
-      detail: "この教材のミニワークが通過すると次の動画へ進めます。"
-    };
-  }
-  return { locked: false, label: "次へ進めます" };
-}
-
-function renderProgressBar(percent, label) {
-  const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
-  return `
-    <div class="progress-bar" aria-label="${escapeAttribute(label)} ${safePercent}%">
-      <span style="width: ${safePercent}%"></span>
-    </div>
-  `;
-}
-
-function renderPhaseButton(phase) {
-  const isActive = state.selectedPhaseId ? state.selectedPhaseId === phase.phase_id : phase.isCurrent;
-  const activeClass = isActive ? " is-active" : "";
-  const lockedClass = phase.isAccessible ? "" : " is-locked";
-  const label = phase.isAccessible ? `${phase.completedCount}/${phase.lessonCount}` : "準備中";
-
-  return `
-    <button class="phase-button${activeClass}${lockedClass}" type="button" data-action="select-phase" data-phase-id="${escapeHtml(phase.phase_id)}" ${phase.isAccessible ? "" : "disabled"}>
-      <span>${escapeHtml(phase.phase_id)}</span>
-      <strong>${escapeHtml(phase.phase_title)}</strong>
-      <small>${escapeHtml(label)}</small>
-      ${phase.isAccessible ? renderProgressBar(phase.lessonCount ? Math.round((phase.completedCount / phase.lessonCount) * 100) : 0, `${phase.phase_title}の進捗`) : ""}
-      ${!phase.isAccessible ? `<em>${escapeHtml(phase.phase_summary)}</em>` : ""}
-    </button>
-  `;
-}
-
-function renderLessonCard(lesson) {
-  const cta = getLessonEntryCta(lesson);
-  const meta = getLessonMeta(lesson);
-
-  return `
-    <article class="lesson-card">
-      <div class="lesson-card-top">
-        <span>${escapeHtml(lesson.lesson_id)}</span>
-        ${renderStatusBadge(lesson.progress.video_status)}
-      </div>
-      <h3>${escapeHtml(lesson.lesson_title)}</h3>
-      <p>${escapeHtml(lesson.lesson_summary)}</p>
-      <dl class="lesson-meta">
-        <div><dt>目安</dt><dd>${escapeHtml(meta.duration)}</dd></div>
-        <div><dt>講師</dt><dd>${escapeHtml(meta.instructor)}</dd></div>
-        <div><dt>到達点</dt><dd>${escapeHtml(meta.benefit)}</dd></div>
-      </dl>
-      <div class="lesson-card-status">
-        ${lesson.miniWork ? renderCompactStatus("ミニワーク", lesson.progress.mini_work_status) : ""}
-        ${lesson.work ? renderCompactStatus("ワーク", lesson.progress.work_status) : ""}
-      </div>
-      <div class="lesson-card-actions">
-        <a class="primary-button lesson-cta" href="${escapeAttribute(cta.href)}">${escapeHtml(cta.label)}</a>
-      </div>
-    </article>
-  `;
-}
-
-function renderEmptyLessons() {
-  return `
-    <div class="empty-state">
-      <p>このフェーズのレッスンは順次公開されます。</p>
-    </div>
-  `;
-}
-
-function renderVideoBlock(lesson, phase) {
-  const hasVideo = Boolean(lesson.video_url);
-  const isWatched = lesson.progress.video_status === "watched";
-  const meta = getLessonMeta(lesson);
-  const videoMarkup = hasVideo
-    ? `<iframe src="${escapeAttribute(toEmbedUrl(lesson.video_url))}" title="${escapeAttribute(lesson.lesson_title)}" allowfullscreen></iframe>`
-    : `<div class="video-placeholder"><span>▶</span><strong>このレッスンの動画</strong></div>`;
-
-  return `
-    <section id="section-video" class="content-panel video-panel video-lesson-card" aria-labelledby="video-title" data-section="video" tabindex="-1">
-      <div class="video-card-head">
-        <div class="video-card-title-group">
-          <p class="eyebrow">${escapeHtml(phase?.phase_title || "現在のフェーズ")}｜${escapeHtml(lesson.lesson_id)}</p>
-          <h1 id="video-title">${escapeHtml(lesson.lesson_title)}</h1>
-        </div>
-        ${renderVideoStatusBadge(lesson.progress.video_status)}
-      </div>
-      <div class="video-card-meta" aria-label="教材情報">
-        ${renderMetaChip("目安", meta.duration)}
-        ${lesson.miniWork ? renderMetaChip("ミニワーク", getStatusLabel(lesson.progress.mini_work_status)) : ""}
-        ${lesson.work ? renderMetaChip("ワーク", getStatusLabel(lesson.progress.work_status)) : ""}
-      </div>
-      <div class="video-frame">${videoMarkup}</div>
-      <button class="primary-button wide-button video-complete-button" type="button" data-action="mark-video" data-lesson-id="${escapeHtml(lesson.lesson_id)}" ${isWatched ? "disabled" : ""}>
-        ${isWatched ? "視聴完了済み" : "動画を見たら視聴完了にする"}
-      </button>
-    </section>
-  `;
-}
-
-function renderLearningDetailBlock(lesson) {
-  const points = Array.isArray(lesson.material_points) ? lesson.material_points.filter(Boolean) : [];
-
-  return `
-    <section id="section-purpose" class="content-panel purpose-panel" aria-labelledby="purpose-title" data-section="purpose" tabindex="-1">
-      <details class="purpose-details">
-        <summary>
-          <div>
-            <p class="eyebrow">Learning Point</p>
-            <h2 id="purpose-title">このレッスンで学ぶこと</h2>
-            <small>このレッスンの目的・扱う内容を確認できます</small>
-          </div>
-          <strong>
-            <span class="summary-open">開いて確認する</span>
-            <span class="summary-close">閉じる</span>
-          </strong>
-        </summary>
-        <div class="learning-detail-list">
-          <div>
-            <span>学習目的</span>
-            <p>${escapeHtml(lesson.lesson_summary || lesson.purpose_watch || "この教材の目的を確認します。")}</p>
-          </div>
-          ${points.length ? `
-            <div>
-              <span>主な内容</span>
-              <ul>${points.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-            </div>
-          ` : ""}
-          <div>
-            <span>視聴後にできるようになること</span>
-            <p>${escapeHtml(lesson.learning_outcome || lesson.category_or_work || lesson.purpose_write || "現場で使える視点を整理できます。")}</p>
-          </div>
-        </div>
-        <div class="purpose-grid">
-          ${renderPurposeItem("見る", lesson.purpose_watch)}
-          ${renderPurposeItem("考える", lesson.purpose_think)}
-          ${renderPurposeItem("書く", lesson.purpose_write)}
-        </div>
-      </details>
-    </section>
-  `;
-}
-
-function renderPurposeItem(label, text) {
-  return `
-    <div class="purpose-item">
-      <span>${escapeHtml(label)}</span>
-      <p>${escapeHtml(text)}</p>
-    </div>
-  `;
-}
-
-function renderMiniWorkBlock(lesson) {
-  if (!lesson.miniWork) return "";
-  const submission = lesson.latestMiniSubmission;
-  const value = submission?.answer_text || "";
-  const placeholder = getMiniWorkPlaceholder(lesson.miniWork);
-
-  return `
-    <section id="section-mini-work" class="content-panel" aria-labelledby="mini-work-title" data-section="mini-work" tabindex="-1">
-      <div class="panel-heading">
-        <div>
-          <p class="eyebrow">Mini Work</p>
-          <h2 id="mini-work-title">ミニワーク</h2>
-        </div>
-        ${renderStatusBadge(lesson.progress.mini_work_status)}
-      </div>
-      <h3 class="work-title">${escapeHtml(lesson.miniWork.title)}</h3>
-      <p class="work-prompt">${escapeHtml(lesson.miniWork.prompt)}</p>
-      ${lesson.practice_part ? `
-        <div class="mini-practice-callout">
-          <span>実践の問い</span>
-          <p>${escapeHtml(lesson.practice_part)}</p>
-        </div>
-      ` : ""}
-      ${renderCoachTip("書くポイント", lesson.miniWork.helper_text || "いつ・どこで・何をするかを、1つに絞って書くと評価されやすくなります。")}
-      <form class="work-form" data-form="mini-work" data-target-id="${escapeHtml(lesson.miniWork.mini_work_id)}">
-        <label for="mini-${escapeAttribute(lesson.miniWork.mini_work_id)}">回答</label>
-        <textarea id="mini-${escapeAttribute(lesson.miniWork.mini_work_id)}" name="answer" rows="6" placeholder="${escapeAttribute(placeholder)}" required>${escapeHtml(value)}</textarea>
-        <button class="primary-button work-submit-button" type="submit">ミニワークを提出</button>
-      </form>
-      ${submission ? renderSubmissionNote(submission) : ""}
-      ${lesson.latestMiniEvaluation ? renderEvaluationResultCard(lesson.latestMiniEvaluation, "ミニワーク") : ""}
-    </section>
-  `;
-}
-
-function getMiniWorkPlaceholder(miniWork = {}) {
-  if (miniWork.answer_placeholder) return miniWork.answer_placeholder;
-  if (miniWork.placeholder) return miniWork.placeholder;
-  if (miniWork.learner_prompt_full) {
-    return `${miniWork.learner_prompt_full.replace(/\s+/g, " ").slice(0, 90)}${miniWork.learner_prompt_full.length > 90 ? "…" : ""}`;
-  }
-  return "動画で学んだ考え方を、自分の実際の場面に置き換えて書いてください。";
-}
-
-function renderWorkBlock(lesson) {
-  if (!lesson.work) return "";
-  const questions = Array.isArray(lesson.work.questions) ? lesson.work.questions.filter(Boolean) : [];
-  const aiStatus = lesson.aiWorkStatus || "not_started";
-  const isUnlocked = lesson.canSubmitWork || lesson.progress.work_status === "good" || aiStatus === "completed";
-
-  return `
-    <section id="section-work" class="content-panel ${isUnlocked ? "is-unlocked" : "is-locked"}" aria-labelledby="work-title" data-section="work" tabindex="-1">
-      <div class="panel-heading">
-        <div>
-          <p class="eyebrow">Work</p>
-          <h2 id="work-title">ワーク</h2>
-        </div>
-        ${renderAiWorkStatusBadge(aiStatus)}
-      </div>
-      <h3 class="work-title">${escapeHtml(lesson.work.title)}</h3>
-      <p class="work-purpose">${escapeHtml(lesson.work.entry_description || lesson.work.purpose)}</p>
-      <div class="ai-work-overview">
-        ${renderMetaChip("状態", getAiWorkStatusLabel(aiStatus))}
-        ${renderMetaChip("鍛える力", lesson.work.target_skill || "判断力 / 仮説検証 / PDCA")}
-      </div>
-      ${questions.length ? `<ol class="work-question-list">${questions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>` : ""}
-      ${isUnlocked ? `
-        ${renderCoachTip("進め方", "このワークは学習ページ内でAIが追加質問しながら進みます。テーマ入力から最終フィードバックまでこのページ内で完結します。")}
-        <div class="route-card-actions">
-          <a class="primary-button" href="${escapeAttribute(hashForWork(lesson.work.work_id))}">${escapeHtml(getLessonWorkCtaLabel(aiStatus))}</a>
-          <a class="ghost-button" href="#/works">ワーク一覧へ</a>
-        </div>
-      ` : renderLockedWorkNote(lesson)}
-    </section>
-  `;
-}
-
-function renderCoachTip(title, text) {
-  return `
-    <div class="coach-tip">
-      <span>${escapeHtml(title)}</span>
-      <p class="multiline-text">${escapeHtml(text)}</p>
-    </div>
-  `;
-}
-
-function renderUnlockedMessage() {
-  return `
-    <div class="unlock-banner">
-      <span aria-hidden="true">✓</span>
-      <div>
-        <strong>ワークが解放されました</strong>
-        <p>関連するミニワークを通過したため、このワークに進めます。</p>
-      </div>
-    </div>
-  `;
-}
-
-function renderLockedWorkNote(lesson) {
-  const remaining = lesson.workUnlockRemainingLessonIds || [];
-  const lessonNames = remaining
-    .map((lessonId) => findLessonContext(state.learning, lessonId)?.lesson?.lesson_title || lessonId)
-    .filter(Boolean);
-
-  return `
-    <div class="locked-note">
-      <p>関連するミニワークが通過すると入力できます。</p>
-      ${lessonNames.length ? `
-        <span>まだ通過が必要な教材</span>
-        <ul class="unlock-checklist">${lessonNames.map((name) => `<li><span aria-hidden="true"></span>${escapeHtml(name)}</li>`).join("")}</ul>
-      ` : ""}
-    </div>
-  `;
-}
-
-function renderEvaluationResultCard(evaluation, label) {
-  const score = Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : null;
-  const scoreText = score === null ? "確認中" : `${score}/100`;
-  const resultHelp = getEvaluationResultHelp(evaluation.result_status);
-  const isPassed = evaluation.result_status === "good";
-  const nextTitle = isPassed ? "次に進む前に" : "次に意識すること";
-  const resultKind = label === "ミニワーク" ? "mini-work" : "work";
-  const resultId = resultKind === "mini-work" ? ` id="mini-work-evaluation-result"` : "";
-  const passLine = "合格ライン: 80点";
-  const goodPoints = uniqueLearnerItems(evaluation.good_points || []).slice(0, 3);
-  const improvementPoints = isPassed ? [] : uniqueLearnerItems(evaluation.improvement_points || []).filter((item) => !goodPoints.includes(item)).slice(0, 3);
-  const nextActionText = evaluation.next_action_text || (isPassed ? "次へ進みましょう" : "もう一度具体化する");
-  const nextQuestion = !isPassed && evaluation.next_question && evaluation.next_question !== nextActionText
-    ? evaluation.next_question
-    : "";
-
-  return `
-    <section${resultId} class="evaluation-card" data-result="${escapeAttribute(evaluation.result_status)}" data-evaluation-result="${escapeAttribute(resultKind)}" aria-label="${escapeAttribute(label)}の評価結果">
-      <div class="evaluation-head">
-        <span class="evaluation-icon" aria-hidden="true">${evaluation.result_status === "good" ? "✓" : "!"}</span>
-        <div>
-          <p class="eyebrow">Feedback</p>
-          <h3>${escapeHtml(label)}の評価結果</h3>
-        </div>
-        ${renderStatusBadge(evaluation.result_status)}
-      </div>
-      <div class="evaluation-score">
-        <div>
-          <span>スコア</span>
-          <strong>${escapeHtml(scoreText)}</strong>
-        </div>
-        <small>${escapeHtml(passLine)}</small>
-        <p>${escapeHtml(resultHelp)}</p>
-      </div>
-      <div class="evaluation-columns">
-        <div>
-          <h4>良い点</h4>
-          <ul>${goodPoints.length ? goodPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : `<li>回答を出して、考える材料を言葉にできています。</li>`}</ul>
-        </div>
-        ${improvementPoints.length ? `
-          <div>
-            <h4>改善ポイント</h4>
-            <ul>${improvementPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-          </div>
-        ` : ""}
-      </div>
-      <div class="evaluation-next">
-        <span>${escapeHtml(nextTitle)}</span>
-        <strong>${escapeHtml(nextActionText)}</strong>
-        ${nextQuestion ? `<p>${escapeHtml(nextQuestion)}</p>` : ""}
-      </div>
-    </section>
-  `;
-}
-
-function uniqueLearnerItems(items = []) {
-  const seen = new Set();
-  return items
-    .map((item) => String(item || "").trim())
-    .filter(Boolean)
-    .filter((item) => {
-      if (seen.has(item)) return false;
-      seen.add(item);
-      return true;
-    });
-}
-
-function renderLessonBottomNav(learning, lesson) {
-  const nextLesson = getNextLesson(learning, lesson);
-  const nextLock = getLessonNextLockState(learning, lesson);
-  return `
-    <nav class="bottom-lesson-nav" aria-label="レッスン下部ナビゲーション">
-      ${nextLesson && !nextLock.locked ? `<a class="primary-button lesson-nav-cta" href="${escapeAttribute(hashForLesson(nextLesson.lesson_id, "video"))}">次の動画へ進む</a>` : ""}
-      ${nextLesson && nextLock.locked ? `<span class="locked-next-note">${escapeHtml(nextLock.detail || nextLock.label)}</span>` : ""}
-      <a class="ghost-button" href="#/home">マイページへ戻る</a>
-    </nav>
-  `;
-}
-
-function renderSubmissionNote(submission) {
-  return `
-    <div class="submission-note">
-      <span>${escapeHtml(getStatusLabel(submission.status))}</span>
-      <time datetime="${escapeAttribute(submission.submitted_at)}">${escapeHtml(formatDate(submission.submitted_at))}</time>
-    </div>
-  `;
-}
-
-function renderProgressList(learning) {
-  const rows = learning.phases.flatMap((phase) => phase.lessons.map((lesson) => ({ phase, lesson })));
-  return `
-    <div class="progress-list">
-      ${rows.map(({ phase, lesson }) => {
-        const rowState = getProgressRowState(learning, phase, lesson);
-        return `
-        <a class="progress-row" data-state="${escapeAttribute(rowState.state)}" href="#/lesson/${escapeHtml(lesson.lesson_id)}" aria-current="${rowState.state === "current" ? "step" : "false"}">
-          <span class="progress-row-icon" aria-hidden="true">${escapeHtml(rowState.icon)}</span>
-          <span class="progress-row-id">${escapeHtml(lesson.lesson_id)}</span>
-          <strong>${escapeHtml(lesson.lesson_title)}</strong>
-          <small>${escapeHtml(rowState.label)}</small>
-        </a>
-      `;
-      }).join("")}
-    </div>
-  `;
-}
-
-function getProgressRowState(learning, phase, lesson) {
-  if (!phase.isAccessible) return { state: "locked", icon: "🔒", label: "未解放" };
-  if (lesson.isComplete) return { state: "complete", icon: "✓", label: "完了" };
-  if (learning.currentLesson?.lesson_id === lesson.lesson_id) return { state: "current", icon: "●", label: "次にやること" };
-  if ([lesson.progress.video_status, lesson.progress.mini_work_status, lesson.progress.work_status]
-    .some((status) => ["watched", "submitted", "reviewing", "needs_more", "support_needed", "unlocked"].includes(status))) {
-    return { state: "progress", icon: "◐", label: "進行中" };
-  }
-  return { state: "not-started", icon: "○", label: "未着手" };
-}
-
-function renderStatusPill(label, status) {
-  return `
-    <div class="status-pill">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(getStatusLabel(status))}</strong>
-    </div>
-  `;
+function learnerStatusLabel(status) {
+  return LEARNER_STATUS_LABEL[status] || getStatusLabel(status);
 }
 
 function renderStatusBadge(status) {
-  const label = getStatusLabel(status);
-  return `<span class="status-badge" data-tone="${escapeAttribute(getStatusTone(status))}">${escapeHtml(label)}</span>`;
+  const label = learnerStatusLabel(status);
+  const tone = status === "good" ? "gold" : getStatusTone(status);
+  return `<span class="status-badge" data-tone="${escapeAttribute(tone)}">${escapeHtml(label)}</span>`;
 }
 
 function renderAiWorkStatusBadge(status) {
-  return `<span class="status-badge" data-tone="${escapeAttribute(getAiWorkStatusTone(status))}">${escapeHtml(getAiWorkStatusLabel(status))}</span>`;
-}
-
-function renderVideoStatusBadge(status) {
-  return `<span class="status-badge video-status-badge" data-tone="${escapeAttribute(getVideoStatusTone(status))}">${escapeHtml(getVideoWatchLabel(status))}</span>`;
+  const tone = (status === "completed" || status === "final_feedback_ready") ? "gold" : getAiWorkStatusTone(status);
+  return `<span class="status-badge" data-tone="${escapeAttribute(tone)}">${escapeHtml(getAiWorkStatusLabel(status))}</span>`;
 }
 
 function getVideoWatchLabel(status) {
-  return status === "watched" ? "視聴済み" : "未視聴";
-}
-
-function getVideoStatusTone(status) {
-  return status === "watched" ? "positive" : "neutral";
-}
-
-function renderCompactStatus(label, status) {
-  return `
-    <span class="compact-status">
-      <small>${escapeHtml(label)}</small>
-      <strong>${escapeHtml(getStatusLabel(status))}</strong>
-    </span>
-  `;
-}
-
-function getLessonEntryCta(lesson) {
-  return {
-    label: lesson.progress.video_status === "watched" ? "この教材を進める" : "この教材を始める",
-    href: hashForLesson(lesson.lesson_id),
-  };
-}
-
-function getLearningLessonCta(lesson) {
-  const nextAction = getLessonCta(lesson);
-  if (lesson.isComplete) return { ...nextAction, label: "復習" };
-  if (lesson.progress.video_status === "watched") return { ...nextAction, label: "続きから" };
-  return { ...nextAction, label: "開始" };
+  return status === "watched" ? "視聴済み" : "これから";
 }
 
 function getStatusTone(status) {
@@ -1676,41 +1834,48 @@ function getAiWorkStatusTone(status) {
 }
 
 function getWorkCtaLabel(work) {
-  if (work.aiStatus === "completed" || work.aiStatus === "final_feedback_ready") return "確認";
+  if (work.aiStatus === "completed" || work.aiStatus === "final_feedback_ready") return "内容を確認";
   if (work.aiStatus === "revision_required") return "修正する";
   if (["theme_intake", "intake_required", "intake_reviewing", "intake_followup_required", "answering", "prompt_generated", "followup_required", "error"].includes(work.aiStatus)) return "続きから";
   if (Number(work.miniRemainingCount || 0) > 0) return "条件を見る";
   if (Number(work.videoRemainingCount || 0) > 0) return "条件を見る";
   if (work.canStartAiWork === false) return "条件を見る";
-  return "開始";
+  return "挑戦する";
 }
 
 function getWorkRequirementLabel(work) {
   const miniRemaining = Number(work.miniRemainingCount || 0);
   const videoRemaining = Number(work.videoRemainingCount || 0);
-  if (work.aiStatus === "completed") return "完了済み";
+  if (work.aiStatus === "completed") return "クリア済み";
   if (miniRemaining > 0) return `関連ミニワーク あと${miniRemaining}件`;
   if (videoRemaining > 0) return `関連動画 あと${videoRemaining}件`;
-  return "開始できます";
+  return "挑戦できます";
 }
 
 function getLessonWorkCtaLabel(status) {
   if (status === "completed" || status === "final_feedback_ready") return "ワーク内容を確認";
-  if (!status || ["not_started", "theme_intake", "intake_required"].includes(status)) return "ワークを開始";
-  return "ワークを再開";
+  if (!status || ["not_started", "theme_intake", "intake_required"].includes(status)) return "ワークに挑戦する";
+  return "ワークを再開する";
 }
 
 function getEvaluationResultHelp(status) {
-  if (status === "good") return "通過: 基準を満たしています。次の教材へ進めます。";
-  if (status === "needs_more" || status === "failed") return "もう少し具体化: 数字・場面・行動を足すと通過に近づきます。";
+  if (status === "good") return "クリア: 基準を満たしています。次の教材へ進めます。";
+  if (status === "needs_more" || status === "failed") return "もう少し具体化: 数字・場面・行動を足すとクリアに近づきます。";
   if (status === "support_needed") return "サポート相談: 一人で抱えず、公式LINEで相談しながら整えましょう。";
   return "評価中: 提出内容を確認しています。";
+}
+
+function getLearningLessonCta(lesson) {
+  const nextAction = getLessonCta(lesson);
+  if (lesson.isComplete) return { ...nextAction, label: "ふり返る" };
+  if (lesson.progress.video_status === "watched") return { ...nextAction, label: "続きから登る" };
+  return { ...nextAction, label: "ここから登る" };
 }
 
 function getLessonCta(lesson) {
   if (lesson.progress.video_status !== "watched") {
     return {
-      label: "この教材を始める",
+      label: "動画からはじめる",
       href: hashForLesson(lesson.lesson_id, "video"),
       shortNote: "動画から開始",
       summary: `「${lesson.lesson_title}」の動画を視聴しましょう。`
@@ -1722,34 +1887,34 @@ function getLessonCta(lesson) {
       label: "ミニワークへ進む",
       href: hashForLesson(lesson.lesson_id, "mini-work"),
       shortNote: "学びを言語化",
-      summary: `「${lesson.lesson_title}」のミニワークに取り組みましょう。`
+      summary: `「${lesson.lesson_title}」のミニワークで、学びを言葉にしましょう。`
     };
   }
 
   if (lesson.miniWork && ["needs_more", "failed"].includes(lesson.progress.mini_work_status)) {
     return {
-      label: "ミニワークを修正する",
+      label: "ミニワークを仕上げる",
       href: hashForLesson(lesson.lesson_id, "mini-work"),
       shortNote: "具体化して再提出",
-      summary: `「${lesson.lesson_title}」のミニワークをもう少し具体化しましょう。`
+      summary: `「${lesson.lesson_title}」のミニワークを、もう少し具体化すればクリアです。`
     };
   }
 
   if (lesson.miniWork && lesson.progress.mini_work_status === "support_needed") {
     return {
-      label: "サポート相談へ進む",
+      label: "サポートに相談する",
       href: config.supportLineUrl,
       shortNote: "公式LINEで相談",
-      summary: `「${lesson.lesson_title}」について公式LINEで相談しましょう。`
+      summary: `「${lesson.lesson_title}」について、公式LINEで一緒に整理しましょう。`
     };
   }
 
   if (lesson.work && lesson.progress.work_status === "unlocked") {
     return {
-      label: "ワークへ進む",
+      label: "本ワークへ挑む",
       href: hashForWork(lesson.work.work_id),
       shortNote: "実践ワークへ",
-      summary: `「${lesson.lesson_title}」のワークへ進みましょう。`
+      summary: `「${lesson.lesson_title}」の本ワークへ進みましょう。`
     };
   }
 
@@ -1759,13 +1924,13 @@ function getLessonCta(lesson) {
       label: "次の動画へ進む",
       href: hashForLesson(lesson.nextUnlockLessonId, "video"),
       shortNote: "解放条件を進める",
-      summary: `関連ミニワーク通過後にワークが開きます。次は「${nextContext?.lesson?.lesson_title || lesson.nextUnlockLessonId}」へ進みましょう。`
+      summary: `関連ミニワークをクリアするとワークがひらきます。次は「${nextContext?.lesson?.lesson_title || lesson.nextUnlockLessonId}」へ進みましょう。`
     };
   }
 
   if (lesson.work && ["needs_more", "failed"].includes(lesson.progress.work_status)) {
     return {
-      label: "ワークを修正する",
+      label: "ワークを仕上げる",
       href: hashForWork(lesson.work.work_id),
       shortNote: "精度を上げる",
       summary: `「${lesson.lesson_title}」のワークを具体化しましょう。`
@@ -1782,18 +1947,10 @@ function getLessonCta(lesson) {
   }
 
   return {
-    label: "レッスンを開く",
+    label: "レッスンをひらく",
     href: hashForLesson(lesson.lesson_id),
     shortNote: "内容を確認",
     summary: `「${lesson.lesson_title}」を確認しましょう。`
-  };
-}
-
-function getLessonMeta(lesson) {
-  return {
-    duration: lesson.estimated_duration || "約10分",
-    instructor: "Barise講師",
-    benefit: lesson.category_or_work || lesson.learning_outcome || "現場で使える視点を得る"
   };
 }
 
@@ -1812,14 +1969,18 @@ function getNextWorkAfter(work) {
     .sort((a, b) => (a.work_order || 0) - (b.work_order || 0))[0] || null;
 }
 
-function findAiWorkForLesson(lessonId) {
-  return (state.learning?.works || []).find((work) => (work.relatedLessons || []).some((lesson) => lesson.lesson_id === lessonId)) || null;
-}
-
 function findLessonContext(learning, lessonId) {
   for (const phase of learning.phases) {
     const lesson = phase.lessons.find((item) => item.lesson_id === lessonId);
     if (lesson) return { phase, lesson };
+  }
+  return null;
+}
+
+function findLessonByMiniWorkId(miniWorkId) {
+  for (const phase of state.learning?.phases || []) {
+    const lesson = phase.lessons.find((item) => item.miniWork?.mini_work_id === miniWorkId);
+    if (lesson) return lesson;
   }
   return null;
 }
@@ -1846,15 +2007,13 @@ function focusLessonSection(section) {
 }
 
 function scrollToPageTop() {
-  const behavior = prefersReducedMotion() ? "auto" : "smooth";
+  const behavior = prefersReducedMotion() || motionOff() ? "auto" : "smooth";
   window.scrollTo({ top: 0, behavior });
 }
 
 function scrollToTarget(target) {
-  const header = document.querySelector(".site-header");
-  const headerOffset = (header?.offsetHeight || 0) + 12;
-  const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - headerOffset);
-  const behavior = prefersReducedMotion() ? "auto" : "smooth";
+  const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - 16);
+  const behavior = prefersReducedMotion() || motionOff() ? "auto" : "smooth";
   window.scrollTo({ top, behavior });
 }
 
@@ -1870,10 +2029,6 @@ function scheduleMiniWorkEvaluationScroll() {
   });
 }
 
-function prefersReducedMotion() {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
-}
-
 function toEmbedUrl(url) {
   if (url.includes("youtube.com/watch?v=")) {
     return url.replace("watch?v=", "embed/");
@@ -1884,12 +2039,20 @@ function toEmbedUrl(url) {
   return url;
 }
 
+/* ============================================================
+   状態同期
+   ============================================================ */
+
 async function refreshLearningState() {
   state.learning = await provider.getLearningState(state.email);
   if (!state.selectedPhaseId) {
     state.selectedPhaseId = state.learning.currentPhase?.phase_id || "";
   }
 }
+
+/* ============================================================
+   ハンドラ（V5ロジック準拠・変更禁止領域）
+   ============================================================ */
 
 async function handleLogin(event) {
   event.preventDefault();
@@ -1921,6 +2084,16 @@ function loginErrorMessage(result = {}) {
   return "登録情報が見つかりませんでした。公式LINEで登録したメールアドレスをご確認ください。";
 }
 
+function buildJudgeFeedback(evaluation) {
+  if (!evaluation) return "";
+  const isPassed = evaluation.result_status === "good";
+  const points = isPassed
+    ? uniqueLearnerItems(evaluation.good_points || []).slice(0, 2)
+    : uniqueLearnerItems(evaluation.improvement_points || []).slice(0, 2);
+  const lines = points.length ? points : [getEvaluationResultHelp(evaluation.result_status)];
+  return lines.join("\n");
+}
+
 async function handleSubmitWork(event) {
   event.preventDefault();
   const form = event.target;
@@ -1945,6 +2118,11 @@ async function handleSubmitWork(event) {
   submitButton.textContent = "回答を確認しています";
 
   const route = parseRoute();
+  const prevPercent = Math.max(0, Math.min(100, Number(state.learning?.progressSummary?.percent) || 0));
+
+  if (isMiniWork) {
+    openJudgeOverlay("AIが回答を確認しています");
+  }
 
   try {
     if (isMiniWork) {
@@ -1961,16 +2139,53 @@ async function handleSubmitWork(event) {
 
     await refreshLearningState();
     render();
+
     if (isMiniWork) {
-      scheduleMiniWorkEvaluationScroll();
+      const lesson = findLessonByMiniWorkId(targetId);
+      const evaluation = lesson?.latestMiniEvaluation || null;
+      const newPercent = Math.max(0, Math.min(100, Number(state.learning?.progressSummary?.percent) || 0));
+      const grew = newPercent > prevPercent;
+      const passed = evaluation?.result_status === "good";
+      const hasScore = Number.isFinite(Number(evaluation?.score));
+
+      if (!evaluation || !hasScore) {
+        closeJudgeOverlay();
+        scheduleMiniWorkEvaluationScroll();
+      } else {
+        showJudgeResult({
+          score: Number(evaluation.score),
+          passed,
+          feedback: buildJudgeFeedback(evaluation),
+          scoreNote: "SCORE / 合格80",
+          buttonLabel: passed
+            ? "次の一歩へ →"
+            : (evaluation.result_status === "support_needed" ? "内容を確認する" : "もう一度整理する"),
+          onNext: () => {
+            closeJudgeOverlay();
+            if (passed && grew) {
+              pendingGrowth = { from: prevPercent, to: newPercent };
+              if (window.location.hash === "#/home") {
+                render();
+              } else {
+                window.location.hash = "#/home";
+              }
+            } else {
+              scheduleMiniWorkEvaluationScroll();
+            }
+          }
+        });
+      }
     }
   } catch (error) {
+    if (isMiniWork) closeJudgeOverlay();
     showFormSubmissionError(form, error.message);
   } finally {
-    submitButton.disabled = false;
-    submitButton.classList.remove("is-loading");
-    submitButton.removeAttribute("aria-busy");
-    submitButton.textContent = originalButtonText;
+    if (document.body.contains(submitButton)) {
+      submitButton.disabled = false;
+      submitButton.classList.remove("is-loading");
+      submitButton.removeAttribute("aria-busy");
+      submitButton.textContent = originalButtonText;
+    }
   }
 }
 
@@ -2031,11 +2246,20 @@ function clearFormSubmissionError(form) {
   form.querySelector(".form-submit-error")?.remove();
 }
 
+const AI_FORM_WAIT_MESSAGE = {
+  "ai-theme": "AIがあなた専用の問いを整えています",
+  "ai-answer": "AIが回答を確認しています",
+  "ai-intake-followup": "AIが内容を確認しています",
+  "ai-followup": "AIが回答を確認しています",
+  "ai-revision": "AIが回答を確認しています"
+};
+
 async function handleSubmitAiWork(event) {
   event.preventDefault();
   const form = event.target;
   const formData = new FormData(form);
   const workId = form.dataset.workId;
+  const formKind = form.dataset.form;
   const submitButton = form.querySelector("button[type='submit']");
   const originalButtonText = submitButton.textContent;
   clearFormSubmissionError(form);
@@ -2044,37 +2268,67 @@ async function handleSubmitAiWork(event) {
   submitButton.setAttribute("aria-busy", "true");
   submitButton.textContent = "AIが確認しています";
 
+  const evaluationForms = ["ai-answer", "ai-followup", "ai-revision"];
+  openJudgeOverlay(AI_FORM_WAIT_MESSAGE[formKind] || "AIが確認しています");
+
   try {
-    if (form.dataset.form === "ai-theme") {
+    if (formKind === "ai-theme") {
       await provider.startAiWork(state.email, workId, formDataToObject(formData));
     }
 
-    if (form.dataset.form === "ai-answer") {
+    if (formKind === "ai-answer") {
       await provider.submitAiWorkAnswer(state.email, workId, formData.get("answer"));
     }
 
-    if (form.dataset.form === "ai-intake-followup") {
+    if (formKind === "ai-intake-followup") {
       await provider.submitAiWorkIntakeFollowup(state.email, workId, formData.get("intake_followup_answer"));
     }
 
-    if (form.dataset.form === "ai-followup") {
+    if (formKind === "ai-followup") {
       await provider.submitAiWorkFollowup(state.email, workId, formData.get("followup_answer"));
     }
 
-    if (form.dataset.form === "ai-revision") {
+    if (formKind === "ai-revision") {
       await provider.submitAiWorkRevision(state.email, workId, formData.get("revision_answer"));
     }
 
     await refreshLearningState();
     window.location.hash = hashForWork(workId);
     render();
+
+    const work = (state.learning?.works || []).find((item) => item.work_id === workId);
+    const session = work?.aiSession || null;
+    const evaluation = session?.ai_evaluation_result || null;
+    const hasScore = Number.isFinite(Number(evaluation?.score)) && Number(evaluation?.score) > 0;
+
+    if (evaluationForms.includes(formKind) && evaluation && hasScore) {
+      const passed = ["completed", "final_feedback_ready"].includes(session.status);
+      showJudgeResult({
+        score: Number(evaluation.score),
+        passed,
+        feedback: evaluation.summary || "",
+        scoreNote: "SCORE",
+        buttonLabel: passed
+          ? "次の一歩へ →"
+          : (session.status === "revision_required" ? "もう一度整理する" : "続きへ"),
+        onNext: () => {
+          closeJudgeOverlay();
+          scrollToPageTop();
+        }
+      });
+    } else {
+      closeJudgeOverlay();
+    }
   } catch (error) {
+    closeJudgeOverlay();
     showFormSubmissionError(form, error.message);
   } finally {
-    submitButton.disabled = false;
-    submitButton.classList.remove("is-loading");
-    submitButton.removeAttribute("aria-busy");
-    submitButton.textContent = originalButtonText;
+    if (document.body.contains(submitButton)) {
+      submitButton.disabled = false;
+      submitButton.classList.remove("is-loading");
+      submitButton.removeAttribute("aria-busy");
+      submitButton.textContent = originalButtonText;
+    }
   }
 }
 
@@ -2143,6 +2397,8 @@ document.addEventListener("click", async (event) => {
     clearSession();
     state.email = "";
     state.learning = null;
+    homeRingShown = false;
+    pendingGrowth = null;
     window.location.hash = "#/login";
     renderLogin();
   }
@@ -2151,9 +2407,10 @@ document.addEventListener("click", async (event) => {
     window.location.reload();
   }
 
-  if (action === "select-phase") {
-    state.selectedPhaseId = actionTarget.dataset.phaseId;
-    renderHome();
+  if (action === "toggle-motion") {
+    localStorage.setItem(MOTION_KEY, motionOff() ? "0" : "1");
+    applyMotionPreference();
+    render();
   }
 
   if (action === "mark-video") {
