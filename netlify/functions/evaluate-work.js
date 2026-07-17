@@ -314,6 +314,12 @@ function buildWorkUserPrompt(payload) {
       generatedWorkPrompt: payload.generatedWorkPrompt || payload.generated_work_prompt || ""
     }, null, 2),
     "",
+    // V7.2 few-shot較正: A水準の見本回答を提示
+    ...(knowledge.modelAnswerExample || payload.modelAnswerExample ? [
+      "合格(A)水準の見本回答（この見本と同等以上の具体性・論理・観点があれば、表現や題材が違ってもA=passとする。丸暗記一致は不要・意味の同等で判定する）:",
+      knowledge.modelAnswerExample || payload.modelAnswerExample,
+      ""
+    ] : []),
     "判定方針:",
     "- W別passRequiredElementsとA/B/C基準を最優先してください。",
     "- 汎用的な『もっと具体的に』だけを理由に、W別必須要素を満たす回答をC/retryへ落とさないでください。",
@@ -367,6 +373,17 @@ function buildMiniWorkUserPrompt(payload) {
     "",
     "フィードバックテンプレート要点:",
     JSON.stringify(payload.feedbackTemplateSummary || {}, null, 2),
+    "",
+    // V7.2 few-shot較正: A水準の見本を提示（丸暗記一致でなく"意味の同等"で判定）
+    ...(payload.modelAnswerExample ? [
+      "合格(A)水準の見本回答（この見本と同等以上の具体性・観点があれば、表現や題材が違ってもA=passとする。丸暗記一致は不要・意味の同等で判定する）:",
+      payload.modelAnswerExample,
+      ""
+    ] : []),
+    // V7.2 設問タイプ別のA水準（P1一律減点の是正）
+    "設問タイプ別のA水準（重要）:",
+    "- P1系（基礎・行動習慣: 挨拶/自己管理/タスク/マスト/ビジョン/自責/言葉定義/クリティカル）は、行動が1つに絞られ・選んだ理由・実践場面が具体的なら、P2相当の数値密度や指標設計がなくてもAとする。P1にKPI・戦略水準の定量性を一律要求しないこと。",
+    "- P2系（KPI/戦略/イシュー/仮説/なぜなぜ/構造化）は、枠組みの適用と数値・論理の一貫を見る。",
     "",
     "ミニワーク判定方針:",
     "重要: ミニワークでは、汎用評価軸よりも対象ミニワーク固有のA/B/Cルーブリックを優先してください。",

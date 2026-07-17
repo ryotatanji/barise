@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-1-1";
+} from "./data-provider.js?v=7-2-1";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();

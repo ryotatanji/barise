@@ -522,9 +522,14 @@ export class LocalJsonLearningProvider {
       const relatedLesson = db.lessons.find((item) => item.lesson_id === relatedLessonId);
       if (!relatedLesson) return;
       const relatedProgress = this._getOrCreateProgress(db, emailNormalized, relatedLesson);
-      relatedProgress.work_status = evaluation.result_status;
-      relatedProgress.last_score = evaluation.score;
-      relatedProgress.next_action = evaluation.result_status === "good" ? "next_lesson" : "revise_work";
+      // V7.2 単調性: 一度good(クリア)になった本ワークは再提出で降格させない（AIの±ブレで損させない）
+      const wasWorkGood = relatedProgress.work_status === "good";
+      const effectiveWorkStatus = wasWorkGood ? "good" : evaluation.result_status;
+      relatedProgress.work_status = effectiveWorkStatus;
+      if (!wasWorkGood || relatedProgress.last_score === null || relatedProgress.last_score === undefined || evaluation.score > relatedProgress.last_score) {
+        relatedProgress.last_score = evaluation.score;
+      }
+      relatedProgress.next_action = effectiveWorkStatus === "good" ? "next_lesson" : "revise_work";
       relatedProgress.updated_at = now;
     });
 
@@ -1080,7 +1085,9 @@ export class LocalJsonLearningProvider {
       core_messages: this._safeStringArray(criteria?.core_messages || miniWork.core_messages),
       common_misconceptions: this._safeStringArray(criteria?.common_misconceptions || miniWork.common_misconceptions),
       learner_prompt_full: criteria?.learner_prompt_full || miniWork.learner_prompt_full || miniWork.prompt || "",
-      feedback_template_summary: criteria?.feedback_template_summary || miniWork.feedback_template_summary || {}
+      feedback_template_summary: criteria?.feedback_template_summary || miniWork.feedback_template_summary || {},
+      // V7.2 few-shot較正: A水準の見本回答をAI採点プロンプトへ渡す（読み取り・転送のみ）
+      model_answer_example: criteria?.model_answer_example || miniWork.model_answer_example || ""
     };
   }
 
@@ -1231,6 +1238,9 @@ export class LocalJsonLearningProvider {
       learner_prompt_full: criteriaBundle.learner_prompt_full,
       originalQuestion: criteriaBundle.learner_prompt_full,
       original_question: criteriaBundle.learner_prompt_full,
+      // V7.2 few-shot較正: A水準の見本をプロンプトへ
+      modelAnswerExample: criteriaBundle.model_answer_example,
+      model_answer_example: criteriaBundle.model_answer_example,
       feedbackTemplateSummary: criteriaBundle.feedback_template_summary,
       feedback_template_summary: criteriaBundle.feedback_template_summary,
       passThreshold: Number(miniWork.passThreshold || miniWork.pass_threshold || miniWork.passing_score || MINI_WORK_PASS_THRESHOLD),
@@ -2071,6 +2081,8 @@ export class LocalJsonLearningProvider {
   }
 
   _applyAiWorkReview(db, email, work, session, review, now) {
+    // V7.2 単調性: 一度completed(クリア)になったAIワークは再評価で降格させない（良い方を保持）
+    const wasCompleted = session.status === "completed" || session.status === "final_feedback_ready";
     session.met_criteria = review.metCriteria || [];
     session.unmet_criteria = review.unmetCriteria || [];
     session.good_points = review.goodPoints || [];
@@ -2082,7 +2094,7 @@ export class LocalJsonLearningProvider {
     session.next_actions = review.nextActions?.length ? review.nextActions : session.next_actions || [];
     session.updated_at = now;
 
-    if (review.status === "completed") {
+    if (review.status === "completed" || wasCompleted) {
       this._completeAiWork(db, email, work, session, now);
       return;
     }
