@@ -2,7 +2,7 @@ const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-4o-mini";
 const WORK_SCHEMA_VERSION = "barise-work-evaluation-v1";
 const MINI_WORK_SCHEMA_VERSION = "barise-mini-work-evaluation-v1";
-const DEFAULT_TIMEOUT_MS = 12000;
+const DEFAULT_TIMEOUT_MS = 20000; // V7.1採点是正: 12s→20s（偶発タイムアウトで良回答が0点になる事故を防ぐ）
 
 const ALLOWED_WORK_IDS = new Set([
   "W-P1-05",
@@ -210,10 +210,15 @@ async function callOpenAi(payload, apiKey, model) {
     return await postOpenAiPrompt(payload, apiKey, model, buildUserPrompt(payload), timeoutMs);
   } catch (error) {
     if (error && error.name === "AbortError") {
-      if (payload?.miniWorkId === "MW-P2-05") {
-        return postOpenAiPrompt(payload, apiKey, model, buildMiniWorkCompactUserPrompt(payload), Math.max(timeoutMs, 16000));
+      // V7.1採点是正: タイムアウト時は1回リトライ（MW-P2-05は圧縮プロンプト、他は同プロンプトで再試行）
+      try {
+        if (payload?.miniWorkId === "MW-P2-05") {
+          return await postOpenAiPrompt(payload, apiKey, model, buildMiniWorkCompactUserPrompt(payload), Math.max(timeoutMs, 20000));
+        }
+        return await postOpenAiPrompt(payload, apiKey, model, buildUserPrompt(payload), timeoutMs);
+      } catch (retryError) {
+        throw new Error("openai_timeout");
       }
-      throw new Error("openai_timeout");
     }
     throw error;
   }
@@ -367,6 +372,8 @@ function buildMiniWorkUserPrompt(payload) {
     "重要: ミニワークでは、汎用評価軸よりも対象ミニワーク固有のA/B/Cルーブリックを優先してください。",
     "重要: A基準の必須要素がすべて満たされている場合、追加の数字・詳細・判断理由を要求してB/Cに落とさないでください。",
     "重要: 数字や定量情報は、そのミニワークのA基準または必須要素に含まれる場合のみ必須として扱ってください。",
+    "重要(V7.1): 必須要素は【意味】で判定してください。特定の語句（例: 『します』『ため』『なぜ』）の有無で機械的に減点せず、言い換え・同義表現・文脈から要素が実質的に満たされていればA基準を満たしたと判定してください（例: 『充てる/回す/据える/繋げる/振り分ける/購入する』も行動、『主因/削っていた/効果が薄い/優先度が低い』も理由）。",
+    "重要(V7.1): 内容が具体的で必須要素を実質的に満たす回答は、表現が定型でなくても積極的にpass（A）としてください。判断に迷う場合、要素が読み取れるなら合格側に倒してください。",
     "- 対象ミニワーク固有のA/B/C評価基準を最優先する",
     "- 必須要素を満たさない場合は、点数が高くてもpassにしない",
     "- 動画の核心メッセージに沿っているかを見る",
@@ -462,6 +469,13 @@ function normalizeEvaluation(raw = {}, payload, evaluatedAt, rawModel) {
   const miniAssessment = payload.isMiniWork ? assessMiniWorkRubric(payload) : null;
   const workAssessment = !payload.isMiniWork ? assessWorkRubric(payload) : null;
   const reviewAllowed = !payload.isMiniWork || isMiniWorkReviewAllowed(source, flags, payload, supportRequested);
+  // V7.1採点是正: AI判断（gpt-4o-mini）を主軸に、決定論rubricを"最低保証フロア"にする。
+  //   実質ルール = 「AI合格 もしくは 決定論合格 なら合格」。
+  const aiStatus = normalizeStatus(source.status);
+  const aiScore = clampScore(source.score);
+  const passThresholdNum = Number(payload.passThreshold) || 80;
+  const aiPass = !flags.aiError && (aiStatus === "pass" || (abcGrade === "A" && aiScore >= passThresholdNum));
+  const aiGaveImprovement = asArray(source.feedback && source.feedback.improvementPoints || source.improvement_points).length > 0;
 
   if (supportRequested) {
     status = "review";
@@ -474,48 +488,57 @@ function normalizeEvaluation(raw = {}, payload, evaluatedAt, rawModel) {
     flags.needsHumanReview = true;
   }
 
-  if (payload.isMiniWork && miniAssessment) {
-    abcGrade = miniAssessment.abcGrade;
-    score = miniAssessment.score;
-    if (abcGrade === "A" && !supportRequested && !flags.aiError && !flags.policyWarning) {
+  if (payload.isMiniWork) {
+    // 決定論フロア（安全網）: 全required_elements検知でA相当なら最低合格を保証
+    const floorPass = Boolean(miniAssessment && miniAssessment.abcGrade === "A");
+    const floorScore = miniAssessment ? miniAssessment.score : 0;
+    const passByEither = (aiPass || floorPass) && !supportRequested && !flags.policyWarning;
+
+    if (passByEither) {
       status = "pass";
+      abcGrade = "A";
+      // AIスコア主軸。フロア/合格閾値/82で下限を保証
+      score = Math.max(aiScore, floorScore, passThresholdNum, 82);
       flags.tooAbstract = false;
       flags.missingNextAction = false;
       flags.missingConcreteExample = false;
       flags.missingLessonConnection = false;
       flags.needsHumanReview = false;
       flags.needsSupport = false;
-    } else if (reviewAllowed && status === "review") {
+    } else if (supportRequested || (reviewAllowed && (aiStatus === "review" || payload.submissionCount >= payload.maxRetryBeforeReview))) {
       status = "review";
+      score = Math.max(aiScore, floorScore);
+      if (abcGrade === "A") abcGrade = "B";
     } else {
       status = "retry";
+      // 合格に届かない分はAI主軸のスコア（フロアで救済しつつ合格閾値未満に留める）
+      score = Math.min(Math.max(aiScore, floorScore, 1), passThresholdNum - 1);
+      abcGrade = abcGradeForScore("retry", score);
       flags.needsHumanReview = false;
-    }
-  } else if (payload.isMiniWork) {
-    if (status === "review" && !reviewAllowed) {
-      status = "retry";
-      flags.needsHumanReview = false;
-    }
-    if (abcGrade === "A" && score >= payload.passThreshold && !hasCriticalMiniWorkFlags(flags)) {
-      status = "pass";
-    } else if (["B", "C"].includes(abcGrade) && !reviewAllowed) {
-      status = "retry";
     }
   } else if (workAssessment) {
-    abcGrade = workAssessment.abcGrade;
-    score = workAssessment.score;
-    if (abcGrade === "A" && !supportRequested && !flags.aiError && !flags.policyWarning) {
+    // 本ワークも AI判断ベース＋決定論フロア
+    const floorPass = Boolean(workAssessment.abcGrade === "A");
+    const floorScore = workAssessment.score || 0;
+    const passByEither = (aiPass || floorPass) && !supportRequested && !flags.policyWarning;
+
+    if (passByEither) {
       status = "pass";
+      abcGrade = "A";
+      score = Math.max(aiScore, floorScore, passThresholdNum, 84);
       flags.tooAbstract = false;
       flags.missingNextAction = false;
       flags.missingConcreteExample = false;
       flags.missingLessonConnection = false;
       flags.needsHumanReview = false;
       flags.needsSupport = false;
-    } else if (supportRequested || (payload.submissionCount >= payload.maxRetryBeforeReview && workAssessment.status !== "pass")) {
+    } else if (supportRequested || (payload.submissionCount >= payload.maxRetryBeforeReview && aiStatus !== "pass")) {
       status = "review";
+      score = Math.max(aiScore, floorScore);
     } else {
       status = "retry";
+      score = Math.min(Math.max(aiScore, floorScore, 1), passThresholdNum - 1);
+      abcGrade = abcGradeForScore("retry", score);
       flags.needsHumanReview = false;
     }
   }
@@ -541,7 +564,8 @@ function normalizeEvaluation(raw = {}, payload, evaluatedAt, rawModel) {
   evaluation.followupReason = safeText(source.followupReason || source.followup_reason || miniAssessment?.followupReason || workAssessment?.followupReason || "");
   evaluation.followup_reason = evaluation.followupReason;
   evaluation.score = score;
-  evaluation.reason = safeText(miniAssessment?.reason || workAssessment?.reason || source.reason || source.summary || evaluation.reason);
+  // V7.1採点是正: 不合格理由はAIの具体フィードバックを優先（決定論文言はフォールバック）
+  evaluation.reason = safeText(source.reason || source.summary || miniAssessment?.reason || workAssessment?.reason || evaluation.reason);
   evaluation.feedback.summary = safeText(source.feedback && source.feedback.summary || source.summary || evaluation.feedback.summary);
   evaluation.feedback.goodPoints = limitArray(asArray(source.feedback && source.feedback.goodPoints || source.good_points), 3);
   evaluation.feedback.improvementPoints = limitArray(asArray(source.feedback && source.feedback.improvementPoints || source.improvement_points), 3);
@@ -561,11 +585,12 @@ function normalizeEvaluation(raw = {}, payload, evaluatedAt, rawModel) {
   if (status !== "pass" && !evaluation.feedback.improvementPoints.length) {
     evaluation.feedback.improvementPoints = [miniWorkRetryMessage(payload, miniAssessment)];
   }
-  if (status !== "pass" && workAssessment?.unmetCriteria?.length) {
+  // V7.1採点是正: AIが改善点を返した場合はそれを優先し、決定論unmetは補完のみ
+  if (status !== "pass" && !aiGaveImprovement && workAssessment?.unmetCriteria?.length) {
     evaluation.feedback.improvementPoints = workAssessment.unmetCriteria.slice(0, 3);
     evaluation.nextQuestion = workFollowupQuestion(workAssessment);
   }
-  if (status !== "pass" && miniAssessment?.unmetCriteria?.length) {
+  if (status !== "pass" && !aiGaveImprovement && miniAssessment?.unmetCriteria?.length) {
     evaluation.feedback.improvementPoints = payload.miniWorkId === "MW-P1-01"
       ? [miniWorkRetryMessage(payload, miniAssessment)]
       : miniAssessment.unmetCriteria.slice(0, 2);
@@ -739,25 +764,45 @@ function createHeuristicEvaluation(payload, evaluatedAt) {
 
 function createFallbackEvaluation(payload, errorType, evaluatedAt) {
   const source = payload || { workId: "" };
-  const evaluation = createEmptyEvaluation(source, "retry", evaluatedAt);
-  const recoverableMiniTimeout = source.miniWorkId === "MW-P2-05" && errorType === "openai_timeout";
-  evaluation.score = recoverableMiniTimeout ? 60 : 0;
-  evaluation.abcGrade = recoverableMiniTimeout ? "B" : evaluation.abcGrade;
+  // V7.1採点是正: タイムアウト/失敗時は「0点」にせず、決定論フロアのスコアで安全側に判定する。
+  //   良い回答（必須要素充足=A相当）はAI確認が失敗しても合格を保証し、偶発的な0点不合格を根治。
+  const assessment = payload && payload.isMiniWork
+    ? assessMiniWorkRubric(payload)
+    : (payload ? assessWorkRubric(payload) : null);
+  const supportRequested = isSupportRequested(payload?.userAnswer || "");
+  const floorPass = Boolean(assessment && assessment.abcGrade === "A") && !supportRequested;
+  const passThresholdNum = Number(payload?.passThreshold) || 80;
+  const status = floorPass ? "pass" : (supportRequested ? "review" : "retry");
+
+  const evaluation = createEmptyEvaluation(source, status, evaluatedAt);
+  evaluation.score = floorPass
+    ? Math.max(assessment.score || 0, passThresholdNum, payload?.isMiniWork ? 82 : 84)
+    : (assessment ? assessment.score : (payload?.isMiniWork ? 64 : 58));
+  evaluation.abcGrade = floorPass ? "A" : abcGradeForScore(status, evaluation.score);
   evaluation.abc_grade = evaluation.abcGrade;
-  evaluation.needsFollowup = recoverableMiniTimeout;
-  evaluation.needs_followup = evaluation.needsFollowup;
-  evaluation.followupReason = recoverableMiniTimeout ? "一時的にAI評価が混み合いました。回答内容は再評価可能です。" : "";
-  evaluation.followup_reason = evaluation.followupReason;
-  evaluation.reason = "一時的にAI判定ができませんでした。回答は保存されているため、再評価できます。";
-  evaluation.feedback.summary = "通信状況により判定できませんでした。入力内容は失われていません。";
-  evaluation.feedback.goodPoints = [];
-  evaluation.feedback.improvementPoints = ["少し時間を置いて再評価してください。"];
-  evaluation.nextQuestion = "保存済みの回答から再評価してください。";
-  evaluation.flags.aiError = true;
+  evaluation.needsFollowup = false;
+  evaluation.needs_followup = false;
+  evaluation.followupReason = "";
+  evaluation.followup_reason = "";
+  evaluation.reason = floorPass
+    ? "AIの確認が一時的に混み合ったため、必須要素の充足を確認して判定しました。"
+    : "AIの確認が一時的にできませんでした。必須要素をもう一度確認して整理しましょう。";
+  evaluation.feedback.summary = floorPass
+    ? "必須要素を満たしているため通過としました（AI確認は混み合っていました）。"
+    : "AI確認が混み合っていました。入力内容は失われていません。";
+  evaluation.feedback.goodPoints = floorPass ? (assessment.goodPoints || []).slice(0, 3) : [];
+  evaluation.feedback.improvementPoints = floorPass
+    ? []
+    : (assessment?.unmetCriteria?.length ? assessment.unmetCriteria.slice(0, 2) : ["具体的な場面・数字・行動を1つ足してください。"]);
+  evaluation.nextQuestion = floorPass ? "次へ進みましょう。" : "実際の業務では、いつ・誰に対して・何を試しますか？";
+  // aiError は立てない（クライアントが result_status="failed" に落とすのを避け、安全側スコアを活かす）。
+  evaluation.flags.aiError = false;
+  evaluation.flags.needsSupport = supportRequested;
+  evaluation.flags.needsHumanReview = status === "review";
   evaluation.flags.tooAbstract = false;
   evaluation.flags.missingNextAction = false;
   evaluation.meta.model = DEFAULT_MODEL;
-  evaluation.errorType = errorType || "openai_error";
+  evaluation.errorType = errorType || "openai_error"; // ログ/透明性のため保持（判定には使わない）
   evaluation.errorMessageSafe = safeErrorMessage(errorType);
   return evaluation;
 }
@@ -1067,7 +1112,8 @@ function hasMiniWorkReason(answer, payload) {
   if (payload?.miniWorkId === "MW-P1-01") {
     return hasP101Reason(text);
   }
-  return /(理由は|選んだ理由|なぜなら|目的は|狙いは|背景|必要だと思|必要がある|したいから|と思ったから|ため|ので)/.test(text);
+  // V7.1採点是正: 理由の言い換えを拡充
+  return /(理由は|選んだ理由|なぜなら|目的は|狙いは|背景|必要だと思|必要がある|したいから|と思ったから|ため|ので|から|主因|直結|効く|効果|優先|費用対効果|影響|近い|削っ|削る|ボトルネック|繋がる|つながる|重要|狙|注力|回避|防ぐ|課題|困って|促進|定着|維持|継続|因果|向上|獲得|強化|習慣|高め|下げ|再設計)/.test(text);
 }
 
 function hasP101Reason(answer) {
@@ -1180,7 +1226,8 @@ function isMiniWorkSelectionAbandoned(answer, payload) {
 }
 
 function hasActionChoice(answer) {
-  return /(挨拶|枕言葉|報連相|着手|中間|完了|頷|笑顔|拾う|記録|確認|聞く|伝える|試す|実行|選び|選ぶ|やる|行う)/.test(answer);
+  // V7.1採点是正: 行動語の同義語を拡充（app.js validateMiniWorkAnswer と同期）
+  return /(挨拶|枕言葉|報連相|着手|中間|完了|頷|笑顔|拾う|記録|確認|聞く|伝える|試す|実行|選び|選ぶ|やる|行う|充て|充当|回す|回し|据え|繋げ|繋ぐ|つなげ|つなぐ|振り分け|購入|特定|分ける|分け|片付け|整え|整理|見送|やらない|差し替え|登壇|送信|送る|渡す|作る|作成|進め|活用|導入|徹底|標準化|仕組み化|棚卸|添付|提示|提案|検証|割り当て|割く|設定|決め|見直|共有|使う|測る|比べ|分解|相談|改善)/.test(answer);
 }
 
 function hasMiniWorkSpecificScene(answer, payload) {
