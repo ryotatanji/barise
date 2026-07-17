@@ -2523,6 +2523,7 @@ export class LocalJsonLearningProvider {
         email,
         email_normalized: email,
         display_name: this._displayNameFromAuthUser(authUser, email),
+        nickname: String(authUser.nickname || "").trim(),
         account_status: "active",
         current_phase_id: firstPhaseId,
         current_lesson_id: firstLessonId,
@@ -2539,6 +2540,7 @@ export class LocalJsonLearningProvider {
     user.email_normalized = email;
     user.account_status = "active";
     user.display_name = user.display_name || this._displayNameFromAuthUser(authUser, email);
+    user.nickname = String(authUser.nickname || user.nickname || "").trim();
     user.current_phase_id = user.current_phase_id || firstPhaseId;
     user.current_lesson_id = user.current_lesson_id || firstLessonId;
     user.updated_at = now;

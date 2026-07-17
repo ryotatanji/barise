@@ -7,13 +7,13 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-0-3";
+} from "./data-provider.js?v=7-1-0";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
 
 const config = {
-  supportLineUrl: "https://line.me/R/",
+  supportLineUrl: "https://lin.ee/7JnzBxE",
   brandLogo: "./assets/barise-logo-white.png"
 };
 
@@ -542,7 +542,7 @@ function renderHome() {
 
   const summary = learning.progressSummary;
   const percent = Math.max(0, Math.min(100, Number(summary.percent) || 0));
-  const name = String(learning.user.display_name || "受講者").replace(/(さん|様)\s*$/, "");
+  const name = String(learning.user.nickname || learning.user.display_name || "受講者").replace(/(さん|様)\s*$/, "");
   const lesson = learning.currentLesson;
   const cta = lesson ? getLessonCta(lesson) : null;
   const dir = enterDirection("home");
@@ -569,7 +569,7 @@ function renderHome() {
             </div>
           </div>
           <div class="gauge-stats">
-            <div class="gs"><b>${summary.doneSteps}<em> /${summary.totalSteps}</em></b><small>踏破ステップ</small></div>
+            <div class="gs"><b>${summary.doneSteps}<em> /${summary.totalSteps}</em></b><small>クリアステップ</small></div>
             <div class="gs"><b>${summary.videoDone}<em> /${summary.videoTotal}</em></b><small>視聴した動画</small></div>
             <div class="gs hot"><b>${passCount}<em> /${passTotal}</em></b><small>通過したワーク</small></div>
           </div>
@@ -655,7 +655,7 @@ function renderChapterRow(learning, phase) {
   const no = padChapter(phase.phase_order);
 
   let stateMarkup = `<span class="ch-state">これから</span>`;
-  if (stateName === "done") stateMarkup = `<span class="ch-state done">★ 踏破</span>`;
+  if (stateName === "done") stateMarkup = `<span class="ch-state done">★ クリア</span>`;
   if (stateName === "current") stateMarkup = `<span class="ch-state here"><span class="here-dot" aria-hidden="true"></span>いまここ</span>`;
   if (stateName === "locked") stateMarkup = `<span class="ch-state lock">🔒 解放待ち</span>`;
 
@@ -733,7 +733,7 @@ function renderPhaseGroup(learning, phase, index) {
     <section class="phase-group${riseClass}" aria-label="${escapeAttribute(phase.phase_title)}">
       <div class="phase-head">
         <span class="ph-title"><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</span>
-        <span class="ph-count${stateName === "done" ? " done" : ""}">${stateName === "done" ? "★ 踏破 " : ""}${done}/${total}</span>
+        <span class="ph-count${stateName === "done" ? " done" : ""}">${stateName === "done" ? "★ クリア " : ""}${done}/${total}</span>
       </div>
       ${phase.lessons.map((lesson) => renderLessonRow(learning, phase, lesson)).join("") || `<p class="phase-locked-note">この章の教材は順次ひらいていきます。</p>`}
     </section>
@@ -764,7 +764,7 @@ function renderLessonRow(learning, phase, lesson) {
   const cta = getLearningLessonCta(lesson);
 
   let stateMarkup = `<span class="ls-state">これから</span>`;
-  if (stateName === "complete") stateMarkup = `<span class="ls-state done">★ 踏破</span>`;
+  if (stateName === "complete") stateMarkup = `<span class="ls-state done">★ クリア</span>`;
   if (stateName === "current") stateMarkup = `<span class="ls-state here"><span class="here-dot" aria-hidden="true"></span>いまここ</span>`;
   if (stateName === "progress") stateMarkup = `<span class="ls-state watched">進行中</span>`;
   if (stateName === "locked") stateMarkup = `<span class="ls-state lock">🔒 解放待ち</span>`;
@@ -1103,7 +1103,7 @@ function renderWorksPage() {
         ${renderWorkSection("進行中のワーク", activeWorks)}
         ${renderWorkSection("挑戦できるワーク", readyWorks)}
         ${renderWorkSection("この先のワーク", notStartedWorks, { collapsed: true })}
-        ${renderWorkSection("踏破したワーク", completedWorks, { collapsed: true })}
+        ${renderWorkSection("クリアしたワーク", completedWorks, { collapsed: true })}
         <div class="page-foot">
           <a class="text-link" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
         </div>
@@ -1836,7 +1836,7 @@ function getWorkCtaLabel(work) {
 function getWorkRequirementLabel(work) {
   const miniRemaining = Number(work.miniRemainingCount || 0);
   const videoRemaining = Number(work.videoRemainingCount || 0);
-  if (work.aiStatus === "completed") return "踏破済み";
+  if (work.aiStatus === "completed") return "クリア済み";
   if (miniRemaining > 0) return `関連ミニワーク あと${miniRemaining}件`;
   if (videoRemaining > 0) return `関連動画 あと${videoRemaining}件`;
   return "挑戦できます";
