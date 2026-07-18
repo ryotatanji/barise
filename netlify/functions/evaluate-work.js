@@ -917,17 +917,19 @@ function workRequirementMet(workId, answer, element) {
       () => /(なぜ|理由|ため|成果|KGI|提案化率|受注|改善|上がる|つながる)/.test(normalized)
     ],
     "W-P2-02": [
-      () => /(理想|状態|目標).*(%|％|件|[0-9０-９]|定性|定量)|(%|％|件|[0-9０-９]).*(理想|状態|目標)/.test(normalized),
+      // V7.2.4: KGI/KPI/KDI体系＋数値を「定量化された理想状態」として許容
+      () => /(理想|状態|目標|KGI|ゴール|到達)/i.test(normalized) && hasMetricEvidence(normalized),
       () => /(KGI|最終成果)/i.test(normalized) && /(KPI|途中成果)/i.test(normalized) && /(KDI|行動指標|行動量|行動品質)/i.test(normalized),
       () => /(自分|行動|変えられる|KDI|準備|確認|件数|項目数)/.test(normalized),
       () => /(見せかけ|表面的|直結しない|除外|注意|架電数だけ|フォロワー)/.test(normalized)
     ],
     "W-P2-03": [
-      () => /(うまくいかな|失敗|止まり|直近|先週|商談|対応|案件|問い合わせ)/.test(normalized),
-      () => countWhy(normalized) >= 2 || /(なぜなぜ|深掘|真因|構造|プロセス|仮説質問準備)/.test(normalized),
-      () => /(真因|原因).*(改善|変える|実行|仕組み|手順|準備|プロセス)|準備プロセス/.test(normalized),
+      // V7.2.4: 具体例・なぜなぜ/イシュー+仮説+根拠形式・実行可能な改善への接続を許容
+      () => /(うまくいかな|失敗|止まり|直近|先週|商談|対応|案件|問い合わせ|リピート|新規|来店|伸びない|繋がらない|頭打ち|失注|受注)/.test(normalized),
+      () => countWhy(normalized) >= 2 || /(なぜなぜ|深掘|真因|構造|プロセス|仮説質問準備)/.test(normalized) || (/(仮説|イシュー)/.test(normalized) && /(根拠|ため|データ|議事|memo|メモ|転換率|確認)/.test(normalized)),
+      () => /(真因|原因|仮説|イシュー).*(改善|変える|実行|仕組み|手順|準備|プロセス|検証|試す|運用|標準化|入れ|テンプレ)|準備プロセス|検証/.test(normalized),
       () => /(イシュー|取り組むべき|白黒|ではないか|最重要課題)/.test(normalized),
-      () => /(KPI|提案化率|改善確認|指標|件|率|%|％)/.test(normalized)
+      () => /(KPI|提案化率|改善確認|指標|転換率|リピート率|件|率|%|％|[0-9０-９])/.test(normalized)
     ],
     "W-P2-04": [
       // V7.2.3: 振り返り型（なぜなぜ/KPT/YWT）の模範に対応。根本原因＝仮説として許容し、検知漏れを是正。
@@ -939,11 +941,12 @@ function workRequirementMet(workId, answer, element) {
       () => /(構造|修正ポイント|KPT|YWT|YWTM|根本原因|なぜなぜ|真因|フレーム|振り返り)/i.test(normalized)
     ],
     "W-P2-05": [
-      () => /(対象者|相手|顧客|部下|チーム|現場|営業担当|Bさん|課題|困って)/.test(normalized),
+      () => /(対象者|相手|顧客|部下|チーム|現場|営業担当|後輩|知人|同僚|Bさん|課題|困って)/.test(normalized),
       () => /(結論|根拠|理由|事実|データ|観察|記録|商談メモ)/.test(normalized),
-      () => /(W1|W2|W3|W4|現状|理想|イシュー|仮説|検証|構造化)/.test(normalized),
-      () => /(介入|働きかけ|支援|提案|期待変化|変化|一緒に作る|サポート)/.test(normalized),
-      () => /(第三者|説明|伝える|構造|結論|根拠|まとめ)/.test(normalized)
+      // V7.2.4: ロジックツリー(Why/How)で問題段階を特定する形式を許容
+      () => /(W1|W2|W3|W4|現状|理想|イシュー|仮説|検証|構造化|ロジックツリー|Why|How|段階|転換|ボトルネック|要因|プロセス)/i.test(normalized),
+      () => /(介入|働きかけ|支援|提案|期待変化|変化|一緒に作る|サポート|標準化|配り|運用|テンプレ)/.test(normalized),
+      () => /(第三者|説明|伝える|構造|結論|根拠|まとめ|ピラミッド)/.test(normalized)
     ]
   };
 
@@ -1167,6 +1170,42 @@ function p1RequirementMet(t, element, payload) {
   return null;
 }
 
+// ===== V7.2.4 P2ミニ決定論フロア拡充 =====
+// P2ミニの80近傍ブレを、P1と同じくワーク別の決定論フロアで安定合格に。
+// v3模範は KGI/KPI/KDI・イシュー・見せかけ指標差し替え等のフレームで書かれ、従来の
+// 文字列固定の検知が取りこぼしていた。数値・枠組みを必須（あやか基準と整合）に是正する。
+// 未対応要素はnull（=既存の特別処理/汎用フォールバックへ）。
+function p2ConcreteMetricCount(t) {
+  return (t.match(/件数|フォロワー|接触|予約数?|受注率?|売上|リピート率?|来店|客単価|単価|提案|商談|架電|返信|成約|転換率|粗利|会話できた|有効接触/gi) || []).length;
+}
+function p2HasConcreteVerification(t) {
+  return /(検証|測|試し|試す|確認|見ます|入れ|運用|標準化|回す|差し替え)/.test(t) &&
+    (/[0-9０-９]/.test(t) || /(次の|今月|来週|今週|3件|全員|テンプレ|予約|提案|LINE|SNS|架電|商談|リピート)/.test(t));
+}
+function p2RequirementMet(t, element, payload) {
+  const id = payload.miniWorkId || payload.workId || "";
+  if (id === "MW-P2-02") {
+    if (/自分の仕事に具体的/.test(element)) return /[0-9０-９]/.test(t); // 数値で自業務に落ちている
+  }
+  if (id === "MW-P2-03") {
+    if (/KGIとのつながり|KGI.*つなが/.test(element)) {
+      return /(KGI|最終ゴール|売上|契約|目標|成果)/i.test(t) &&
+        /(直結|つなが|繋が|繋げ|因果|動かし|作り|になる|関係|影響|優先|近い)/.test(t);
+    }
+  }
+  if (id === "MW-P2-04") {
+    if (/複数のKPI/.test(element)) return p2ConcreteMetricCount(t) >= 2;
+  }
+  if (id === "MW-P2-05") {
+    if (/課題が1つに絞/.test(element)) return /(課題|イシュー|問題)/.test(t) && /「[^」]{2,}」/.test(t);
+  }
+  if (id === "MW-P2-06") {
+    if (/課題が1つ書かれ/.test(element)) return /(課題|イシュー|問題|失注|事象|なぜ)/.test(t) && /「[^」]{2,}」|なぜ.*[?？]/.test(t);
+    if (/検証方法が具体的/.test(element)) return p2HasConcreteVerification(t);
+  }
+  return null;
+}
+
 function miniRequirementMet(answer, element, payload) {
   const text = safeText(element);
   if (!text) return false;
@@ -1175,6 +1214,11 @@ function miniRequirementMet(answer, element, payload) {
   if (/^MW-P1-/.test(payload.miniWorkId || payload.workId || "")) {
     const p1 = p1RequirementMet(answer, text, payload);
     if (p1 !== null) return p1;
+  }
+  // V7.2.4 P2ミニ決定論フロア拡充: 対応要素のみワーク別判定（他は既存処理へ）
+  if (/^MW-P2-/.test(payload.miniWorkId || payload.workId || "")) {
+    const p2 = p2RequirementMet(answer, text, payload);
+    if (p2 !== null) return p2;
   }
 
   if (payload.miniWorkId === "MW-P2-05") {
