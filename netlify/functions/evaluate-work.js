@@ -930,11 +930,13 @@ function workRequirementMet(workId, answer, element) {
       () => /(KPI|提案化率|改善確認|指標|件|率|%|％)/.test(normalized)
     ],
     "W-P2-04": [
-      () => /(仮説|ではないか|変えれば|上がるか)/.test(normalized),
-      () => /(根拠|理由|過去|事実|データ|観察|からです)/.test(normalized),
-      () => /(検証|必要データ|期限|いつまで|測定|記録|金曜|日|週|月|[0-9０-９]+:[0-9０-９]+)/.test(normalized),
-      () => /(当たった|外れた|場合|次アクション|修正|テンプレート化|仮説を修正)/.test(normalized),
-      () => /(構造|修正ポイント|KPT|YWTM|質問内容|相手選定|決裁条件|振り返り)/i.test(normalized)
+      // V7.2.3: 振り返り型（なぜなぜ/KPT/YWT）の模範に対応。根本原因＝仮説として許容し、検知漏れを是正。
+      () => /(仮説|ではないか|変えれば|上がるか|根本原因|真因|原因＝|原因=|なぜなぜ)/.test(normalized),
+      () => /(根拠|理由|過去|事実|データ|観察|からです|なぜなぜ|→[②-⑤]|①.*②)/.test(normalized),
+      () => /(検証|必要データ|期限|いつまで|測定|記録|金曜|月曜|今日から|今週中|日|週|月|[0-9０-９]+:[0-9０-９]+)/.test(normalized),
+      () => /(Try|T[:：]|次にやること|次アクション|仮説を修正)/i.test(normalized) ||
+        (/(作り|作成|固定|開始|運用|仕組み化|テンプレ|手順|自動|下書き)/.test(normalized) && /(金曜|月曜|今日|今週|明日|までに|から|[0-9０-９]+時)/.test(normalized)),
+      () => /(構造|修正ポイント|KPT|YWT|YWTM|根本原因|なぜなぜ|真因|フレーム|振り返り)/i.test(normalized)
     ],
     "W-P2-05": [
       () => /(対象者|相手|顧客|部下|チーム|現場|営業担当|Bさん|課題|困って)/.test(normalized),
@@ -1076,9 +1078,104 @@ function assessMiniWorkRubric(payload) {
   };
 }
 
+// ===== V7.2.3 P1決定論フロア拡充 =====
+// gpt-4o-miniはfew-shotでもP1を較正できない（自分の見本すら70）ため、P1ミニの合否は
+// AI非依存の決定論フロアで確実化する。合格ライン80・required_elements自体は不変。
+// ここでは「良回答が全要素検知される」水準まで検知を是正するのみ（緩和ではなく検知漏れ修正）。
+// あやか基準=「数値まで必須」に沿い、数値が本質の設問（P1-02/04/05）は数値を必須、
+// 数値が馴染まない定性設問（P1-01/03/06/07/08）は枠組み要素を必須・数値は任意加点にする。
+
+function p1HasQuotedOrAction(t) {
+  return /「[^」]{2,}」/.test(t) || hasActionChoice(t);
+}
+function p1HasReason(t) {
+  return /(ため|ので|から|なぜなら|理由|目的|狙い|背景|削っ|感じさせ|遅い|リスク|直結|影響|溶かし|後回し|困らない|優先|必須|締切|失注|防ぐ|懸念|につながる|に繋がる|しがち|下がる|高く|大きい|薄く)/.test(t);
+}
+function p1HasScene(t) {
+  return /(今日|明日|今朝|朝|昼|夕方|夜|午前|午後|[0-9０-９]+時|今週|来週|週末|毎週|毎日|毎月|月末|金曜|月曜|火曜|水曜|木曜|土曜|日曜|会議|商談|研修|朝礼|来店|予約|施術|カウンセリング|会計|開店|Slack|LINE|メール|カレンダー|リスト|スプレッドシート|記録|投稿)/.test(t);
+}
+function p1HasEnumeration(t) {
+  if ((t.match(/[①②③④⑤⑥]/g) || []).length >= 2) return true;
+  if ((t.match(/【[^】]+】/g) || []).length >= 2) return true;
+  return (t.match(/[0-9０-９]+[\.、）)]/g) || []).length >= 2;
+}
+function p1HasNumber(t) {
+  return /[0-9０-９]/.test(t) || /(→|->)/.test(t);
+}
+function p1HasSelfBlameSet(t) {
+  const selfBlame = /(自責|自分|私|ヒアリング不足|準備不足|できていなかった|していなかった|しなかった|会えないまま|掴めていなかった|用意せず|声かけ|送っていなかった|深掘りできず)/.test(t);
+  return selfBlame && (p1HasEnumeration(t) || /(3つ|三つ|3点)/.test(t));
+}
+function p1HasObservableDefinition(t) {
+  if (/[0-9０-９]/.test(t) && /(以内|まで|回|分|時間|日|件|%|％)/.test(t)) return true;
+  return /(チェックリスト|明記|判定でき|確認でき|お伝え|架電|カウンセリング|手順|基準|観測|お礼メール|議事メモ)/.test(t);
+}
+function p1Abandoned(t) {
+  // 「全部大事」「全部やります」式の選択放棄のみ検出。「N件すべてで実行」等の具体行動は放棄でない。
+  if (/「[^」]{2,}」/.test(t) || /[0-9０-９]+\s*件/.test(t)) return false;
+  if (/(1つ|一つ|1個|絞|選ん|マスト|やめ|やらない)/.test(t)) return false;
+  return /(全部|すべて|全て).{0,6}(大事|重要|やります|します|がんばり|頑張り|終わらせ)|^(頑張ります|がんばります|意識します|しっかりやります)/.test(t);
+}
+
+// P1ミニのワーク別・必須要素判定。対応要素はtrue/false、未対応要素はnull（=既存フォールバックへ）。
+function p1RequirementMet(t, element, payload) {
+  const id = payload.miniWorkId || payload.workId || "";
+
+  if (id === "MW-P1-01") {
+    if (/行動が1つ/.test(element)) return p1HasQuotedOrAction(t) && !p1Abandoned(t);
+    if (/理由/.test(element)) return p1HasReason(t);
+    if (/いつ・どこで|場面/.test(element)) return p1HasScene(t) && (/[0-9０-９]/.test(t) || /「[^」]{2,}」/.test(t));
+  }
+  if (id === "MW-P1-02") { // 数値目標系: 数値必須
+    if (/方法が1つ/.test(element)) return p1HasQuotedOrAction(t) && !p1Abandoned(t) && p1HasNumber(t);
+    if (/理由/.test(element)) return p1HasReason(t) || /(記録|ルール|仕組み|チェック|リスト|スプレッドシート|正の字|解禁|習慣|発注)/.test(t);
+    if (/場面|状況/.test(element)) return p1HasScene(t);
+  }
+  if (id === "MW-P1-03") {
+    if (/方法が1つ/.test(element)) return p1HasEnumeration(t) && /(やめ|やらない|やりません|減らす|後回し|見送|捨て|削)/.test(t) && !p1Abandoned(t);
+    if (/理由/.test(element)) return p1HasReason(t);
+    if (/タスク・場面|具体/.test(element)) return p1HasScene(t) || p1HasEnumeration(t) || /(充て|回す|回し|振り分け)/.test(t);
+  }
+  if (id === "MW-P1-04") { // 数値目標系: 数値（時刻等）必須
+    if (/複数書き出/.test(element)) return p1HasEnumeration(t);
+    if (/一番/.test(element)) return /(マストワン|マスト|一番|最優先|最も|これを最初|最初に|優先)/.test(t) && !p1Abandoned(t);
+    if (/理由/.test(element)) return p1HasReason(t) && /(緊急|重要|締切|リスク|依頼|失注|必須|優先|直結)/.test(t);
+  }
+  if (id === "MW-P1-05") { // 数値目標系: 数値（現状→目標）必須
+    if (/Step 1・2/.test(element)) return /[0-9０-９]/.test(t) && /(目標|現状|現在|マイルストン|売上|受注|率|来店|客単価|月間)/.test(t);
+    if (/やりたいこと.*1つ/.test(element)) return /(目標|ゴール|やりたい)/.test(t) && (/(→|->)/.test(t) || /(現状|現在|から.*へ|倍増|にする|に上げ|に増や)/.test(t));
+    if (/期限/.test(element)) return /(年後|ヶ月|カ月|か月|半年|期限|月末|までに|[0-9０-９]+月|週間|マイルストン)/.test(t);
+  }
+  if (id === "MW-P1-06") {
+    if (/出来事が具体的/.test(element)) return /(失注|リピート|商談|来店|案件|お客|新規|クレーム|契約|受注|予約)/.test(t) && t.length >= 20;
+    if (/自責の視点/.test(element)) return p1HasSelfBlameSet(t);
+    if (/偏らず|バランス/.test(element)) return p1HasSelfBlameSet(t) && /(次回|今後|次から|改善|徹底|します|打診)/.test(t);
+  }
+  if (id === "MW-P1-07") {
+    if (/練習①②/.test(element)) return /「[^」]{2,}」/.test(t) && /(定義|意味|とは|こと)/.test(t);
+    if (/範囲を絞/.test(element)) return p1HasObservableDefinition(t);
+    if (/本質的な性質|構造を捉え/.test(element)) return p1HasObservableDefinition(t);
+  }
+  if (id === "MW-P1-08") {
+    if (/練習が1つ/.test(element)) return /「[^」]{2,}」/.test(t) && /(本当にそう|本当に\?|本当に？|前提|疑|かもしれない|とは限らない|必ずしも)/.test(t);
+    if (/自分の仕事・状況/.test(element)) {
+      const tiedToSelf = /(自分の担当|自社|自店|うちの|私の担当|現場|実際|直近|データ|検証)/.test(t);
+      return tiedToSelf && (p1HasReason(t) || /[0-9０-９]/.test(t));
+    }
+    if (/具体的な場面/.test(element)) return /[0-9０-９]/.test(t) || /(実際|一次データ|検証|直近|担当|現場)/.test(t);
+  }
+  return null;
+}
+
 function miniRequirementMet(answer, element, payload) {
   const text = safeText(element);
   if (!text) return false;
+
+  // V7.2.3 P1決定論フロア拡充: P1ミニはワーク別の必須要素で判定（対応要素のみ）
+  if (/^MW-P1-/.test(payload.miniWorkId || payload.workId || "")) {
+    const p1 = p1RequirementMet(answer, text, payload);
+    if (p1 !== null) return p1;
+  }
 
   if (payload.miniWorkId === "MW-P2-05") {
     if (/課題.*1つ|課題が1つ/.test(text)) return /(課題|悩み|問題).*(1つ|一つ|テーマ)|1つ.*(課題|悩み|問題)/.test(answer);
@@ -1251,6 +1348,8 @@ function isThinMiniWorkAnswer(answer) {
 
 function isMiniWorkSelectionAbandoned(answer, payload) {
   if (payload.miniWorkId === "MW-P1-01") {
+    // V7.2.3: 「N件すべてで実行」等の具体行動を選択放棄と誤検知しない（クオート行動/件数があれば放棄でない）
+    if (/「[^」]{2,}」/.test(answer) || /[0-9０-９]+\s*件/.test(answer)) return false;
     return /(全部|すべて|全て).*(大事|重要|やります|します)|頑張ります/.test(answer) &&
       !/(1つ|一つ|報連相|挨拶|枕言葉|頷|笑顔|拾う)/.test(answer.replace(/全部/g, ""));
   }
