@@ -1129,43 +1129,50 @@ function p1RequirementMet(t, element, payload) {
     if (/理由/.test(element)) return p1HasReason(t);
     if (/いつ・どこで|場面/.test(element)) return p1HasScene(t) && (/[0-9０-９]/.test(t) || /「[^」]{2,}」/.test(t));
   }
-  if (id === "MW-P1-02") { // 数値目標系: 数値必須
-    if (/方法が1つ/.test(element)) return p1HasQuotedOrAction(t) && !p1Abandoned(t) && p1HasNumber(t);
-    if (/理由/.test(element)) return p1HasReason(t) || /(記録|ルール|仕組み|チェック|リスト|スプレッドシート|正の字|解禁|習慣|発注)/.test(t);
+  if (id === "MW-P1-02") { // V5是正: 数値必須を解除（実設問は5方法から1つ選ぶ＝非数値の方法も正答）
+    if (/方法が1つ/.test(element)) return p1HasQuotedOrAction(t) && !p1Abandoned(t);
+    if (/理由/.test(element)) return p1HasReason(t) || /(記録|ルール|仕組み|チェック|リスト|スプレッドシート|正の字|解禁|習慣|発注|場所|会議室|こもる|通知|削除|5分)/.test(t);
     if (/場面|状況/.test(element)) return p1HasScene(t);
   }
-  if (id === "MW-P1-03") {
-    if (/方法が1つ/.test(element)) return p1HasEnumeration(t) && /(やめ|やらない|やりません|減らす|後回し|見送|捨て|削)/.test(t) && !p1Abandoned(t);
+  if (id === "MW-P1-03") { // V5是正: 「やめ語」必須を撤廃。実設問は7方法(断る/自動化/選別/後回し等)から1つ選ぶ
+    // 「色々試す」式の非選択のみ除外（"新規分すべてに適用"等の正当な全体適用は除外しない。放棄はp1Abandonedが担当）
+    const methodPicked = (/「[^」]{2,}」/.test(t) || /(断る|断り|自動化|外注|委譲|効率化|選別|後回し|やめ|やらない|やりません|減らす|捨て|見送|標準化|テンプレ|セット|予約投稿)/.test(t)) &&
+      !/(色々|いろいろ|なんでも|色んな|とにかく)/.test(t) && !p1Abandoned(t);
+    if (/方法が1つ/.test(element)) return methodPicked;
     if (/理由/.test(element)) return p1HasReason(t);
-    if (/タスク・場面|具体/.test(element)) return p1HasScene(t) || p1HasEnumeration(t) || /(充て|回す|回し|振り分け)/.test(t);
+    if (/タスク・場面|具体/.test(element)) return p1HasScene(t) || p1HasEnumeration(t) || /(充て|回す|回し|振り分け|セット|適用|相談)/.test(t);
   }
   if (id === "MW-P1-04") { // 数値目標系: 数値（時刻等）必須
     if (/複数書き出/.test(element)) return p1HasEnumeration(t);
     if (/一番/.test(element)) return /(マストワン|マスト|一番|最優先|最も|これを最初|最初に|優先)/.test(t) && !p1Abandoned(t);
     if (/理由/.test(element)) return p1HasReason(t) && /(緊急|重要|締切|リスク|依頼|失注|必須|優先|直結)/.test(t);
   }
-  if (id === "MW-P1-05") { // 数値目標系: 数値（現状→目標）必須
-    if (/Step 1・2/.test(element)) return /[0-9０-９]/.test(t) && /(目標|現状|現在|マイルストン|売上|受注|率|来店|客単価|月間)/.test(t);
-    if (/やりたいこと.*1つ/.test(element)) return /(目標|ゴール|やりたい)/.test(t) && (/(→|->)/.test(t) || /(現状|現在|から.*へ|倍増|にする|に上げ|に増や)/.test(t));
-    if (/期限/.test(element)) return /(年後|ヶ月|カ月|か月|半年|期限|月末|までに|[0-9０-９]+月|週間|マイルストン)/.test(t);
+  if (id === "MW-P1-05") { // V5是正: 数値必須＋現状→目標を撤廃。実設問は両極端ワーク(定性)＋本当にやりたい1つ＋期限
+    if (/Step 1・2/.test(element)) return /(制限|無制限|自由|なけれ)/.test(t) && /(最後|最期|今日が最後|人生最後|最後の[1一]日)/.test(t);
+    if (/やりたいこと.*1つ/.test(element)) return /(本当に|叶えたい|やりたいこと|一番|大切)/.test(t) && (/「[^」]{2,}」/.test(t) || /(1つ|一つ|に絞|になる|にする|を目指|したい)/.test(t));
+    if (/期限/.test(element)) return /(年後|ヶ月|カ月|か月|半年|期限|月末|までに|来年|今年|[0-9０-９]+年|[0-9０-９]+月|週間|マイルストン)/.test(t);
   }
-  if (id === "MW-P1-06") {
-    if (/出来事が具体的/.test(element)) return /(失注|リピート|商談|来店|案件|お客|新規|クレーム|契約|受注|予約|提出|締切|遅れ|遅刻|漏れ|ミス|トラブル|未達|失敗|やり直し|キャンセル|対応|報告)/.test(t) && t.length >= 20;
-    if (/自責の視点/.test(element)) return p1HasSelfBlameSet(t);
-    if (/偏らず|バランス/.test(element)) return p1HasSelfBlameSet(t) && /(次回|今後|次から|改善|徹底|します|打診)/.test(t);
+  if (id === "MW-P1-06") { // V5是正: 自責のみ矮小化を撤廃。②自分にできること＋③構造・環境の"両視点"を評価
+    const hasEvent = /(失注|リピート|商談|来店|案件|お客|新規|クレーム|契約|受注|予約|提出|締切|遅れ|遅刻|漏れ|ミス|トラブル|未達|失敗|やり直し|キャンセル|対応|報告)/.test(t) && t.length >= 20;
+    const hasSelf = /(自分|自責|できていなかった|していなかった|しなかった|打診|持参|次回から|今後は|標準化|確認する|入れ|やめ|始め)/.test(t);
+    const hasStructure = /(構造|環境|仕組み|予算|時期|サイクル|競合|市場|体制|制度|状況|外部|近隣|相手の|先方|タイミング)/.test(t);
+    if (/出来事が具体的/.test(element)) return hasEvent;
+    if (/自責の視点/.test(element)) return hasSelf && hasStructure;
+    if (/偏らず|バランス/.test(element)) return hasSelf && hasStructure;
   }
-  if (id === "MW-P1-07") {
-    if (/練習①②/.test(element)) return /「[^」]{2,}」/.test(t) && /(定義|意味|とは|こと)/.test(t);
-    if (/範囲を絞/.test(element)) return p1HasObservableDefinition(t);
-    if (/本質的な性質|構造を捉え/.test(element)) return p1HasObservableDefinition(t);
+  if (id === "MW-P1-07") { // V5是正: 「言葉定義」型を撤廃。①課題を部署/時間帯/工程で絞る＋②2つの共通点(本質)を検出
+    const hasNarrow = /(部署|時間帯|工程|に絞|で絞|絞る|絞り|に限|だけ|のうち)/.test(t);
+    const hasCommon = /(共通点|共通する|共通し|共通は)/.test(t);
+    if (/練習①②/.test(element)) return hasNarrow && hasCommon;
+    if (/範囲を絞/.test(element)) return hasNarrow;
+    if (/本質的な性質|構造を捉え/.test(element)) return hasCommon && /(本質|性質|機能|構造|仕組み|蓄積|情報|防げ|決める|につなが|役割|目的|抜け)/.test(t);
   }
-  if (id === "MW-P1-08") {
-    if (/練習が1つ/.test(element)) return /「[^」]{2,}」/.test(t) && /(本当にそう|本当に\?|本当に？|前提|疑|かもしれない|とは限らない|必ずしも)/.test(t);
-    if (/自分の仕事・状況/.test(element)) {
-      const tiedToSelf = /(自分の担当|自社|自店|うちの|私の担当|現場|実際|直近|データ|検証)/.test(t);
-      return tiedToSelf && (p1HasReason(t) || /[0-9０-９]/.test(t));
-    }
-    if (/具体的な場面/.test(element)) return /[0-9０-９]/.test(t) || /(実際|一次データ|検証|直近|担当|現場)/.test(t);
+  if (id === "MW-P1-08") { // V5是正: 練習B固定を撤廃。A(目的を問う)/B(前提を疑う)/C(他者視点) いずれも許容
+    const picked = /(選んだ練習|練習[：:\s]*[ＡＢＣABCａｂｃ]|[ＡＢＣABC][（(]|前提を疑|自分の意見に問|意見を疑|他の立場|目的を問|何のため|相手はどう感じ)/.test(t) &&
+      !/(3つとも|三つとも|全部|すべて|全て)/.test(t);
+    if (/練習が1つ/.test(element)) return picked;
+    if (/自分の仕事・状況/.test(element)) return p1HasReason(t) && /(案件|提案|商談|お客|顧客|カウンセリング|要望|思い込み|突き進|受けて|担当|自分の|準備)/.test(t);
+    if (/具体的な場面/.test(element)) return p1HasScene(t);
   }
   return null;
 }
