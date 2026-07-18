@@ -926,8 +926,9 @@ function workRequirementMet(workId, answer, element) {
     "W-P2-03": [
       // V7.2.4: 具体例・なぜなぜ/イシュー+仮説+根拠形式・実行可能な改善への接続を許容
       () => /(うまくいかな|失敗|止まり|直近|先週|商談|対応|案件|問い合わせ|リピート|新規|来店|伸びない|繋がらない|頭打ち|失注|受注)/.test(normalized),
-      () => countWhy(normalized) >= 2 || /(なぜなぜ|深掘|真因|構造|プロセス|仮説質問準備)/.test(normalized) || (/(仮説|イシュー)/.test(normalized) && /(根拠|ため|データ|議事|memo|メモ|転換率|確認)/.test(normalized)),
-      () => /(真因|原因|仮説|イシュー).*(改善|変える|実行|仕組み|手順|準備|プロセス|検証|試す|運用|標準化|入れ|テンプレ)|準備プロセス|検証/.test(normalized),
+      () => countWhy(normalized) >= 2 || (normalized.match(/→/g) || []).length >= 3 || /(なぜなぜ|深掘|真因|構造|プロセス|仮説質問準備)/.test(normalized) || (/(仮説|イシュー)/.test(normalized) && /(根拠|ため|データ|議事|memo|メモ|転換率|確認)/.test(normalized)),
+      // V5是正: 構造的真因(型/仕組み/欠如等)も「実行可能な改善につながる粒度」として許容
+      () => /(真因|原因)/.test(normalized) && /(型|仕組み|構造|手順|プロセス|欠如|未整備|未定義|フロー|導線|ルール|習慣|改善|変える|実行|準備|標準化|テンプレ|検証|組み込)/.test(normalized),
       () => /(イシュー|取り組むべき|白黒|ではないか|最重要課題)/.test(normalized),
       () => /(KPI|提案化率|改善確認|指標|転換率|リピート率|件|率|%|％|[0-9０-９])/.test(normalized)
     ],
@@ -1199,6 +1200,9 @@ function p2RequirementMet(t, element, payload) {
       return /(KGI|最終ゴール|売上|契約|目標|成果)/i.test(t) &&
         /(直結|つなが|繋が|繋げ|因果|動かし|作り|になる|関係|影響|優先|近い)/.test(t);
     }
+    // V5是正: 具体KPI・追跡状態のフロア未カバー(営72retry)を是正
+    if (/具体的なKPIが1つ/.test(element)) return /(KPI|受注件数|受注率|リピート率|客単価|転換率|単価|来店数|提案数|架電|アポ|[0-9０-９]+件|[0-9０-９]+%|[0-9０-９]+％)/.test(t);
+    if (/追跡の状態/.test(element)) return /(追え|追跡|集計|台帳|記録|見えて|出せて|レビュー|毎週|毎月|月末|金曜|見直)/.test(t);
   }
   if (id === "MW-P2-04") {
     if (/複数のKPI/.test(element)) return p2ConcreteMetricCount(t) >= 2;
@@ -1209,6 +1213,18 @@ function p2RequirementMet(t, element, payload) {
   if (id === "MW-P2-06") {
     if (/課題が1つ書かれ/.test(element)) return /(課題|イシュー|問題|失注|事象|なぜ)/.test(t) && /「[^」]{2,}」|なぜ.*[?？]/.test(t);
     if (/検証方法が具体的/.test(element)) return p2HasConcreteVerification(t);
+  }
+  if (id === "MW-P2-07") { // V5是正: なぜなぜをフロアで判定(事象＋なぜ3段以上＋構造的真因)
+    if (/具体的な事象/.test(element)) return /(事象|失敗|うまくいかな|締切|間に合わ|キャンセル|遅れ|漏れ|ミス|トラブル|提出|案件|商談|問題|続く)/.test(t) && t.length >= 15;
+    if (/なぜが5回|なぜ.*5/.test(element)) return (t.match(/→/g) || []).length >= 3 || countWhy(t) >= 3 || /なぜ.*なぜ.*なぜ/.test(t) || (t.match(/[①②③④⑤]/g) || []).length >= 3;
+    if (/真因/.test(element)) return /(真因|根本原因)/.test(t) && /(仕組み|構造|習慣|テンプレ|型|手順|プロセス|運用|未整備|欠如|未定義|仕組み化|ルール|フロー|組み込)/.test(t);
+  }
+  if (id === "MW-P2-08") { // V5是正: KPT＋YWTMの5項目とTry・期待効果をフロアで判定(見本は是正済)
+    const items5 = /(Keep|続け)/.test(t) && /(Problem|課題|問題)/.test(t) && /(Try|試す)/.test(t) && /やったこと/.test(t) && /(わかったこと|分かったこと)/.test(t) && /(次にやること|次にやる|次の一手)/.test(t);
+    if (/5項目が揃/.test(element)) return items5;
+    if (/Tryが1つ/.test(element)) return /(Try|次に試す|試すこと)/.test(t) && /(金曜|来週|今週|今日|明日|テンプレ|標準化|追加|日付|必須|まで|[0-9０-９])/.test(t);
+    if (/わかったこと/.test(element)) return /(わかったこと|分かったこと)/.test(t) && t.length >= 40;
+    if (/MがTry|期待効果/.test(element)) return /(期待|効果|上がる|につながる|に繋がる|向上|リピート率が|転換率が|返信率)/.test(t);
   }
   return null;
 }
