@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-1-1";
+} from "./data-provider.js?v=7-2-4";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -2193,9 +2193,12 @@ function validateMiniWorkAnswer(answer) {
   const text = String(answer || "").trim();
   const normalized = text.replace(/\s+/g, "");
   const placeholderPattern = /^(テスト|test|TEST|仮|仮入力|サンプル|sample|aaa|aaaa|あああ|いいい|ううう|確認|入力|未定|なし|特になし|特にない|とりあえず|ダミー|dummy|asdf|qwer|123|１２３|頑張ります|がんばります|分かりました|わかりました|やります|意識します|改善します)[。.!！]*$/i;
-  const hasAction = /(する|します|試す|試し|確認|書く|書き|聞く|聞き|見る|見て|測る|測り|比べ|分解|相談|実行|改善|設定|決め|伝え|記録|選ぶ|選び|答え|見直|共有|使う|使い|行う|行い)/.test(text);
-  const hasReason = /(なぜ|理由|ため|なので|から|目的|狙い|課題|必要|大切|改善|困って|選びました|選ぶ)/.test(text);
-  const hasWhenWhere = /(今日|明日|今週|来週|月曜|火曜|水曜|木曜|金曜|土曜|日曜|午前|午後|朝|昼|夕方|夜|商談|会議|面談|顧客|上司|同僚|チーム|現場|店舗|電話|メール|LINE|資料|画面|[0-9０-９]+[日月週時分件回%％]?)/.test(text);
+  // 行動語（V7.1採点是正で同義語を拡充。良い回答の取りこぼしを防ぐ。evaluate-work.js の決定論フロアと同期）
+  const hasAction = /(する|します|試す|試し|確認|書く|書き|聞く|聞き|見る|見て|測る|測り|比べ|分解|相談|実行|改善|設定|決め|伝え|記録|選ぶ|選び|答え|見直|共有|使う|使い|行う|行い|充て|充当|回す|回し|据え|繋げ|繋ぐ|つなげ|つなぐ|振り分け|購入|特定|着手|分ける|分け|片付け|整え|整理|見送|やらない|差し替え|登壇|送信|送る|送り|渡す|作る|作成|進め|活用|導入|徹底|標準化|仕組み化|棚卸|棚卸し|添付|提示|提案|検証|割り当て|割く)/.test(text);
+  // 理由語（言い換えを拡充）
+  const hasReason = /(なぜ|理由|ため|なので|から|目的|狙い|課題|必要|大切|改善|困って|選びました|選ぶ|主因|直結|効く|効果|優先|費用対効果|影響|近い|削っ|削る|ボトルネック|繋がる|つながる|重要|向け|狙|注力|回避|防ぐ|促進|定着|維持|継続|因果|向上|獲得|強化|習慣|高め|下げ|再設計)/.test(text);
+  // 時・場・数字（業務場面の語を拡充）
+  const hasWhenWhere = /(今日|明日|今週|来週|今月|来月|毎週|毎日|月曜|火曜|水曜|木曜|金曜|土曜|日曜|午前|午後|朝|昼|夕方|夜|商談|会議|面談|顧客|上司|同僚|チーム|現場|店舗|サロン|電話|メール|LINE|資料|画面|来店|予約|施術|カルテ|投稿|SNS|案件|受注|提案|架電|請求|見積|納品|会計|カウンセリング|リマインド|セミナー|[0-9０-９]+[日月週時分件回%％人本円名割]?)/.test(text);
 
   if (normalized.length < 24) return false;
   if (placeholderPattern.test(normalized)) return false;
