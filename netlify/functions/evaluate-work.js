@@ -1147,7 +1147,7 @@ function p1RequirementMet(t, element, payload) {
     if (/期限/.test(element)) return /(年後|ヶ月|カ月|か月|半年|期限|月末|までに|[0-9０-９]+月|週間|マイルストン)/.test(t);
   }
   if (id === "MW-P1-06") {
-    if (/出来事が具体的/.test(element)) return /(失注|リピート|商談|来店|案件|お客|新規|クレーム|契約|受注|予約)/.test(t) && t.length >= 20;
+    if (/出来事が具体的/.test(element)) return /(失注|リピート|商談|来店|案件|お客|新規|クレーム|契約|受注|予約|提出|締切|遅れ|遅刻|漏れ|ミス|トラブル|未達|失敗|やり直し|キャンセル|対応|報告)/.test(t) && t.length >= 20;
     if (/自責の視点/.test(element)) return p1HasSelfBlameSet(t);
     if (/偏らず|バランス/.test(element)) return p1HasSelfBlameSet(t) && /(次回|今後|次から|改善|徹底|します|打診)/.test(t);
   }
