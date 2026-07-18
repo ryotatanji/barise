@@ -232,11 +232,40 @@ async function createSheet(spreadsheetId, sheetName) {
   });
 }
 
+// タブ名 → 数値sheetId の対応（行削除に必要）。
+async function getSheetProperties(spreadsheetId) {
+  const data = await spreadsheetRequest({
+    spreadsheetId,
+    query: "?fields=sheets.properties(sheetId,title)"
+  });
+  return (data.sheets || []).map((s) => s.properties).filter(Boolean);
+}
+
+// 指定シートの、1始まり行番号の配列を実削除する。行ずれを避けるため降順で一括削除する。
+async function deleteRowsByNumbers(spreadsheetId, sheetId, rowNumbers) {
+  const unique = [...new Set((rowNumbers || []).filter((n) => Number.isInteger(n) && n >= 1))].sort((a, b) => b - a);
+  if (!unique.length) return { deleted: 0 };
+  const requests = unique.map((n) => ({
+    deleteDimension: {
+      range: { sheetId, dimension: "ROWS", startIndex: n - 1, endIndex: n }
+    }
+  }));
+  await spreadsheetRequest({
+    spreadsheetId,
+    path: ":batchUpdate",
+    method: "POST",
+    body: { requests }
+  });
+  return { deleted: unique.length };
+}
+
 module.exports = {
   appendValues,
   columnName,
   createSheet,
+  deleteRowsByNumbers,
   findHeaderIndex,
+  getSheetProperties,
   getSpreadsheetMetadata,
   getValues,
   isValidEmail,
