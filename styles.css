@@ -37,6 +37,16 @@ html {
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans JP", sans-serif;
   font-feature-settings: "palt";
+  -webkit-text-size-adjust: 100%; /* フォント自動拡大を無効化（ピンチズームは殺さない） */
+  text-size-adjust: 100%;
+}
+
+/* 入力欄はフォント16px以上を保証し、iOS Safariのフォーカス時自動ズームを抑止する。
+   viewportの user-scalable=no / maximum-scale=1 は使わない＝ピンチズームは生かす。 */
+input,
+textarea,
+select {
+  font-size: 16px;
 }
 
 body {
@@ -302,7 +312,7 @@ img {
   border: 1px solid var(--hair);
   border-radius: 12px;
   padding: 12px 14px;
-  font-size: 15px;
+  font-size: 16px; /* iOS Safariの自動ズーム抑止（16px未満だとフォーカス時に拡大される） */
   outline: none;
 }
 
@@ -1017,8 +1027,8 @@ textarea {
   border: 1px solid var(--hair);
   border-radius: 12px;
   padding: 12px;
-  font-size: 13px;
-  line-height: 1.9;
+  font-size: 16px; /* iOS Safariの自動ズーム抑止（16px未満だとフォーカス時に拡大され、確認後もズームが残る） */
+  line-height: 1.8;
   outline: none;
   font-family: inherit;
 }
@@ -1867,43 +1877,6 @@ textarea[aria-invalid="true"] { border-color: rgba(224, 80, 63, .7); }
 }
 
 .toast .g { color: var(--gold); }
-
-/* ============================================================
-   モーション停止（prefers-reduced-motion 環境の停止ボタン方式）
-   ============================================================ */
-
-.motion-toggle {
-  position: fixed;
-  right: 14px;
-  bottom: calc(14px + env(safe-area-inset-bottom));
-  z-index: 90;
-  background: var(--panel-2);
-  border: 1px solid var(--hair);
-  color: var(--dim);
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 9px 14px;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, .4);
-  display: none;
-}
-
-.show-motion-toggle .motion-toggle { display: block; }
-
-.motion-off .rise,
-.motion-off .stage[data-enter] {
-  animation: none !important;
-}
-
-.motion-off .here-dot::after,
-.motion-off .loading-ring,
-.motion-off .thinking .dots i {
-  animation: none !important;
-}
-
-.motion-off .spark i { animation: none !important; opacity: 0 !important; }
-
-.motion-off * { transition-duration: .01ms !important; }
 
 /* ============================================================
    その他

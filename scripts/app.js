@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-2-6";
+} from "./data-provider.js?v=7-2-7";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -44,36 +44,6 @@ function padChapter(order) {
 }
 
 /* ============================================================
-   モーション基盤：停止トグル（reduced-motion環境は停止ボタン方式）
-   ============================================================ */
-
-const MOTION_KEY = "barise_motion_off";
-
-function motionOff() {
-  return localStorage.getItem(MOTION_KEY) === "1";
-}
-
-function applyMotionPreference() {
-  document.documentElement.classList.toggle("motion-off", motionOff());
-  if (prefersReducedMotion()) {
-    document.documentElement.classList.add("show-motion-toggle");
-  }
-}
-
-function renderMotionToggle() {
-  if (!prefersReducedMotion()) return "";
-  return `
-    <button class="motion-toggle" type="button" data-action="toggle-motion">
-      ${motionOff() ? "アニメーションを再生する" : "アニメーションを停止する"}
-    </button>
-  `;
-}
-
-function prefersReducedMotion() {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
-}
-
-/* ============================================================
    トゥイーンエンジン（デモのGSAP演出タイミングを移植・依存ゼロ）
    ============================================================ */
 
@@ -85,7 +55,7 @@ const easeBackOut = (s = 1.7) => (t) => {
 
 function tween({ from = 0, to = 1, duration = 1000, delay = 0, ease = easePower2Out, onUpdate }) {
   return new Promise((resolve) => {
-    if (motionOff() || prefersReducedMotion() || duration <= 0) {
+    if (duration <= 0) {
       onUpdate?.(to);
       resolve();
       return;
@@ -316,7 +286,6 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
 }
 
 function sparkBurst() {
-  if (motionOff() || prefersReducedMotion()) return;
   const wrap = document.getElementById("judgeSpark");
   if (!wrap) return;
   wrap.innerHTML = "";
@@ -345,7 +314,6 @@ function showToast(html, duration = 3200) {
    ============================================================ */
 
 async function boot() {
-  applyMotionPreference();
   renderLoading();
 
   try {
@@ -455,9 +423,7 @@ function renderError(message) {
         <button class="primary-button" type="button" data-action="reload">もう一度ひらく</button>
       </section>
     </main>
-    ${renderMotionToggle()}
   `;
-  applyMotionPreference();
 }
 
 function renderLogin(errorMessage = "", emailValue = getLastEmail(), showSupport = false) {
@@ -479,9 +445,7 @@ function renderLogin(errorMessage = "", emailValue = getLastEmail(), showSupport
         <p class="login-support-note">うまく入れないときも、サポートが確認しますのでご安心ください。</p>
       </section>
     </main>
-    ${renderMotionToggle()}
   `;
-  applyMotionPreference();
 }
 
 /* ============================================================
@@ -605,7 +569,6 @@ function renderHome() {
         </div>
       </main>
     </div>
-    ${renderMotionToggle()}
   `;
 
   requestAnimationFrame(() => {
@@ -704,7 +667,6 @@ function renderLearningPage() {
         </div>
       </main>
     </div>
-    ${renderMotionToggle()}
   `;
 
   requestAnimationFrame(() => scrollToPageTop());
@@ -825,7 +787,6 @@ function renderLesson(lessonId, section = "") {
         ${renderLessonBottomNav(learning, lesson)}
       </main>
     </div>
-    ${renderMotionToggle()}
   `;
 
   requestAnimationFrame(() => focusLessonSection(section));
@@ -1109,7 +1070,6 @@ function renderWorksPage() {
         </div>
       </main>
     </div>
-    ${renderMotionToggle()}
   `;
 
   requestAnimationFrame(() => scrollToPageTop());
@@ -1196,7 +1156,6 @@ function renderAiWorkPage(workId) {
         </nav>
       </main>
     </div>
-    ${renderMotionToggle()}
   `;
 
   requestAnimationFrame(() => scrollToPageTop());
@@ -1365,7 +1324,7 @@ function renderAiRevisionForm(work, session) {
 }
 
 function renderAiFinalFeedback(work, session) {
-  const nextWork = getNextWorkAfter(work);
+  const nextLesson = getNextLessonAfterWork(work);
   return `
     <div class="ai-block ai-block--gold">
       <span>AI最終フィードバック ${renderAiWorkStatusBadge(session.status)}</span>
@@ -1386,7 +1345,7 @@ function renderAiFinalFeedback(work, session) {
         <ul>${(session.next_actions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </div>
     ` : ""}
-    ${nextWork ? `<a class="submit2" href="${escapeAttribute(hashForWork(nextWork.work_id))}">${escapeHtml(nextWork.title)}へ進む</a>` : `<a class="submit2" href="#/learning">次の学習へ進む</a>`}
+    ${nextLesson ? `<a class="submit2" href="${escapeAttribute(hashForLesson(nextLesson.lesson_id, "video"))}">次のレッスン「${escapeHtml(nextLesson.lesson_title || "")}」へ進む</a>` : `<a class="submit2" href="#/learning">次の学習へ進む</a>`}
   `;
 }
 
@@ -1963,10 +1922,16 @@ function hashForWork(workId) {
   return `#/work/${encodeURIComponent(workId)}`;
 }
 
-function getNextWorkAfter(work) {
-  return (state.learning?.works || [])
-    .filter((item) => item.phase_id === work.phase_id && (item.work_order || 0) > (work.work_order || 0))
-    .sort((a, b) => (a.work_order || 0) - (b.work_order || 0))[0] || null;
+// ワーク完了後は「次のワーク」ではなく、ワークが紐づくレッスンの“次レッスン動画”へ導く。
+// （例：W-P1-05＝ビジョン整理→ 次はP1-06の動画。間のP1-06/07/08を飛ばさない。レッスン順序に沿わせる）
+function getNextLessonAfterWork(work) {
+  const anchorLessonId = work.primaryLessonId
+    || work.related_lesson_id
+    || (Array.isArray(work.related_lesson_ids) ? work.related_lesson_ids[0] : "");
+  if (!anchorLessonId || !state.learning) return null;
+  const ctx = findLessonContext(state.learning, anchorLessonId);
+  if (!ctx) return null;
+  return getNextLesson(state.learning, ctx.lesson);
 }
 
 function findLessonContext(learning, lessonId) {
@@ -2007,14 +1972,12 @@ function focusLessonSection(section) {
 }
 
 function scrollToPageTop() {
-  const behavior = prefersReducedMotion() || motionOff() ? "auto" : "smooth";
-  window.scrollTo({ top: 0, behavior });
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function scrollToTarget(target) {
   const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - 16);
-  const behavior = prefersReducedMotion() || motionOff() ? "auto" : "smooth";
-  window.scrollTo({ top, behavior });
+  window.scrollTo({ top, behavior: "smooth" });
 }
 
 function scheduleMiniWorkEvaluationScroll() {
@@ -2102,8 +2065,8 @@ async function handleSubmitWork(event) {
   if (!answer) return;
   const isMiniWork = form.dataset.form === "mini-work";
 
-  if (isMiniWork && !validateMiniWorkAnswer(answer)) {
-    showMiniWorkInputError(form);
+  if (isMiniWork && !validateMiniWorkAnswer(answer, form.dataset.targetId)) {
+    showMiniWorkInputError(form, form.dataset.targetId);
     return;
   }
 
@@ -2189,31 +2152,102 @@ async function handleSubmitWork(event) {
   }
 }
 
-function validateMiniWorkAnswer(answer) {
+// 入力ゲートの検知器（設問の①②③の「形」を軽く確認する。合否採点ではない＝空・超短文・無関係作文の足切り用。
+// 実際の合否は evaluate-work.js の AI評価＋決定論フロアが担う。ここでは設問ごとに必要な要素だけを見る）
+const MINI_WORK_GATE_DETECTORS = {
+  action: (t) => /(する|します|試す|試し|実行|改善|設定|決め|伝え|記録|見直|共有|使う|使い|行う|充て|回す|据え|繋げ|つなげ|振り分け|購入|特定|着手|分ける|片付け|整理|見送|差し替え|送る|渡す|作る|作成|進め|活用|導入|徹底|標準化|仕組み化|棚卸|添付|提示|提案|検証|割り当て|割く|ブロック|片付|取る|入れる|持参|確認|問い直|絞る)/.test(t),
+  choice: (t) => /(選ん|選び|選択|決め|「[^」]{1,40}」|１つに|一つに|1つに|に絞|絞り|絞る|最優先|マストワン|一番)/.test(t),
+  reason: (t) => /(なぜ|理由|ため|から|なので|目的|狙い|背景|きっかけ|効く|効果|優先|直結|最も|一番[^」]{0,6}(高い|大きい|重要))/.test(t),
+  scene: (t) => /(今日|明日|今週|来週|今月|来月|毎週|毎日|月曜|火曜|水曜|木曜|金曜|土曜|日曜|午前|午後|朝|昼|夕方|夜|商談|会議|面談|顧客|上司|同僚|チーム|現場|店舗|サロン|電話|メール|LINE|資料|画面|来店|予約|施術|カルテ|投稿|SNS|案件|受注|提案|架電|請求|見積|納品|会計|カウンセリング|リマインド|セミナー|台帳|スプレッドシート|[0-9０-９]+[日月週時分件回%％人本円名割])/.test(t),
+  wish: (t) => /(したい|叶え|なりたい|欲しい|ほしい|過ごしたい|会いたい|言いたい|回りたい|築きたい|育てたい|状態になりたい|お礼を)/.test(t),
+  deadline: (t) => /(期限|まで(に|は)?[^。]{0,6}(に|作る|始め|達成)|[0-9０-９]+\s*(年|月|日|ヶ月|か月|週間)後?|年内|今年中|来年|再来年|20[0-9][0-9]年)/.test(t),
+  self: (t) => /(自分にできる|自分の|私が|僕が|していなかった|やっていなかった|べきだった|次から|次回から|しておらず|打診を|同席|自分の行動|反省)/.test(t),
+  structure: (t) => /(構造|環境|仕組み|要因|周り|周囲|外部|状況|前提|条件|サイクル|タイミング|予算|相手の|先方|市場|制度|フロー|導線)/.test(t),
+  narrow: (t) => /(絞|部署|時間帯|工程|範囲|に限|のうち|だけ|平日|休日|土日|午前|午後|夕方|フェーズ|プロセス)/.test(t),
+  common: (t) => /(共通点|共通|抽象|まとめると|本質|つまり|要は|どちらも|いずれも|同じ|一般化)/.test(t),
+  quantify: (t) => /[0-9０-９]+\s*[件回%％人本円名割日月週時分]/.test(t),
+  struct3: (t) => ((/目的/.test(t) ? 1 : 0) + (/戦略/.test(t) ? 1 : 0) + (/戦術/.test(t) ? 1 : 0)) >= 2,
+  hypothesis: (t) => /(ではないか|のでは|かもしれ|仮説|と考え|メカニズム|原因は|見せかけ|検証)/.test(t),
+  kpi: (t) => /(KPI|KGI|KDI|指標|目標値|追跡|計測|測定|数値化|数字で見|数値で)/i.test(t),
+  issue: (t) => /(課題|イシュー|問題|論点|事象)/.test(t),
+  kpt: (t) => (((/keep/i.test(t) || /続け/.test(t)) ? 1 : 0) + ((/problem/i.test(t) || /課題|問題/.test(t)) ? 1 : 0) + ((/try/i.test(t) || /試す|やってみ/.test(t)) ? 1 : 0)) >= 2 || /(やったこと|わかったこと|次にやること|期待.*効果)/.test(t),
+  tree: (t) => /(ツリー|分解|why|how|段階|階層|枝分|下位|→)/i.test(t),
+  whychain: (t) => ((t.match(/→/g) || []).length >= 1) || ((t.match(/なぜ/g) || []).length >= 2) || /真因|根本原因|本質的な原因/.test(t),
+  ground3: (t) => ((t.match(/[①-⑨]/g) || []).length >= 2) || /根拠|事実/.test(t),
+  enum: (t) => ((t.match(/[①-⑨]/g) || []).length >= 3) || ((t.match(/、/g) || []).length >= 3) || /【[^】]+】/.test(t)
+};
+
+// 設問ごとに「必ず入っていてほしい要素」（実設問の①②③の形に対応。全て満たすと通過）
+const MINI_WORK_GATE_PROFILE = {
+  "MW-P1-01": ["choice", "reason", "scene"],
+  "MW-P1-02": ["choice", "reason", "scene"],
+  "MW-P1-03": ["choice", "reason", "scene"],
+  "MW-P1-04": ["enum", "reason"],
+  "MW-P1-05": ["wish", "deadline"],
+  "MW-P1-06": ["self", "structure"],
+  "MW-P1-07": ["narrow", "common"],
+  "MW-P1-08": ["choice", "reason", "scene"],
+  "MW-P2-01": ["quantify", "scene"],
+  "MW-P2-02": ["struct3"],
+  "MW-P2-03": ["kpi", "quantify"],
+  "MW-P2-04": ["kpi", "choice"],
+  "MW-P2-05": ["issue", "hypothesis"],
+  "MW-P2-06": ["issue", "hypothesis"],
+  "MW-P2-07": ["issue", "whychain"],
+  "MW-P2-08": ["kpt"],
+  "MW-P2-09": ["ground3", "scene"],
+  "MW-P2-10": ["issue", "tree"]
+};
+
+// 却下メッセージ（当該設問に沿う文言）
+const MINI_WORK_GATE_MESSAGE = {
+  "MW-P1-01": "選んだ行動・その理由・いつ/どんな場面で試すかを入れると評価できます。",
+  "MW-P1-02": "選んだ方法・その理由・試す場面を入れると評価できます。",
+  "MW-P1-03": "選んだ方法・その理由・どのタスク/場面で試すかを入れると評価できます。",
+  "MW-P1-04": "やること一覧と、一番に選んだ理由を書いてください。",
+  "MW-P1-05": "①制限がなければ何をしたいか ②最後の1日なら何をするか ③本当に叶えたいこと1つと期限、を書いてください。",
+  "MW-P1-06": "①自分にできること ②構造・環境などの要因、の両面を書いてください。",
+  "MW-P1-07": "①課題を部署・時間帯・工程などで絞り ②2つのものの共通点、を書いてください。",
+  "MW-P1-08": "選んだ練習・その理由・試す場面を入れると評価できます。",
+  "MW-P2-01": "取り組む仕事と、行動量を数値で（いつ振り返るかも）書いてください。",
+  "MW-P2-02": "目的・戦略・戦術の3層で整理して書いてください。",
+  "MW-P2-03": "具体的なKPIと現状の数値、KGIとのつながりを書いてください。",
+  "MW-P2-04": "複数のKPIを挙げ、最優先の1つに絞ってその理由を書いてください。",
+  "MW-P2-05": "課題と『〜ではないか？』の問いの形で書いてください。",
+  "MW-P2-06": "課題と、その原因の仮説『〜ではないか？』を書いてください。",
+  "MW-P2-07": "具体的な事象と、なぜの連鎖・真因を書いてください。",
+  "MW-P2-08": "Keep・Problem・Try など振り返りの要素を書いてください。",
+  "MW-P2-09": "テーマと、それを支える根拠3点を書いてください。",
+  "MW-P2-10": "課題と、それをWhy/Howで分解した内容を書いてください。"
+};
+
+function validateMiniWorkAnswer(answer, miniWorkId) {
   const text = String(answer || "").trim();
   const normalized = text.replace(/\s+/g, "");
   const placeholderPattern = /^(テスト|test|TEST|仮|仮入力|サンプル|sample|aaa|aaaa|あああ|いいい|ううう|確認|入力|未定|なし|特になし|特にない|とりあえず|ダミー|dummy|asdf|qwer|123|１２３|頑張ります|がんばります|分かりました|わかりました|やります|意識します|改善します)[。.!！]*$/i;
-  // 行動語（V7.1採点是正で同義語を拡充。良い回答の取りこぼしを防ぐ。evaluate-work.js の決定論フロアと同期）
-  const hasAction = /(する|します|試す|試し|確認|書く|書き|聞く|聞き|見る|見て|測る|測り|比べ|分解|相談|実行|改善|設定|決め|伝え|記録|選ぶ|選び|答え|見直|共有|使う|使い|行う|行い|充て|充当|回す|回し|据え|繋げ|繋ぐ|つなげ|つなぐ|振り分け|購入|特定|着手|分ける|分け|片付け|整え|整理|見送|やらない|差し替え|登壇|送信|送る|送り|渡す|作る|作成|進め|活用|導入|徹底|標準化|仕組み化|棚卸|棚卸し|添付|提示|提案|検証|割り当て|割く)/.test(text);
-  // 理由語（言い換えを拡充）
-  const hasReason = /(なぜ|理由|ため|なので|から|目的|狙い|課題|必要|大切|改善|困って|選びました|選ぶ|主因|直結|効く|効果|優先|費用対効果|影響|近い|削っ|削る|ボトルネック|繋がる|つながる|重要|向け|狙|注力|回避|防ぐ|促進|定着|維持|継続|因果|向上|獲得|強化|習慣|高め|下げ|再設計)/.test(text);
-  // 時・場・数字（業務場面の語を拡充）
-  const hasWhenWhere = /(今日|明日|今週|来週|今月|来月|毎週|毎日|月曜|火曜|水曜|木曜|金曜|土曜|日曜|午前|午後|朝|昼|夕方|夜|商談|会議|面談|顧客|上司|同僚|チーム|現場|店舗|サロン|電話|メール|LINE|資料|画面|来店|予約|施術|カルテ|投稿|SNS|案件|受注|提案|架電|請求|見積|納品|会計|カウンセリング|リマインド|セミナー|[0-9０-９]+[日月週時分件回%％人本円名割]?)/.test(text);
 
+  // 足切り（空・超短文・プレースホルダ・同一文字連打）＝ここは全設問共通で維持
   if (normalized.length < 24) return false;
   if (placeholderPattern.test(normalized)) return false;
   if (/^(.)\1{4,}$/.test(normalized)) return false;
-  if (!hasAction || !hasReason || !hasWhenWhere) return false;
+
+  // 設問ごとに必要な要素を確認。未知IDは汎用（行動・理由・場面）にフォールバック
+  const profile = MINI_WORK_GATE_PROFILE[miniWorkId] || ["action", "reason", "scene"];
+  for (const key of profile) {
+    const detect = MINI_WORK_GATE_DETECTORS[key];
+    if (typeof detect === "function" && !detect(text)) return false;
+  }
   return true;
 }
 
-function showMiniWorkInputError(form) {
+function showMiniWorkInputError(form, miniWorkId) {
   clearMiniWorkInputError(form);
   const textarea = form.querySelector("textarea[name='answer']");
   const message = document.createElement("div");
   message.className = "form-error mini-work-input-error";
   message.setAttribute("role", "alert");
-  message.textContent = MINI_WORK_INPUT_ERROR_MESSAGE;
+  const hint = MINI_WORK_GATE_MESSAGE[miniWorkId] || MINI_WORK_INPUT_ERROR_MESSAGE;
+  message.textContent = `もう少し具体的に書いてください。${hint}`;
   if (textarea) {
     textarea.setAttribute("aria-invalid", "true");
     textarea.insertAdjacentElement("afterend", message);
@@ -2408,12 +2442,6 @@ document.addEventListener("click", async (event) => {
 
   if (action === "reload") {
     window.location.reload();
-  }
-
-  if (action === "toggle-motion") {
-    localStorage.setItem(MOTION_KEY, motionOff() ? "0" : "1");
-    applyMotionPreference();
-    render();
   }
 
   if (action === "mark-video") {
