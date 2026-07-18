@@ -2,7 +2,9 @@ const {
   appendValues,
   columnName,
   createSheet,
+  deleteRowsByNumbers,
   findHeaderIndex,
+  getSheetProperties,
   getValues,
   isValidEmail,
   normalizeEmailKey,
@@ -75,6 +77,7 @@ const ANSWER_LOG_COLUMNS = {
 exports.handler = async function handler(event) {
   const now = new Date().toISOString();
   const resetId = `RESET-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  let step = "init";
 
   try {
     if (event.httpMethod === "OPTIONS") {
@@ -84,67 +87,93 @@ exports.handler = async function handler(event) {
       return response(405, { ok: false, reason: "method_not_allowed" });
     }
 
+    step = "parse_request";
     const request = parseRequestBody(event);
+    step = "verify_token";
     verifyAdminToken(event, request);
 
+    step = "validate_input";
     const input = normalizeResetInput(request);
     validateResetInput(input);
     const config = resetConfig();
+
+    step = "read_sheets";
     const sheets = await loadResetSheets(config);
-    const beforeSnapshot = buildBeforeSnapshot(sheets, input.emailKey);
+
+    step = "build_backup";
+    const backup = buildFullBackup(sheets, input.emailKey);
+
+    // ドライラン: 変更は一切行わず、対象行数と削除/初期化プランのみ返す（安全確認用）。
+    if (input.dryRun) {
+      return response(200, {
+        ok: true,
+        dry_run: true,
+        reset_id: resetId,
+        email_key: input.emailKey,
+        scope: input.scope,
+        target_row_counts: backup.counts,
+        plan: buildPlan(sheets, input)
+      });
+    }
 
     const affected = [];
-    affected.push(await resetProgressSummary({
-      spreadsheetId: config.progressSpreadsheetId,
-      sheet: sheets.progressSummary,
-      input,
-      now
-    }));
-    affected.push(await resetVideoLogLatest({
-      spreadsheetId: config.progressSpreadsheetId,
-      sheet: sheets.videoLog,
-      input,
-      now
-    }));
-    affected.push(await resetWorkSummary({
-      spreadsheetId: config.workSpreadsheetId,
-      sheet: sheets.workSummary,
-      input,
-      now
-    }));
-    affected.push(await resetAnswerLogLatest({
-      spreadsheetId: config.workSpreadsheetId,
-      sheet: sheets.answerLog,
-      input,
-      now
-    }));
 
-    if (input.scope === "work" && input.workId) {
-      affected.push(await resetOptionalWorkDetailTab({
-        spreadsheetId: config.workSpreadsheetId,
-        sheetName: input.workId,
+    // 1) サマリー行を未着手へ初期化（進捗サマリー／ワークサマリー）
+    step = "reset_progress_summary";
+    affected.push(await resetProgressSummary({ spreadsheetId: config.progressSpreadsheetId, sheet: sheets.progressSummary, input, now }));
+    if (input.scope !== "lesson") {
+      step = "reset_work_summary";
+      affected.push(await resetWorkSummary({ spreadsheetId: config.workSpreadsheetId, sheet: sheets.workSummary, input, now }));
+    }
+
+    // 2) 記録行を実削除（＝真の未着手化）。ソフトリセットのis_latest方式は当シートに列が無く機能しないため。
+    if (["all", "lesson"].includes(input.scope)) {
+      step = "delete_video_log";
+      affected.push(await deleteLogRows({
+        spreadsheetId: config.progressSpreadsheetId,
+        sheet: sheets.videoLog,
         input,
-        now
+        kind: "video_log",
+        matchColumn: input.scope === "lesson" ? "videoId" : "",
+        matchValue: input.scope === "lesson" ? input.videoId : ""
+      }));
+    }
+    if (["all", "work"].includes(input.scope)) {
+      step = "delete_answer_log";
+      affected.push(await deleteLogRows({
+        spreadsheetId: config.workSpreadsheetId,
+        sheet: sheets.answerLog,
+        input,
+        kind: "answer_log",
+        matchColumn: input.scope === "work" ? "workId" : "",
+        matchValue: input.scope === "work" ? input.workId : ""
       }));
     }
 
-    await appendResetLog({
-      spreadsheetId: config.resetLogsSpreadsheetId,
-      sheetName: config.resetLogsSheetName,
-      values: [
-        now,
-        resetId,
-        input.emailKey,
-        input.scope,
-        input.videoId || input.lessonId,
-        input.workId,
-        input.actor,
-        input.reason,
-        affectedRowsSummary(affected),
-        "soft_reset",
-        JSON.stringify(beforeSnapshot)
-      ]
-    });
+    // 3) reset_logs へ全バックアップと結果を記録（失敗しても本処理は成功扱い＝非致命）。
+    step = "append_reset_log";
+    let resetLog = "written";
+    try {
+      await appendResetLog({
+        spreadsheetId: config.resetLogsSpreadsheetId,
+        sheetName: config.resetLogsSheetName,
+        values: [
+          now,
+          resetId,
+          input.emailKey,
+          input.scope,
+          input.videoId || input.lessonId,
+          input.workId,
+          input.actor,
+          input.reason,
+          affectedRowsSummary(affected),
+          "hard_reset",
+          JSON.stringify(backup.snapshot)
+        ]
+      });
+    } catch (logError) {
+      resetLog = `skipped:${logError.code || "error"}`;
+    }
 
     return response(200, {
       ok: true,
@@ -154,12 +183,18 @@ exports.handler = async function handler(event) {
       lesson_id: input.lessonId,
       video_id: input.videoId,
       work_id: input.workId,
-      affected
+      reset_type: "hard_reset",
+      target_row_counts: backup.counts,
+      affected,
+      reset_log: resetLog
     });
   } catch (error) {
     return response(error.statusCode || 500, {
       ok: false,
       reason: error.code || "reset_error",
+      failed_step: step,
+      google_status: error.status || null,
+      google_detail: error.detail || "",
       message: error.message || "Reset failed."
     });
   }
@@ -175,7 +210,8 @@ function normalizeResetInput(request = {}) {
     videoId,
     workId: String(request.work_id || request.workId || request.mini_work_id || request.miniWorkId || "").trim(),
     actor: String(request.actor || "admin").trim(),
-    reason: String(request.reason || "").trim()
+    reason: String(request.reason || "").trim(),
+    dryRun: Boolean(request.dry_run || request.dryRun)
   };
 }
 
@@ -235,24 +271,47 @@ function detectColumns(headers, aliasesByKey) {
   );
 }
 
-function buildBeforeSnapshot(sheets, emailKey) {
-  const progressRows = rowsForEmail(sheets.progressSummary, emailKey);
-  const workRows = rowsForEmail(sheets.workSummary, emailKey);
-  const videoRows = rowsForEmail(sheets.videoLog, emailKey);
-  const answerRows = rowsForEmail(sheets.answerLog, emailKey);
-
+// 対象メールの全行を全シートから控える（削除前のフルバックアップ＝復旧用）。
+function buildFullBackup(sheets, emailKey) {
+  const capture = (sheet) => rowsForEmail(sheet, emailKey).map((ref) => ({
+    row_number: ref.rowNumber,
+    values: rowToObject(sheet.headers, ref.row)
+  }));
+  const snapshot = {
+    progress_summary: capture(sheets.progressSummary),
+    video_log: capture(sheets.videoLog),
+    work_summary: capture(sheets.workSummary),
+    answer_log: capture(sheets.answerLog)
+  };
   return {
-    progress_summary: rowSnapshot(sheets.progressSummary, progressRows.at(-1)),
-    work_summary: rowSnapshot(sheets.workSummary, workRows.at(-1)),
-    video_log: {
-      matched_count: videoRows.length,
-      latest_row: logRowSummary(sheets.videoLog, videoRows.at(-1))
-    },
-    answer_log: {
-      matched_count: answerRows.length,
-      latest_row: logRowSummary(sheets.answerLog, answerRows.at(-1), ["answer_text", "question_text_疑問文", "summary_総評"])
+    snapshot,
+    counts: {
+      progress_summary: snapshot.progress_summary.length,
+      video_log: snapshot.video_log.length,
+      work_summary: snapshot.work_summary.length,
+      answer_log: snapshot.answer_log.length
     }
   };
+}
+
+function buildPlan(sheets, input) {
+  return {
+    blank_summary_rows: {
+      progress_summary: rowsForEmail(sheets.progressSummary, input.emailKey).map((r) => r.rowNumber),
+      work_summary: input.scope === "lesson" ? [] : rowsForEmail(sheets.workSummary, input.emailKey).map((r) => r.rowNumber)
+    },
+    delete_rows: {
+      video_log: ["all", "lesson"].includes(input.scope) ? planDeleteRowNumbers(sheets.videoLog, input, input.scope === "lesson" ? "videoId" : "", input.scope === "lesson" ? input.videoId : "") : [],
+      answer_log: ["all", "work"].includes(input.scope) ? planDeleteRowNumbers(sheets.answerLog, input, input.scope === "work" ? "workId" : "", input.scope === "work" ? input.workId : "") : []
+    }
+  };
+}
+
+function planDeleteRowNumbers(sheet, input, matchColumn, matchValue) {
+  if (sheet.columns.email < 0) return [];
+  return rowsForEmail(sheet, input.emailKey)
+    .filter((ref) => !matchColumn || !matchValue || String(ref.row[sheet.columns[matchColumn]] || "").trim() === matchValue)
+    .map((ref) => ref.rowNumber);
 }
 
 function rowsForEmail(sheet, emailKey) {
@@ -260,29 +319,6 @@ function rowsForEmail(sheet, emailKey) {
   return sheet.rows
     .map((row, index) => ({ row, rowNumber: index + 2 }))
     .filter(({ row }) => normalizeEmailKey(row[sheet.columns.email]) === emailKey);
-}
-
-function rowSnapshot(sheet, rowRef) {
-  if (!rowRef) return null;
-  return {
-    row_number: rowRef.rowNumber,
-    values: rowToObject(sheet.headers, rowRef.row)
-  };
-}
-
-function logRowSummary(sheet, rowRef, omitHeaders = []) {
-  if (!rowRef) return null;
-  const omitted = new Set(omitHeaders);
-  const values = rowToObject(sheet.headers, rowRef.row);
-  omitted.forEach((header) => {
-    if (Object.prototype.hasOwnProperty.call(values, header)) {
-      values[header] = "[omitted]";
-    }
-  });
-  return {
-    row_number: rowRef.rowNumber,
-    values
-  };
 }
 
 function rowToObject(headers, row) {
@@ -294,8 +330,7 @@ function rowToObject(headers, row) {
 }
 
 async function resetProgressSummary({ spreadsheetId, sheet, input, now }) {
-  const required = ["email"];
-  const missing = missingColumns(sheet.columns, required);
+  const missing = missingColumns(sheet.columns, ["email"]);
   if (missing.length) {
     return skipped(sheet, "progress_summary", "missing_columns", missing);
   }
@@ -345,26 +380,7 @@ function progressSummaryPatches(sheet, row, input, now) {
   });
 }
 
-async function resetVideoLogLatest({ spreadsheetId, sheet, input, now }) {
-  if (!["all", "lesson"].includes(input.scope)) {
-    return skipped(sheet, "video_log", "scope_not_applicable", []);
-  }
-  return resetLatestFlag({
-    spreadsheetId,
-    sheet,
-    kind: "video_log",
-    targetColumn: "videoId",
-    targetValue: input.scope === "lesson" ? input.videoId : "",
-    input,
-    now
-  });
-}
-
 async function resetWorkSummary({ spreadsheetId, sheet, input, now }) {
-  if (input.scope === "lesson") {
-    return skipped(sheet, "work_summary", "scope_not_applicable", []);
-  }
-
   const missing = missingColumns(sheet.columns, ["email"]);
   if (missing.length) {
     return skipped(sheet, "work_summary", "missing_columns", missing);
@@ -399,61 +415,24 @@ function workSummaryPatches(sheet, row, input, now) {
   });
 }
 
-async function resetAnswerLogLatest({ spreadsheetId, sheet, input, now }) {
-  if (!["all", "work"].includes(input.scope)) {
-    return skipped(sheet, "answer_log", "scope_not_applicable", []);
-  }
-  return resetLatestFlag({
-    spreadsheetId,
-    sheet,
-    kind: "answer_log",
-    targetColumn: "workId",
-    targetValue: input.scope === "work" ? input.workId : "",
-    input,
-    now
-  });
-}
-
-async function resetOptionalWorkDetailTab({ spreadsheetId, sheetName, input, now }) {
-  try {
-    const sheet = await readSheet(spreadsheetId, sheetName, ANSWER_LOG_COLUMNS);
-    return resetLatestFlag({
-      spreadsheetId,
-      sheet,
-      kind: "work_detail_log",
-      targetColumn: "workId",
-      targetValue: input.workId,
-      input,
-      now
-    });
-  } catch (error) {
-    return {
-      sheetName,
-      kind: "work_detail_log",
-      updatedRows: 0,
-      skipped: "detail_sheet_missing_or_unreadable"
-    };
-  }
-}
-
-async function resetLatestFlag({ spreadsheetId, sheet, kind, targetColumn, targetValue, input, now }) {
+// 対象メールの記録行を実削除。行ずれ防止のため降順で一括削除する。
+async function deleteLogRows({ spreadsheetId, sheet, input, kind, matchColumn, matchValue }) {
   const missing = missingColumns(sheet.columns, ["email"]);
   if (missing.length) return skipped(sheet, kind, "missing_columns", missing);
-  if (sheet.columns.isLatest < 0) return skipped(sheet, kind, "is_latest_column_not_found", []);
-  if (targetValue && sheet.columns[targetColumn] < 0) return skipped(sheet, kind, "target_column_not_found", [targetColumn]);
 
-  const updatedRows = [];
-  for (const rowRef of rowsForEmail(sheet, input.emailKey)) {
-    if (targetValue && String(rowRef.row[sheet.columns[targetColumn]] || "").trim() !== targetValue) continue;
-    const patches = byColumnPresence(sheet.columns, {
-      isLatest: "false",
-      updatedAt: now
-    });
-    const applied = await applyPatches(spreadsheetId, sheet.sheetName, sheet.headers, rowRef.rowNumber, patches);
-    if (applied) updatedRows.push(rowRef.rowNumber);
+  const rowNumbers = planDeleteRowNumbers(sheet, input, matchColumn, matchValue);
+  if (!rowNumbers.length) {
+    return { sheetName: sheet.sheetName, kind, deletedRows: 0, rowNumbers: [] };
   }
 
-  return changed(sheet, kind, updatedRows);
+  const props = await getSheetProperties(spreadsheetId);
+  const prop = props.find((p) => p.title === sheet.sheetName);
+  if (!prop || typeof prop.sheetId !== "number") {
+    return skipped(sheet, kind, "sheet_id_not_found", []);
+  }
+
+  const result = await deleteRowsByNumbers(spreadsheetId, prop.sheetId, rowNumbers);
+  return { sheetName: sheet.sheetName, kind, deletedRows: result.deleted, rowNumbers };
 }
 
 function byColumnPresence(columns, valuesByKey) {
@@ -466,7 +445,7 @@ function byColumnPresence(columns, valuesByKey) {
 
 function resetMemo(currentMemo, input, now) {
   const reason = input.reason ? ` reason=${input.reason}` : "";
-  const entry = `[${now}] admin soft reset scope=${input.scope}${reason}`;
+  const entry = `[${now}] admin hard reset scope=${input.scope}${reason}`;
   const current = String(currentMemo || "").trim();
   return current ? `${current}\n${entry}` : entry;
 }
@@ -536,13 +515,16 @@ function skipped(sheet, kind, reason, missingColumnsList = []) {
     sheetName: sheet.sheetName,
     kind,
     updatedRows: 0,
+    deletedRows: 0,
     skipped: reason,
     missingColumns: missingColumnsList
   };
 }
 
 function affectedRowsSummary(affected = []) {
-  return affected.map((item) => `${item.sheetName}:${item.updatedRows}${item.skipped ? `:${item.skipped}` : ""}`).join(", ");
+  return affected
+    .map((item) => `${item.sheetName}:${item.deletedRows != null ? "del" + item.deletedRows : "upd" + (item.updatedRows || 0)}${item.skipped ? `:${item.skipped}` : ""}`)
+    .join(", ");
 }
 
 function verifyAdminToken(event, request) {
@@ -598,11 +580,14 @@ exports._test = {
   RESET_LOG_HEADERS,
   VIDEO_LOG_COLUMNS,
   WORK_SUMMARY_COLUMNS,
-  buildBeforeSnapshot,
+  buildFullBackup,
+  buildPlan,
   detectColumns,
   normalizeResetInput,
+  planDeleteRowNumbers,
   progressSummaryPatches,
   resetConfig,
+  rowsForEmail,
   validateResetInput,
   workSummaryPatches
 };
