@@ -812,9 +812,12 @@ export class LocalJsonLearningProvider {
     const aiWorkSession = work ? aiSessionsByWork.get(work.work_id) || null : null;
     const workUnlocked = work ? this._isWorkUnlocked(db, email, work, progressByLesson) : false;
     const savedWorkStatus = workEvaluation?.result_status || progress.work_status;
+    // 解放済みで未提出の本ワークは "unlocked" を持たせる。work_required=false のレッスン(P1-05/P1-10)は
+    // 既定 work_status が "none" のため、"locked" だけでなく "none" も "unlocked" へ昇格させる（B是正）。
+    // 解放判定は _isWorkUnlocked のまま（ロック解除条件は不変）。"good" は据え置き＝単調性・取り消し不可を維持。
     const computedWorkStatus = work
       ? workUnlocked
-        ? (savedWorkStatus === "locked" ? "unlocked" : savedWorkStatus)
+        ? (["locked", "none"].includes(savedWorkStatus) ? "unlocked" : savedWorkStatus)
         : (savedWorkStatus === "good" ? "good" : "locked")
       : progress.work_status;
     const progressForView = { ...structuredClone(progress), work_status: computedWorkStatus };

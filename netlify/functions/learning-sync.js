@@ -18,11 +18,13 @@ const AI_EVALUATION_LOG_HEADERS = [
   "log_id", "request_id", "session_id", "user_id", "email_normalized", "common_profile_json",
   "work_id", "work_title", "stage", "hearing_history_json", "answer_text", "prompt_text",
   "request_payload_json", "response_json", "score", "status", "unmet_criteria_json",
-  "next_action", "staff_feedback_recommended", "error_message", "created_at", "updated_at"
+  "next_action", "staff_feedback_recommended", "error_message", "created_at", "updated_at",
+  "display_name", "feedback_status"
 ];
 const STAFF_FEEDBACK_QUEUE_HEADERS = [
   "queue_id", "session_id", "user_id", "email_normalized", "work_id", "work_title",
-  "status", "score", "trigger_status", "message", "reason", "created_at", "updated_at"
+  "status", "score", "trigger_status", "message", "reason", "created_at", "updated_at",
+  "display_name"
 ];
 // 英語ヘッダ（新規作成時）と、既存GAS由来の日本語ヘッダの両方に対応させる（既存タブへ空行が入るのを防ぐ）。
 const AI_EVALUATION_LOG_FIELDS = {
@@ -36,14 +38,16 @@ const AI_EVALUATION_LOG_FIELDS = {
   responseJson: ["response_json", "AI評価結果（JSON）", "AI評価結果"], score: ["score", "点数"],
   status: ["status", "ステータス"], unmetCriteriaJson: ["unmet_criteria_json", "未達基準（JSON）", "未達基準"],
   nextAction: ["next_action", "次アクション"], staffFeedbackRecommended: ["staff_feedback_recommended", "担当者FB対象"],
-  errorMessage: ["error_message", "エラー内容"], createdAt: ["created_at", "作成日時"], updatedAt: ["updated_at", "更新日時"]
+  errorMessage: ["error_message", "エラー内容"], createdAt: ["created_at", "作成日時"], updatedAt: ["updated_at", "更新日時"],
+  displayName: ["display_name", "氏名", "表示名", "受講者名", "お名前"], feedbackStatus: ["feedback_status", "対応状況", "FBステータス", "フィードバック状況"]
 };
 const STAFF_FEEDBACK_QUEUE_FIELDS = {
   queueId: ["queue_id", "キューID"], sessionId: ["session_id", "セッションID"], userId: ["user_id", "ユーザーID"],
   emailKey: ["email_normalized", "email_key", "email", "メールアドレス"], workId: ["work_id", "ワークID"],
   workTitle: ["work_title", "ワーク名"], status: ["status", "対応状況"], score: ["score", "点数"],
   triggerStatus: ["trigger_status", "AI判定ステータス"], message: ["message", "担当者向けメッセージ"],
-  reason: ["reason", "理由"], createdAt: ["created_at", "作成日時"], updatedAt: ["updated_at", "更新日時"]
+  reason: ["reason", "理由"], createdAt: ["created_at", "作成日時"], updatedAt: ["updated_at", "更新日時"],
+  displayName: ["display_name", "氏名", "表示名", "受講者名", "お名前"]
 };
 
 const corsHeaders = {
@@ -891,8 +895,8 @@ async function sheetExists(spreadsheetId, sheetName) {
   return (metadata.sheets || []).some((sheet) => sheet.properties?.title === sheetName);
 }
 
-// タブが無ければ指定ヘッダで新規作成し、ヘッダ付きの readSheet 結果を返す。
-async function ensureSheetWithHeaders(spreadsheetId, sheetName, headers) {
+// タブが無ければ指定ヘッダで新規作成。既存タブに不足列があればヘッダ末尾へ追記（非破壊）。ヘッダ付きの readSheet 結果を返す。
+async function ensureSheetWithHeaders(spreadsheetId, sheetName, headers, fieldMap = null) {
   const exists = await sheetExists(spreadsheetId, sheetName);
   if (!exists) {
     await createSheet(spreadsheetId, sheetName);
@@ -904,6 +908,18 @@ async function ensureSheetWithHeaders(spreadsheetId, sheetName, headers) {
   if (!sheet.headers.length) {
     await updateValues(spreadsheetId, `${quoteSheetName(sheetName)}!A1`, [headers]);
     sheet.headers = headers.slice();
+    return sheet;
+  }
+  // 既存タブに不足している列をヘッダ末尾へ追記（既存の見出し・データ行は不変＝非破壊）。
+  // 別名（英/日）で既に存在する列は重複追加しない。
+  const missing = headers.filter((header) => {
+    const aliases = fieldMap ? (fieldMap[fieldForHeader(header, fieldMap)] || [header]) : [header];
+    return findHeaderIndex(sheet.headers, aliases) < 0;
+  });
+  if (missing.length) {
+    const newHeaders = sheet.headers.concat(missing);
+    await updateValues(spreadsheetId, `${quoteSheetName(sheetName)}!A1`, [newHeaders]);
+    sheet.headers = newHeaders;
   }
   return sheet;
 }
@@ -925,9 +941,11 @@ async function persistWorkFeedback(context, answerValues) {
     ["review", "staff_feedback_ready", "support_needed"].includes(String(evaluation.status || "").toLowerCase())
   );
   result.staffFeedbackTriggered = staffFeedbackRecommended;
+  // 名前はusersマスタ（登録情報一覧）からメールで引き当て済み
+  const displayName = context.registration.displayName || "";
 
   // 1) ai_evaluation_logs へ追記（毎回）
-  const logSheet = await ensureSheetWithHeaders(config.workSpreadsheetId, config.aiEvaluationLogSheetName, AI_EVALUATION_LOG_HEADERS);
+  const logSheet = await ensureSheetWithHeaders(config.workSpreadsheetId, config.aiEvaluationLogSheetName, AI_EVALUATION_LOG_HEADERS, AI_EVALUATION_LOG_FIELDS);
   await appendRow(config.workSpreadsheetId, logSheet, AI_EVALUATION_LOG_FIELDS, {
     logId: createId("AI-LOG"),
     requestId: payload.requestId || payload.request_id || answerValues.submissionId || "",
@@ -950,13 +968,16 @@ async function persistWorkFeedback(context, answerValues) {
     staffFeedbackRecommended: staffFeedbackRecommended ? "TRUE" : "FALSE",
     errorMessage: evaluation.raw?.error_message_safe || evaluation.raw?.error_message || "",
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    // 第1層（全員分のFB対象リスト）: 氏名と対応状況。本ワーク回答は全件 pending で立てる。
+    displayName,
+    feedbackStatus: "pending"
   });
   result.aiEvaluationLog = true;
 
   // 2) staff_feedback_queue へ追記（担当者確認が必要なときのみ）
   if (staffFeedbackRecommended) {
-    const queueSheet = await ensureSheetWithHeaders(config.workSpreadsheetId, config.staffFeedbackQueueSheetName, STAFF_FEEDBACK_QUEUE_HEADERS);
+    const queueSheet = await ensureSheetWithHeaders(config.workSpreadsheetId, config.staffFeedbackQueueSheetName, STAFF_FEEDBACK_QUEUE_HEADERS, STAFF_FEEDBACK_QUEUE_FIELDS);
     await appendRow(config.workSpreadsheetId, queueSheet, STAFF_FEEDBACK_QUEUE_FIELDS, {
       queueId: createId("SFQ"),
       sessionId: payload.sessionId || payload.session_id || "",
@@ -970,7 +991,9 @@ async function persistWorkFeedback(context, answerValues) {
       message: payload.staffFeedbackMessage || "作成されたワークをもとに、担当者からフィードバックをいたします。",
       reason: payload.staffFeedbackReason || (payload.unmetCriteria || []).join(" / ") || "",
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      // 第2層（エスカレーション）: 氏名を付与（投入条件＝要サポート時のみは維持）
+      displayName
     });
     result.staffFeedbackQueue = true;
   }

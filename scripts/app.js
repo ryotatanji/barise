@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-2-9";
+} from "./data-provider.js?v=7-2-10";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -925,20 +925,33 @@ function renderLearningDetailBlock(lesson) {
 }
 
 function renderLessonBottomNav(learning, lesson) {
-  // 要約レッスン（ミニワーク無し＋本ワーク紐付き。例: P1-10フェーズ1のまとめ→統括ワーク W-P1-09）は、
-  // 次フェーズの動画へ飛ばさず、その本ワークへ進む導線にする（間の章を飛ばさない）。
-  if (lesson.work && !lesson.miniWork) {
+  // 本ワークが紐づくレッスン（例: P1-05 目標・目的設定→W-P1-05、P1-10 まとめ→統括ワーク W-P1-09）は、
+  // その本ワークが「解放済み かつ 未完了」なら「次の一歩」を本ワークへ導く（A/B是正）。
+  // 完了済みなら次レッスンへ（従来どおり）。未解放（ロック）で要約レッスンは条件表示のまま。
+  if (lesson.work) {
     const aiStatus = lesson.aiWorkStatus || "not_started";
+    const workCompleted = ["completed", "final_feedback_ready"].includes(aiStatus) || lesson.progress.work_status === "good";
     const workUnlocked = lesson.canSubmitWork || lesson.progress.work_status === "good" || aiStatus === "completed";
-    return `
+    if (workUnlocked && !workCompleted) {
+      return `
     <nav class="lesson-nav" aria-label="レッスン下部ナビゲーション">
-      ${workUnlocked
-        ? `<a class="primary-button" href="${escapeAttribute(hashForWork(lesson.work.work_id))}">${escapeHtml(lesson.work.title)}へ進む</a>`
-        : `<span class="locked-next-note">この章のミニワークをクリアすると、${escapeHtml(lesson.work.title)}がひらきます。</span>`}
+      <a class="primary-button" href="${escapeAttribute(hashForWork(lesson.work.work_id))}">${escapeHtml(lesson.work.title)}へ進む</a>
       <a class="ghost-button" href="#/learning">登頂ルートへ戻る</a>
       <a class="line-button" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
     </nav>
   `;
+    }
+    // 要約レッスン（ミニワーク無し＋本ワーク紐付き）で未解放のときは条件を表示（次フェーズへ飛ばさない）。
+    if (!lesson.miniWork && !workUnlocked && !workCompleted) {
+      return `
+    <nav class="lesson-nav" aria-label="レッスン下部ナビゲーション">
+      <span class="locked-next-note">この章のミニワークをクリアすると、${escapeHtml(lesson.work.title)}がひらきます。</span>
+      <a class="ghost-button" href="#/learning">登頂ルートへ戻る</a>
+      <a class="line-button" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
+    </nav>
+  `;
+    }
+    // 完了済み等はこの下の汎用（次レッスン）へフォールスルー。
   }
   const nextLesson = getNextLesson(learning, lesson);
   const nextLock = getLessonNextLockState(learning, lesson);
