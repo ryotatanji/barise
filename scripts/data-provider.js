@@ -779,7 +779,7 @@ export class LocalJsonLearningProvider {
       phases: this._mergeByKey(initial.phases, stored.phases, "phase_id"),
       lessons: initial.lessons, // V5.1.1 fix: content lessons always from source JSON (prevents stale localStorage from wiping video_url)
       miniWorks: this._mergeByKey(initial.miniWorks, stored.miniWorks, "mini_work_id"),
-      works: this._mergeByKey(initial.works, stored.works, "work_id"),
+      works: initial.works, // V7.2.9: 本ワーク定義（intake_fields等のコンテンツ）は常にsource JSONから。stored localStorage優先だと古いintake定義が残り続ける（lessonsと同じ方針）。ユーザー状態はprogress/aiWorkSessions側に保持
       progress: stored.progress || initial.progress,
       submissions: stored.submissions || initial.submissions,
       evaluationResults: stored.evaluationResults || initial.evaluationResults,
