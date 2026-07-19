@@ -73,6 +73,17 @@ const ANSWER_LOG_COLUMNS = {
   isLatest: ["is_latest", "latest", "最新"],
   updatedAt: ["updated_at", "更新日時"]
 };
+// 新タブ（英語ヘッダ／既存GAS日本語ヘッダの両対応）。email_normalized で対象行を特定して削除する。
+const AI_EVAL_LOG_COLUMNS = {
+  email: [...EMAIL_HEADERS, "メールアドレス"],
+  workId: ["work_id", "ワークID", "ワークid"],
+  updatedAt: ["updated_at", "更新日時", "作成日時"]
+};
+const STAFF_QUEUE_COLUMNS = {
+  email: [...EMAIL_HEADERS, "メールアドレス"],
+  workId: ["work_id", "ワークID", "ワークid"],
+  updatedAt: ["updated_at", "更新日時", "作成日時"]
+};
 
 exports.handler = async function handler(event) {
   const now = new Date().toISOString();
@@ -145,6 +156,26 @@ exports.handler = async function handler(event) {
         sheet: sheets.answerLog,
         input,
         kind: "answer_log",
+        matchColumn: input.scope === "work" ? "workId" : "",
+        matchValue: input.scope === "work" ? input.workId : ""
+      }));
+
+      // 新タブ: AI評価ログ／担当者フィードバックキュー（本ワーク系）。タブが無ければスキップ。
+      step = "delete_ai_evaluation_logs";
+      affected.push(await deleteLogRows({
+        spreadsheetId: config.workSpreadsheetId,
+        sheet: sheets.aiEvaluationLog,
+        input,
+        kind: "ai_evaluation_logs",
+        matchColumn: input.scope === "work" ? "workId" : "",
+        matchValue: input.scope === "work" ? input.workId : ""
+      }));
+      step = "delete_staff_feedback_queue";
+      affected.push(await deleteLogRows({
+        spreadsheetId: config.workSpreadsheetId,
+        sheet: sheets.staffFeedbackQueue,
+        input,
+        kind: "staff_feedback_queue",
         matchColumn: input.scope === "work" ? "workId" : "",
         matchValue: input.scope === "work" ? input.workId : ""
       }));
@@ -240,6 +271,8 @@ function resetConfig() {
     workSpreadsheetId,
     workSummarySheetName: process.env.BARISE_WORK_SUMMARY_SHEET_NAME || "_ワークサマリー",
     workLogSheetName: process.env.BARISE_WORK_LOG_SHEET_NAME || "_回答ログ_all",
+    aiEvaluationLogSheetName: process.env.BARISE_AI_EVAL_LOG_SHEET_NAME || "ai_evaluation_logs",
+    staffFeedbackQueueSheetName: process.env.BARISE_STAFF_FEEDBACK_QUEUE_SHEET_NAME || "staff_feedback_queue",
     resetLogsSpreadsheetId: process.env.BARISE_RESET_LOGS_SPREADSHEET_ID || workSpreadsheetId || progressSpreadsheetId,
     resetLogsSheetName: process.env.BARISE_RESET_LOGS_SHEET_NAME || "reset_logs"
   };
@@ -250,8 +283,19 @@ async function loadResetSheets(config) {
     progressSummary: await readSheet(config.progressSpreadsheetId, config.progressSummarySheetName, PROGRESS_SUMMARY_COLUMNS),
     videoLog: await readSheet(config.progressSpreadsheetId, config.videoLogSheetName, VIDEO_LOG_COLUMNS),
     workSummary: await readSheet(config.workSpreadsheetId, config.workSummarySheetName, WORK_SUMMARY_COLUMNS),
-    answerLog: await readSheet(config.workSpreadsheetId, config.workLogSheetName, ANSWER_LOG_COLUMNS)
+    answerLog: await readSheet(config.workSpreadsheetId, config.workLogSheetName, ANSWER_LOG_COLUMNS),
+    // 新タブは環境によって未作成のことがあるため、無ければ空シート扱い（エラーにしない）
+    aiEvaluationLog: await readSheetOptional(config.workSpreadsheetId, config.aiEvaluationLogSheetName, AI_EVAL_LOG_COLUMNS),
+    staffFeedbackQueue: await readSheetOptional(config.workSpreadsheetId, config.staffFeedbackQueueSheetName, STAFF_QUEUE_COLUMNS)
   };
+}
+
+async function readSheetOptional(spreadsheetId, sheetName, columnAliases) {
+  try {
+    return await readSheet(spreadsheetId, sheetName, columnAliases);
+  } catch (error) {
+    return { sheetName, headers: [], rows: [], columns: detectColumns([], columnAliases), missing: true };
+  }
 }
 
 async function readSheet(spreadsheetId, sheetName, columnAliases) {
@@ -273,7 +317,7 @@ function detectColumns(headers, aliasesByKey) {
 
 // 対象メールの全行を全シートから控える（削除前のフルバックアップ＝復旧用）。
 function buildFullBackup(sheets, emailKey) {
-  const capture = (sheet) => rowsForEmail(sheet, emailKey).map((ref) => ({
+  const capture = (sheet) => (sheet ? rowsForEmail(sheet, emailKey) : []).map((ref) => ({
     row_number: ref.rowNumber,
     values: rowToObject(sheet.headers, ref.row)
   }));
@@ -281,7 +325,9 @@ function buildFullBackup(sheets, emailKey) {
     progress_summary: capture(sheets.progressSummary),
     video_log: capture(sheets.videoLog),
     work_summary: capture(sheets.workSummary),
-    answer_log: capture(sheets.answerLog)
+    answer_log: capture(sheets.answerLog),
+    ai_evaluation_logs: capture(sheets.aiEvaluationLog),
+    staff_feedback_queue: capture(sheets.staffFeedbackQueue)
   };
   return {
     snapshot,
@@ -289,7 +335,9 @@ function buildFullBackup(sheets, emailKey) {
       progress_summary: snapshot.progress_summary.length,
       video_log: snapshot.video_log.length,
       work_summary: snapshot.work_summary.length,
-      answer_log: snapshot.answer_log.length
+      answer_log: snapshot.answer_log.length,
+      ai_evaluation_logs: snapshot.ai_evaluation_logs.length,
+      staff_feedback_queue: snapshot.staff_feedback_queue.length
     }
   };
 }
@@ -302,7 +350,9 @@ function buildPlan(sheets, input) {
     },
     delete_rows: {
       video_log: ["all", "lesson"].includes(input.scope) ? planDeleteRowNumbers(sheets.videoLog, input, input.scope === "lesson" ? "videoId" : "", input.scope === "lesson" ? input.videoId : "") : [],
-      answer_log: ["all", "work"].includes(input.scope) ? planDeleteRowNumbers(sheets.answerLog, input, input.scope === "work" ? "workId" : "", input.scope === "work" ? input.workId : "") : []
+      answer_log: ["all", "work"].includes(input.scope) ? planDeleteRowNumbers(sheets.answerLog, input, input.scope === "work" ? "workId" : "", input.scope === "work" ? input.workId : "") : [],
+      ai_evaluation_logs: ["all", "work"].includes(input.scope) ? planDeleteRowNumbers(sheets.aiEvaluationLog, input, input.scope === "work" ? "workId" : "", input.scope === "work" ? input.workId : "") : [],
+      staff_feedback_queue: ["all", "work"].includes(input.scope) ? planDeleteRowNumbers(sheets.staffFeedbackQueue, input, input.scope === "work" ? "workId" : "", input.scope === "work" ? input.workId : "") : []
     }
   };
 }
