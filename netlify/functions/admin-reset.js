@@ -18,7 +18,28 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 
-const VALID_SCOPES = new Set(["all", "lesson", "work"]);
+const VALID_SCOPES = new Set(["all", "lesson", "work", "purge_marked"]);
+
+// purge_marked で対象にできるタブ（データログ系のみ。進捗/視聴/サマリーは対象外＝保護）。
+const PURGE_TARGET_SHEETS = {
+  ai_evaluation_logs: "aiEvaluationLog",
+  staff_feedback_queue: "staffFeedbackQueue",
+  answer_log: "answerLog",
+  _回答ログ_all: "answerLog"
+};
+// マーカー列の別名（英/日）。指定列名からヘッダ位置を解決する。
+const MARKER_COLUMN_ALIASES = {
+  submission_id: ["submission_id", "client_submission_id", "submissionID", "提出ID"],
+  client_submission_id: ["client_submission_id", "submission_id"],
+  session_id: ["session_id", "セッションID"],
+  user_id: ["user_id", "ユーザーID"],
+  request_id: ["request_id", "リクエストID"],
+  answer_text: ["answer_text", "answer_body", "answer", "回答本文", "回答", "受講者回答"],
+  work_id: ["work_id", "target_id", "ワークID", "ワークid"],
+  queue_id: ["queue_id", "キューID"],
+  log_id: ["log_id", "ログID"]
+};
+const VALID_MARKER_OPS = new Set(["equals", "prefix", "contains"]);
 const RESET_LOG_HEADERS = [
   "created_at",
   "reset_id",
@@ -110,6 +131,66 @@ exports.handler = async function handler(event) {
 
     step = "read_sheets";
     const sheets = await loadResetSheets(config);
+
+    // ===== マーカー限定削除モード（追加scope・既存all/lesson/work挙動は不変）=====
+    // 対象メール かつ いずれかのマーカー一致行のみを、指定データログタブから非破壊削除する。
+    // 進捗/視聴/サマリーは一切触らない。dry_run で対象を列挙し、非一致行(実データ)が含まれないことを確認できる。
+    if (input.scope === "purge_marked") {
+      const plan = buildPurgePlan(sheets, config, input);
+      if (input.dryRun) {
+        return response(200, {
+          ok: true,
+          dry_run: true,
+          mode: "purge_marked",
+          reset_id: resetId,
+          email_key: input.emailKey,
+          markers: input.markers,
+          targets: plan.map((p) => ({
+            sheet: p.sheetName,
+            spreadsheet_id: p.spreadsheetId,
+            matched_count: p.matched.length,
+            non_matching_email_rows: p.nonMatchingForEmail,
+            total_email_rows: p.matched.length + p.nonMatchingForEmail,
+            matched_rows: p.matched.map((m) => ({ row_number: m.rowNumber, ...m.keyFields })),
+            skipped: p.skipped || undefined
+          }))
+        });
+      }
+      step = "purge_backup";
+      const purgeBackup = plan.map((p) => ({ sheet: p.sheetName, rows: p.matched.map((m) => ({ row_number: m.rowNumber, values: m.values })) }));
+      const purgeAffected = [];
+      for (const p of plan) {
+        if (p.skipped || !p.matched.length) {
+          purgeAffected.push({ sheetName: p.sheetName, kind: "purge_marked", deletedRows: 0, rowNumbers: [], skipped: p.skipped });
+          continue;
+        }
+        step = `purge_delete_${p.sheetName}`;
+        const rowNumbers = p.matched.map((m) => m.rowNumber);
+        const result = await deleteRowNumbersFromSheet(p.spreadsheetId, p.sheetName, rowNumbers);
+        purgeAffected.push({ sheetName: p.sheetName, kind: "purge_marked", deletedRows: result.deleted, rowNumbers });
+      }
+      step = "purge_append_reset_log";
+      let purgeLog = "written";
+      try {
+        await appendResetLog({
+          spreadsheetId: config.resetLogsSpreadsheetId,
+          sheetName: config.resetLogsSheetName,
+          values: [now, resetId, input.emailKey, "purge_marked", "", "", input.actor, input.reason,
+            purgeAffected.map((a) => `${a.sheetName}:${a.deletedRows}`).join(" / "), "purge_marked", JSON.stringify({ markers: input.markers, snapshot: purgeBackup })]
+        });
+      } catch (logError) {
+        purgeLog = `skipped:${logError.code || "error"}`;
+      }
+      return response(200, {
+        ok: true,
+        mode: "purge_marked",
+        reset_id: resetId,
+        email_key: input.emailKey,
+        markers: input.markers,
+        affected: purgeAffected,
+        reset_log: purgeLog
+      });
+    }
 
     step = "build_backup";
     const backup = buildFullBackup(sheets, input.emailKey);
@@ -234,15 +315,32 @@ exports.handler = async function handler(event) {
 function normalizeResetInput(request = {}) {
   const lessonId = String(request.lesson_id || request.lessonId || "").trim();
   const videoId = String(request.video_id || request.videoId || lessonId).trim();
+  // mode=purge_marked も scope として受ける（既存 scope 指定と両立）。
+  const rawScope = String(request.mode || request.scope || "all").trim().toLowerCase();
+  const scope = rawScope === "purge_marked" ? "purge_marked" : rawScope;
+  const targets = Array.isArray(request.targets) && request.targets.length
+    ? request.targets.map((t) => String(t).trim())
+    : Object.keys(PURGE_TARGET_SHEETS);
+  const markers = Array.isArray(request.markers)
+    ? request.markers
+        .map((m) => ({
+          column: String(m.column || m.col || "").trim(),
+          op: String(m.op || "equals").trim().toLowerCase(),
+          value: String(m.value ?? "")
+        }))
+        .filter((m) => m.column && VALID_MARKER_OPS.has(m.op) && m.value !== "")
+    : [];
   return {
     emailKey: normalizeEmailKey(request.email_key || request.email),
-    scope: String(request.scope || "all").trim().toLowerCase(),
+    scope,
     lessonId,
     videoId,
     workId: String(request.work_id || request.workId || request.mini_work_id || request.miniWorkId || "").trim(),
     actor: String(request.actor || "admin").trim(),
     reason: String(request.reason || "").trim(),
-    dryRun: Boolean(request.dry_run || request.dryRun)
+    dryRun: Boolean(request.dry_run || request.dryRun),
+    targets: targets.filter((t) => PURGE_TARGET_SHEETS[t]),
+    markers
   };
 }
 
@@ -251,13 +349,21 @@ function validateResetInput(input) {
     throw httpError(400, "invalid_email", "email_key must be a valid email.");
   }
   if (!VALID_SCOPES.has(input.scope)) {
-    throw httpError(400, "invalid_scope", "scope must be all, lesson, or work.");
+    throw httpError(400, "invalid_scope", "scope must be all, lesson, work, or purge_marked.");
   }
   if (input.scope === "lesson" && !input.videoId) {
     throw httpError(400, "missing_video_id", "scope lesson requires lesson_id or video_id.");
   }
   if (input.scope === "work" && !input.workId) {
     throw httpError(400, "missing_work_id", "scope work requires work_id.");
+  }
+  if (input.scope === "purge_marked") {
+    if (!input.markers.length) {
+      throw httpError(400, "missing_markers", "purge_marked requires at least one marker {column, op, value}. Over-deletion guard.");
+    }
+    if (!input.targets.length) {
+      throw httpError(400, "invalid_targets", `purge_marked requires targets from: ${Object.keys(PURGE_TARGET_SHEETS).join(", ")}`);
+    }
   }
 }
 
@@ -362,6 +468,82 @@ function planDeleteRowNumbers(sheet, input, matchColumn, matchValue) {
   return rowsForEmail(sheet, input.emailKey)
     .filter((ref) => !matchColumn || !matchValue || String(ref.row[sheet.columns[matchColumn]] || "").trim() === matchValue)
     .map((ref) => ref.rowNumber);
+}
+
+// ===== purge_marked のヘルパー =====
+function resolveMarkerColumnIndex(headers, columnName) {
+  const aliases = MARKER_COLUMN_ALIASES[columnName] || [columnName];
+  return findHeaderIndex(headers, aliases);
+}
+
+// 1行が1マーカーに一致するか。列がそのタブに無ければ「非適用（=不一致）」扱い。
+function rowMatchesMarker(row, headers, marker) {
+  const idx = resolveMarkerColumnIndex(headers, marker.column);
+  if (idx < 0) return false;
+  const cell = String(row[idx] || "");
+  if (marker.op === "equals") return cell === marker.value;
+  if (marker.op === "prefix") return cell.startsWith(marker.value);
+  if (marker.op === "contains") return cell.includes(marker.value);
+  return false;
+}
+
+// dry-runレポート用の主要フィールド（存在する列だけ抜き出す）。
+function purgeKeyFields(headers, row) {
+  const pick = (name) => {
+    const i = resolveMarkerColumnIndex(headers, name);
+    return i >= 0 ? String(row[i] || "") : undefined;
+  };
+  const out = {};
+  for (const name of ["submission_id", "log_id", "queue_id", "session_id", "user_id", "work_id"]) {
+    const v = pick(name);
+    if (v !== undefined && v !== "") out[name] = v;
+  }
+  const ans = pick("answer_text");
+  if (ans) out.answer_text_head = ans.replace(/\s+/g, " ").slice(0, 40);
+  return out;
+}
+
+// 対象タブごとに「メール一致 かつ いずれかのマーカー一致」の行を特定。
+// 進捗/視聴/サマリーは対象外。重複タブ(answer_log/_回答ログ_all)は同一シートを一度だけ処理。
+function buildPurgePlan(sheets, config, input) {
+  const seen = new Set();
+  const plan = [];
+  for (const target of input.targets) {
+    const sheetKey = PURGE_TARGET_SHEETS[target];
+    if (!sheetKey || seen.has(sheetKey)) continue;
+    seen.add(sheetKey);
+    const sheet = sheets[sheetKey];
+    const spreadsheetId = config.workSpreadsheetId;
+    const sheetName = sheet?.sheetName || target;
+    if (!sheet || sheet.missing || !sheet.headers.length) {
+      plan.push({ sheetName, spreadsheetId, matched: [], nonMatchingForEmail: 0, skipped: "sheet_missing_or_empty" });
+      continue;
+    }
+    if (sheet.columns.email < 0) {
+      plan.push({ sheetName, spreadsheetId, matched: [], nonMatchingForEmail: 0, skipped: "no_email_column" });
+      continue;
+    }
+    const matched = [];
+    let nonMatching = 0;
+    for (const { row, rowNumber } of rowsForEmail(sheet, input.emailKey)) {
+      const hit = input.markers.some((m) => rowMatchesMarker(row, sheet.headers, m));
+      if (hit) {
+        matched.push({ rowNumber, keyFields: purgeKeyFields(sheet.headers, row), values: rowToObject(sheet.headers, row) });
+      } else {
+        nonMatching++;
+      }
+    }
+    plan.push({ sheetName, spreadsheetId, matched, nonMatchingForEmail: nonMatching });
+  }
+  return plan;
+}
+
+async function deleteRowNumbersFromSheet(spreadsheetId, sheetName, rowNumbers) {
+  if (!rowNumbers.length) return { deleted: 0 };
+  const props = await getSheetProperties(spreadsheetId);
+  const prop = props.find((p) => p.title === sheetName);
+  if (!prop || typeof prop.sheetId !== "number") return { deleted: 0, skipped: "sheet_id_not_found" };
+  return await deleteRowsByNumbers(spreadsheetId, prop.sheetId, rowNumbers);
 }
 
 function rowsForEmail(sheet, emailKey) {
@@ -632,11 +814,13 @@ exports._test = {
   WORK_SUMMARY_COLUMNS,
   buildFullBackup,
   buildPlan,
+  buildPurgePlan,
   detectColumns,
   normalizeResetInput,
   planDeleteRowNumbers,
   progressSummaryPatches,
   resetConfig,
+  rowMatchesMarker,
   rowsForEmail,
   validateResetInput,
   workSummaryPatches
