@@ -707,6 +707,18 @@
           "type": "string",
           "required": false,
           "example": ""
+        },
+        {
+          "name": "display_name",
+          "type": "string",
+          "required": false,
+          "example": "山田 太郎"
+        },
+        {
+          "name": "feedback_status",
+          "type": "string",
+          "required": false,
+          "example": "pending"
         }
       ]
     },
@@ -791,6 +803,12 @@
           "type": "string",
           "required": false,
           "example": ""
+        },
+        {
+          "name": "display_name",
+          "type": "string",
+          "required": false,
+          "example": "山田 太郎"
         }
       ]
     },
@@ -2407,6 +2425,50 @@
           "理想に向かう理由・目的が自分の言葉で書かれている",
           "3ヶ月以内の到達状態または成果物が定義されている",
           "今週または次回に実行する具体アクションが1つ以上ある"
+        ],
+        "intake_fields": [
+          {
+            "key": "profile_role_industry",
+            "label": "職種 / 業種",
+            "placeholder": "例: 法人営業 / IT、人事担当 / 教育、店舗責任者 / 小売など",
+            "rows": 3,
+            "common_profile": true
+          },
+          {
+            "key": "profile_current_work",
+            "label": "現在の主な業務",
+            "placeholder": "普段担当している業務や活動を、匿名化して書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_theme",
+            "label": "今回扱いたいテーマ",
+            "placeholder": "このワーク全体で改善・整理したいテーマを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_problem",
+            "label": "いま困っていること / 改善したいこと",
+            "placeholder": "公開できない顧客名・個人名は入れず、役割名で書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_goal",
+            "label": "目標・達成したい状態",
+            "placeholder": "どの状態になれば前進と言えるかを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_case_example",
+            "label": "具体例に使ってよい業務ケース",
+            "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
+            "rows": 4,
+            "common_profile": true
+          }
         ]
       },
       {
@@ -2535,7 +2597,51 @@
           "current_situation": "今週月曜は商談準備よりチャット返信を優先し、準備時間が20分しか残りませんでした。",
           "goal": "毎朝9:30に最重要タスクを1つ決め、着手・中間・完了を報告する習慣を続けます。",
           "problem": "朝一番にチャットを見続けて重要タスクが後回しになることを減らします。次フェーズでは毎週金曜に初回商談数、次回提案数、準備チェックリスト実施数を確認します。"
-        }
+        },
+        "intake_fields": [
+          {
+            "key": "profile_role_industry",
+            "label": "職種 / 業種",
+            "placeholder": "例: 法人営業 / IT、人事担当 / 教育、店舗責任者 / 小売など",
+            "rows": 3,
+            "common_profile": true
+          },
+          {
+            "key": "profile_current_work",
+            "label": "現在の主な業務",
+            "placeholder": "普段担当している業務や活動を、匿名化して書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_theme",
+            "label": "今回扱いたいテーマ",
+            "placeholder": "このワーク全体で改善・整理したいテーマを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_problem",
+            "label": "いま困っていること / 改善したいこと",
+            "placeholder": "公開できない顧客名・個人名は入れず、役割名で書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_goal",
+            "label": "目標・達成したい状態",
+            "placeholder": "どの状態になれば前進と言えるかを書いてください",
+            "rows": 4,
+            "common_profile": true
+          },
+          {
+            "key": "profile_case_example",
+            "label": "具体例に使ってよい業務ケース",
+            "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
+            "rows": 4,
+            "common_profile": true
+          }
+        ]
       },
       {
         "work_id": "W-P2-01",
