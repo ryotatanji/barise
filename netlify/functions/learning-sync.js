@@ -908,8 +908,8 @@ async function persistWorkFeedback(context, answerValues) {
   const { payload, config, now } = context;
   const workType = normalizeWorkType(payload.workType || payload.work_type || context.action);
   const result = { aiEvaluationLog: false, staffFeedbackQueue: false, staffFeedbackTriggered: false };
-  // AIワーク（本ワーク）以外は対象外
-  if (workType !== "work" && workType !== "aiWork") return result;
+  // 本ワーク（AI評価ワーク）のみ対象。normalizeWorkType は "work" / "ai_work" / "mini_work" を返す。
+  if (workType !== "work" && workType !== "ai_work") return result;
 
   const evaluation = normalizeEvaluation(payload.evaluation || payload.aiEvaluation || payload.ai_evaluation || {});
   const staffFeedbackRecommended = Boolean(
