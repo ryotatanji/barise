@@ -24,20 +24,26 @@ const STAFF_FEEDBACK_QUEUE_HEADERS = [
   "queue_id", "session_id", "user_id", "email_normalized", "work_id", "work_title",
   "status", "score", "trigger_status", "message", "reason", "created_at", "updated_at"
 ];
+// 英語ヘッダ（新規作成時）と、既存GAS由来の日本語ヘッダの両方に対応させる（既存タブへ空行が入るのを防ぐ）。
 const AI_EVALUATION_LOG_FIELDS = {
-  logId: ["log_id"], requestId: ["request_id"], sessionId: ["session_id"], userId: ["user_id"],
-  emailKey: ["email_normalized", "email_key", "email"], commonProfileJson: ["common_profile_json"],
-  workId: ["work_id"], workTitle: ["work_title"], stage: ["stage"], hearingHistoryJson: ["hearing_history_json"],
-  answerText: ["answer_text"], promptText: ["prompt_text"], requestPayloadJson: ["request_payload_json"],
-  responseJson: ["response_json"], score: ["score"], status: ["status"], unmetCriteriaJson: ["unmet_criteria_json"],
-  nextAction: ["next_action"], staffFeedbackRecommended: ["staff_feedback_recommended"], errorMessage: ["error_message"],
-  createdAt: ["created_at"], updatedAt: ["updated_at"]
+  logId: ["log_id", "ログID"], requestId: ["request_id", "リクエストID"], sessionId: ["session_id", "セッションID"],
+  userId: ["user_id", "ユーザーID"], emailKey: ["email_normalized", "email_key", "email", "メールアドレス"],
+  commonProfileJson: ["common_profile_json", "共通プロフィール（JSON）", "共通プロフィール"],
+  workId: ["work_id", "ワークID"], workTitle: ["work_title", "ワーク名"], stage: ["stage", "処理ステージ"],
+  hearingHistoryJson: ["hearing_history_json", "ヒアリング履歴（JSON）", "ヒアリング履歴"],
+  answerText: ["answer_text", "受講者回答"], promptText: ["prompt_text", "AI送信プロンプト"],
+  requestPayloadJson: ["request_payload_json", "リクエスト内容（JSON）", "リクエスト内容"],
+  responseJson: ["response_json", "AI評価結果（JSON）", "AI評価結果"], score: ["score", "点数"],
+  status: ["status", "ステータス"], unmetCriteriaJson: ["unmet_criteria_json", "未達基準（JSON）", "未達基準"],
+  nextAction: ["next_action", "次アクション"], staffFeedbackRecommended: ["staff_feedback_recommended", "担当者FB対象"],
+  errorMessage: ["error_message", "エラー内容"], createdAt: ["created_at", "作成日時"], updatedAt: ["updated_at", "更新日時"]
 };
 const STAFF_FEEDBACK_QUEUE_FIELDS = {
-  queueId: ["queue_id"], sessionId: ["session_id"], userId: ["user_id"],
-  emailKey: ["email_normalized", "email_key", "email"], workId: ["work_id"], workTitle: ["work_title"],
-  status: ["status"], score: ["score"], triggerStatus: ["trigger_status"], message: ["message"],
-  reason: ["reason"], createdAt: ["created_at"], updatedAt: ["updated_at"]
+  queueId: ["queue_id", "キューID"], sessionId: ["session_id", "セッションID"], userId: ["user_id", "ユーザーID"],
+  emailKey: ["email_normalized", "email_key", "email", "メールアドレス"], workId: ["work_id", "ワークID"],
+  workTitle: ["work_title", "ワーク名"], status: ["status", "対応状況"], score: ["score", "点数"],
+  triggerStatus: ["trigger_status", "AI判定ステータス"], message: ["message", "担当者向けメッセージ"],
+  reason: ["reason", "理由"], createdAt: ["created_at", "作成日時"], updatedAt: ["updated_at", "更新日時"]
 };
 
 const corsHeaders = {
