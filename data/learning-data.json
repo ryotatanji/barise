@@ -58,7 +58,9 @@
       "submitAiWorkAnswer",
       "submitAiWorkFollowup",
       "submitAiWorkRevision",
-      "submitAiWorkIntakeFollowup"
+      "submitAiWorkIntakeFollowup",
+      "saveAiEvaluationLog",
+      "queueStaffFeedback"
     ],
     "secretPolicy": "Sheets同期のサービスアカウント情報はNetlify Environment Variablesで保持し、フロントやJSONには置かない。"
   },
@@ -2640,30 +2642,6 @@
             "common_profile": true
           },
           {
-            "key": "learner_role",
-            "label": "現在の立場/役割",
-            "placeholder": "営業、CS、管理職、副業、現場担当など",
-            "rows": 4
-          },
-          {
-            "key": "current_activity",
-            "label": "現在取り組んでいる業務・活動",
-            "placeholder": "例: 初回商談、問い合わせ対応、チーム育成、副業の集客など",
-            "rows": 4
-          },
-          {
-            "key": "learner_theme",
-            "label": "今回改善したいテーマ",
-            "placeholder": "例: 初回商談で課題を深掘りできるようにしたい",
-            "rows": 4
-          },
-          {
-            "key": "current_situation",
-            "label": "現在の状況",
-            "placeholder": "今起きていること、直近の場面、分かっている数字を書いてください",
-            "rows": 4
-          },
-          {
             "key": "current_actions",
             "label": "現在行っている行動",
             "placeholder": "今どのような準備・対応・確認をしているかを書いてください",
@@ -2673,12 +2651,6 @@
             "key": "available_metrics",
             "label": "測定できそうな数値",
             "placeholder": "件数、率、時間、金額、満足度、ミス数など",
-            "rows": 4
-          },
-          {
-            "key": "target_result",
-            "label": "成果として見たいもの",
-            "placeholder": "どの結果が変われば前進と言えるかを書いてください",
             "rows": 4
           },
           {
@@ -2848,18 +2820,6 @@
             "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
             "rows": 4,
             "common_profile": true
-          },
-          {
-            "key": "learner_theme",
-            "label": "今回改善したいテーマ",
-            "placeholder": "例: 初回商談で課題を深掘りできるようにしたい",
-            "rows": 4
-          },
-          {
-            "key": "current_situation",
-            "label": "現在の状況",
-            "placeholder": "今起きていること、直近の場面、分かっている数字を書いてください",
-            "rows": 4
           },
           {
             "key": "ideal_state",
@@ -3051,12 +3011,6 @@
             "placeholder": "AIが質問や評価の文脈に使ってよい、匿名化した業務ケースを書いてください",
             "rows": 4,
             "common_profile": true
-          },
-          {
-            "key": "learner_theme",
-            "label": "今回改善したいテーマ",
-            "placeholder": "例: 初回商談で課題を深掘りできるようにしたい",
-            "rows": 4
           },
           {
             "key": "failure_case",

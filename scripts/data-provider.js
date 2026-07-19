@@ -1506,6 +1506,9 @@ export class LocalJsonLearningProvider {
   _buildWorkList(db, email, phases, progressByLesson, aiSessionsByWork) {
     const lessonById = new Map(phases.flatMap((phase) => phase.lessons.map((lesson) => [lesson.lesson_id, lesson])));
     const phaseById = new Map(phases.map((phase) => [phase.phase_id, phase]));
+    // 共通プロフィール（初回に一度収集した6項目）を全ワークに添える。
+    // セッション未作成のワークでも intake フォームでプリフィルできるようにするため。
+    const commonProfileContext = this._commonProfileToContext(this._latestCommonProfile(db, email));
     return (db.works || [])
       .filter((work) => work.show_to_learner !== false)
       .map((work) => {
@@ -1539,6 +1542,7 @@ export class LocalJsonLearningProvider {
             title: miniWork.title
           })),
           aiSession: session ? structuredClone(session) : null,
+          commonProfileContext: { ...commonProfileContext },
           aiStatus,
           aiStatusLabel: getAiWorkStatusLabel(aiStatus),
           videoRemainingCount: unlockState.missingLessonIds.length || videoRemaining.length,
@@ -2917,6 +2921,15 @@ export class LocalJsonLearningProvider {
       flags: {}
     };
 
+    const evaluationPayload = this._syncEvaluationPayload(evaluation);
+    // 担当者フィードバックが必要か（ローカルの _queueStaffFeedback と同じ判定条件をサーバへ渡す）
+    const staffFeedbackRecommended = Boolean(
+      evaluationPayload.staff_feedback?.recommended ||
+      evaluationPayload.status === "review" ||
+      evaluationPayload.flags?.needsSupport ||
+      evaluationPayload.flags?.needsHumanReview
+    );
+
     return this._syncLearningEvent(action, {
       email,
       workType: "aiWork",
@@ -2924,11 +2937,23 @@ export class LocalJsonLearningProvider {
       lessonId: relatedLessonId,
       phaseId: work.phase_id,
       workTitle: work.title,
+      // ai_evaluation_logs / staff_feedback_queue をSheetsへ永続化するための材料一式
+      sessionId: session.session_id || "",
+      userId: session.user_id || "",
+      stage,
+      commonProfile: structuredClone(session.common_profile || {}),
+      hearingHistory: structuredClone(session.followup_history || []),
+      promptText: session.generated_work_prompt || work.prompt || "",
       questionText: session.generated_work_prompt || work.prompt || "",
       answerText: String(answerText || "").trim(),
       submittedAt: now,
       retryCount: this._aiSubmissionCount(session),
-      evaluation: this._syncEvaluationPayload(evaluation),
+      evaluation: evaluationPayload,
+      staffFeedbackRecommended,
+      staffFeedbackMessage: evaluationPayload.staff_feedback?.message || "",
+      staffFeedbackReason: evaluationPayload.staff_feedback?.reason || "",
+      unmetCriteria: evaluationPayload.unmet_criteria || evaluationPayload.unmetCriteria || [],
+      nextAction: evaluationPayload.next_action || evaluationPayload.next_question || "",
       clientSubmissionId: this._createId(`AI-SUB-${stage}`)
     });
   }

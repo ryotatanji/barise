@@ -1,6 +1,7 @@
 const {
   appendValues,
   columnName,
+  createSheet,
   findHeaderIndex,
   getSpreadsheetMetadata,
   getValues,
@@ -10,6 +11,40 @@ const {
   quoteSheetName,
   updateValues
 } = require("./_sheets");
+
+// ai_evaluation_logs / staff_feedback_queue のヘッダ（spreadsheetTabs 定義に一致）。
+// タブが無い場合はこのヘッダで新規作成する。
+const AI_EVALUATION_LOG_HEADERS = [
+  "log_id", "request_id", "session_id", "user_id", "email_normalized", "common_profile_json",
+  "work_id", "work_title", "stage", "hearing_history_json", "answer_text", "prompt_text",
+  "request_payload_json", "response_json", "score", "status", "unmet_criteria_json",
+  "next_action", "staff_feedback_recommended", "error_message", "created_at", "updated_at"
+];
+const STAFF_FEEDBACK_QUEUE_HEADERS = [
+  "queue_id", "session_id", "user_id", "email_normalized", "work_id", "work_title",
+  "status", "score", "trigger_status", "message", "reason", "created_at", "updated_at"
+];
+// 英語ヘッダ（新規作成時）と、既存GAS由来の日本語ヘッダの両方に対応させる（既存タブへ空行が入るのを防ぐ）。
+const AI_EVALUATION_LOG_FIELDS = {
+  logId: ["log_id", "ログID"], requestId: ["request_id", "リクエストID"], sessionId: ["session_id", "セッションID"],
+  userId: ["user_id", "ユーザーID"], emailKey: ["email_normalized", "email_key", "email", "メールアドレス"],
+  commonProfileJson: ["common_profile_json", "共通プロフィール（JSON）", "共通プロフィール"],
+  workId: ["work_id", "ワークID"], workTitle: ["work_title", "ワーク名"], stage: ["stage", "処理ステージ"],
+  hearingHistoryJson: ["hearing_history_json", "ヒアリング履歴（JSON）", "ヒアリング履歴"],
+  answerText: ["answer_text", "受講者回答"], promptText: ["prompt_text", "AI送信プロンプト"],
+  requestPayloadJson: ["request_payload_json", "リクエスト内容（JSON）", "リクエスト内容"],
+  responseJson: ["response_json", "AI評価結果（JSON）", "AI評価結果"], score: ["score", "点数"],
+  status: ["status", "ステータス"], unmetCriteriaJson: ["unmet_criteria_json", "未達基準（JSON）", "未達基準"],
+  nextAction: ["next_action", "次アクション"], staffFeedbackRecommended: ["staff_feedback_recommended", "担当者FB対象"],
+  errorMessage: ["error_message", "エラー内容"], createdAt: ["created_at", "作成日時"], updatedAt: ["updated_at", "更新日時"]
+};
+const STAFF_FEEDBACK_QUEUE_FIELDS = {
+  queueId: ["queue_id", "キューID"], sessionId: ["session_id", "セッションID"], userId: ["user_id", "ユーザーID"],
+  emailKey: ["email_normalized", "email_key", "email", "メールアドレス"], workId: ["work_id", "ワークID"],
+  workTitle: ["work_title", "ワーク名"], status: ["status", "対応状況"], score: ["score", "点数"],
+  triggerStatus: ["trigger_status", "AI判定ステータス"], message: ["message", "担当者向けメッセージ"],
+  reason: ["reason", "理由"], createdAt: ["created_at", "作成日時"], updatedAt: ["updated_at", "更新日時"]
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -193,7 +228,9 @@ function syncConfig() {
     videoLogSheetName: process.env.BARISE_VIDEO_LOG_SHEET_NAME || "_視聴ログ_all",
     workSpreadsheetId: process.env.BARISE_WORK_SPREADSHEET_ID || process.env.SPREADSHEET_ID || "",
     workSummarySheetName: process.env.BARISE_WORK_SUMMARY_SHEET_NAME || "_ワークサマリー",
-    workLogSheetName: process.env.BARISE_WORK_LOG_SHEET_NAME || "_回答ログ_all"
+    workLogSheetName: process.env.BARISE_WORK_LOG_SHEET_NAME || "_回答ログ_all",
+    aiEvaluationLogSheetName: process.env.BARISE_AI_EVAL_LOG_SHEET_NAME || "ai_evaluation_logs",
+    staffFeedbackQueueSheetName: process.env.BARISE_STAFF_FEEDBACK_QUEUE_SHEET_NAME || "staff_feedback_queue"
   };
 }
 
@@ -382,12 +419,17 @@ async function syncWorkSubmission(context) {
     warnings
   });
 
-  return {
-    affected: [
-      { sheetName: config.workLogSheetName, action: "append" },
-      { sheetName: config.workSummarySheetName, action: "upsert" }
-    ]
-  };
+  // 本ワークのAI評価ログ＋担当者フィードバックキューをSheetsへ永続化
+  const persisted = await persistWorkFeedback(context, answerValues);
+
+  const affected = [
+    { sheetName: config.workLogSheetName, action: "append" },
+    { sheetName: config.workSummarySheetName, action: "upsert" }
+  ];
+  if (persisted.aiEvaluationLog) affected.push({ sheetName: config.aiEvaluationLogSheetName, action: "append" });
+  if (persisted.staffFeedbackQueue) affected.push({ sheetName: config.staffFeedbackQueueSheetName, action: "append" });
+
+  return { affected, persisted };
 }
 
 async function restoreLearningState(context) {
@@ -847,6 +889,92 @@ async function appendToOptionalTab({ spreadsheetId, sheetName, fieldMap, values,
 async function sheetExists(spreadsheetId, sheetName) {
   const metadata = await getSpreadsheetMetadata(spreadsheetId);
   return (metadata.sheets || []).some((sheet) => sheet.properties?.title === sheetName);
+}
+
+// タブが無ければ指定ヘッダで新規作成し、ヘッダ付きの readSheet 結果を返す。
+async function ensureSheetWithHeaders(spreadsheetId, sheetName, headers) {
+  const exists = await sheetExists(spreadsheetId, sheetName);
+  if (!exists) {
+    await createSheet(spreadsheetId, sheetName);
+    await updateValues(spreadsheetId, `${quoteSheetName(sheetName)}!A1`, [headers]);
+    return { sheetName, headers: headers.slice(), rows: [], rowRefs: [] };
+  }
+  const sheet = await readSheet(spreadsheetId, sheetName);
+  // 既存だがヘッダ未設定なら補完
+  if (!sheet.headers.length) {
+    await updateValues(spreadsheetId, `${quoteSheetName(sheetName)}!A1`, [headers]);
+    sheet.headers = headers.slice();
+  }
+  return sheet;
+}
+
+// 本ワークのAI評価を ai_evaluation_logs に、担当者確認が必要なら staff_feedback_queue に永続化する。
+// 書込の成否を返し、UI側で「作成しました」を実書込と連動できるようにする。
+async function persistWorkFeedback(context, answerValues) {
+  const { payload, config, now } = context;
+  const workType = normalizeWorkType(payload.workType || payload.work_type || context.action);
+  const result = { aiEvaluationLog: false, staffFeedbackQueue: false, staffFeedbackTriggered: false };
+  // 本ワーク（AI評価ワーク）のみ対象。normalizeWorkType は "work" / "ai_work" / "mini_work" を返す。
+  if (workType !== "work" && workType !== "ai_work") return result;
+
+  const evaluation = normalizeEvaluation(payload.evaluation || payload.aiEvaluation || payload.ai_evaluation || {});
+  const staffFeedbackRecommended = Boolean(
+    payload.staffFeedbackRecommended ||
+    evaluation.needsSupport ||
+    evaluation.needsHumanReview ||
+    ["review", "staff_feedback_ready", "support_needed"].includes(String(evaluation.status || "").toLowerCase())
+  );
+  result.staffFeedbackTriggered = staffFeedbackRecommended;
+
+  // 1) ai_evaluation_logs へ追記（毎回）
+  const logSheet = await ensureSheetWithHeaders(config.workSpreadsheetId, config.aiEvaluationLogSheetName, AI_EVALUATION_LOG_HEADERS);
+  await appendRow(config.workSpreadsheetId, logSheet, AI_EVALUATION_LOG_FIELDS, {
+    logId: createId("AI-LOG"),
+    requestId: payload.requestId || payload.request_id || answerValues.submissionId || "",
+    sessionId: payload.sessionId || payload.session_id || "",
+    userId: payload.userId || payload.user_id || "",
+    emailKey: context.emailKey,
+    commonProfileJson: safeJson(payload.commonProfile || payload.common_profile || {}),
+    workId: answerValues.workId,
+    workTitle: answerValues.workTitle,
+    stage: payload.stage || "",
+    hearingHistoryJson: safeJson(payload.hearingHistory || payload.hearing_history || []),
+    answerText: answerValues.answerText,
+    promptText: payload.promptText || payload.prompt_text || answerValues.questionText || "",
+    requestPayloadJson: safeJson({ workId: answerValues.workId, stage: payload.stage || "", retryCount: answerValues.retryCount }),
+    responseJson: safeJson(evaluation.raw || evaluation),
+    score: evaluation.score ?? "",
+    status: evaluation.status || "",
+    unmetCriteriaJson: safeJson(payload.unmetCriteria || payload.unmet_criteria || evaluation.raw?.unmet_criteria || []),
+    nextAction: payload.nextAction || payload.next_action || evaluation.raw?.next_action || evaluation.raw?.nextQuestion || "",
+    staffFeedbackRecommended: staffFeedbackRecommended ? "TRUE" : "FALSE",
+    errorMessage: evaluation.raw?.error_message_safe || evaluation.raw?.error_message || "",
+    createdAt: now,
+    updatedAt: now
+  });
+  result.aiEvaluationLog = true;
+
+  // 2) staff_feedback_queue へ追記（担当者確認が必要なときのみ）
+  if (staffFeedbackRecommended) {
+    const queueSheet = await ensureSheetWithHeaders(config.workSpreadsheetId, config.staffFeedbackQueueSheetName, STAFF_FEEDBACK_QUEUE_HEADERS);
+    await appendRow(config.workSpreadsheetId, queueSheet, STAFF_FEEDBACK_QUEUE_FIELDS, {
+      queueId: createId("SFQ"),
+      sessionId: payload.sessionId || payload.session_id || "",
+      userId: payload.userId || payload.user_id || "",
+      emailKey: context.emailKey,
+      workId: answerValues.workId,
+      workTitle: answerValues.workTitle,
+      status: "pending",
+      score: evaluation.score ?? "",
+      triggerStatus: evaluation.status || "",
+      message: payload.staffFeedbackMessage || "作成されたワークをもとに、担当者からフィードバックをいたします。",
+      reason: payload.staffFeedbackReason || (payload.unmetCriteria || []).join(" / ") || "",
+      createdAt: now,
+      updatedAt: now
+    });
+    result.staffFeedbackQueue = true;
+  }
+  return result;
 }
 
 function isDuplicateEvent(sheet, id, aliases) {
