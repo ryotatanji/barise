@@ -121,20 +121,45 @@ export function getAiWorkStatusLabel(status) {
 }
 
 export function saveSession(email) {
-  localStorage.setItem(SESSION_KEY, normalizeEmail(email));
-  localStorage.setItem(LAST_EMAIL_KEY, normalizeEmail(email));
+  const normalizedEmail = normalizeEmail(email);
+  try {
+    localStorage.setItem(SESSION_KEY, normalizedEmail);
+    localStorage.setItem(LAST_EMAIL_KEY, normalizedEmail);
+  } catch (_error) {
+    // 古い学習状態が容量を占有している場合だけ、そのキャッシュを解放して再試行する。
+    // 提出結果の正本は Sheets 側にあり、次回ログイン時に復元される。
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(SESSION_KEY, normalizedEmail);
+      localStorage.setItem(LAST_EMAIL_KEY, normalizedEmail);
+    } catch (_retryError) {
+      // セッション保存は補助機能。現在の画面操作を止めない。
+    }
+  }
 }
 
 export function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch (_error) {
+    // ブラウザ保存が利用できなくても、呼び出し元のメモリ上のセッションは破棄される。
+  }
 }
 
 export function getStoredSession() {
-  return localStorage.getItem(SESSION_KEY) || "";
+  try {
+    return localStorage.getItem(SESSION_KEY) || "";
+  } catch (_error) {
+    return "";
+  }
 }
 
 export function getLastEmail() {
-  return localStorage.getItem(LAST_EMAIL_KEY) || "";
+  try {
+    return localStorage.getItem(LAST_EMAIL_KEY) || "";
+  } catch (_error) {
+    return "";
+  }
 }
 
 export function createLearningProvider(config = {}) {
@@ -151,6 +176,8 @@ export class LocalJsonLearningProvider {
     this.syncFallbackToLocal = true;
     this.restoreCache = new Map();
     this.lastRestoreError = null;
+    this.memoryState = null;
+    this.storageAvailable = true;
   }
 
   async init() {
@@ -164,13 +191,27 @@ export class LocalJsonLearningProvider {
     this.authEndpointUrl = this.source.authGateway?.endpointUrl || AUTH_ENDPOINT_URL;
     this.syncEndpointUrl = this.source.syncGateway?.endpointUrl || "";
     this.syncFallbackToLocal = this.source.syncGateway?.fallbackToLocalOnWriteFailure !== false;
-    const stored = localStorage.getItem(STORAGE_KEY);
+    let stored = "";
+    try {
+      stored = localStorage.getItem(STORAGE_KEY) || "";
+    } catch (_error) {
+      this.storageAvailable = false;
+    }
     if (!stored) {
       this._write(this._createInitialState());
       return;
     }
 
-    this._write(this._mergeWithSource(JSON.parse(stored)));
+    try {
+      this._write(this._mergeWithSource(JSON.parse(stored)));
+    } catch (_error) {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (_removeError) {
+        this.storageAvailable = false;
+      }
+      this._write(this._createInitialState());
+    }
   }
 
   async login(email) {
@@ -2992,11 +3033,49 @@ export class LocalJsonLearningProvider {
   }
 
   _read() {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (this.memoryState) return this.memoryState;
+
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        this.memoryState = JSON.parse(stored);
+        return this.memoryState;
+      }
+    } catch (_error) {
+      this.storageAvailable = false;
+    }
+
+    this.memoryState = this._createInitialState();
+    return this.memoryState;
   }
 
   _write(data) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    this.memoryState = data;
+
+    // AI監査ログは Sheets 側へ同期済みで、画面表示には使わない。
+    // リクエスト・レスポンスの重複コピーが大きいためブラウザには永続化しない。
+    const storageSnapshot = {
+      ...data,
+      aiEvaluationLogs: []
+    };
+    const serialized = JSON.stringify(storageSnapshot);
+
+    try {
+      localStorage.setItem(STORAGE_KEY, serialized);
+      this.storageAvailable = true;
+      return;
+    } catch (_error) {
+      // 旧版の肥大化した同一キーを先に解放し、圧縮済み状態を一度だけ保存し直す。
+    }
+
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(STORAGE_KEY, serialized);
+      this.storageAvailable = true;
+    } catch (_retryError) {
+      // Sheets が正本のため、ブラウザ保存不能でも現在の操作はメモリ上で継続する。
+      this.storageAvailable = false;
+    }
   }
 }
 
