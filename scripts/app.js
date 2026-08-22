@@ -19,6 +19,16 @@ const config = {
 
 const LEARNER_FORBIDDEN_PATTERN = /\b(good|needs_more|support_needed|reviewing|failed|debug|mock|internal|pass|retry|review|evaluate-work|gpt-4o-mini|OPENAI_API_KEY|learner_theme|current_situation|current_actions|available_metrics|target_result|strategy_tactic_execution)\b/i;
 const MINI_WORK_INPUT_ERROR_MESSAGE = "もう少し具体的に書いてください。選んだ行動・理由・いつ/どこで試すかを入れると評価できます。";
+const LEARNER_TRANSIENT_ERROR_MESSAGE = "混み合っています。1分ほど待って再度お試しください。入力内容は画面に残っています。";
+
+function safeLearnerErrorMessage(message, fallback = LEARNER_TRANSIENT_ERROR_MESSAGE) {
+  const text = String(message || "").trim();
+  const containsJapanese = /[ぁ-んァ-ヶ一-龠]/.test(text);
+  if (!text || !containsJapanese || LEARNER_FORBIDDEN_PATTERN.test(text)) {
+    return fallback;
+  }
+  return text;
+}
 
 const state = {
   email: "",
@@ -413,13 +423,14 @@ function renderLoading() {
 }
 
 function renderError(message) {
+  const safeMessage = safeLearnerErrorMessage(message);
   app.innerHTML = `
     <main class="login-screen">
       <img src="${config.brandLogo}" alt="Barise" class="login-brand">
       <section class="login-panel" aria-labelledby="error-title">
         <p class="eyebrow">CONSOLE</p>
         <h1 id="error-title">ページをひらけませんでした</h1>
-        <p class="lead">${escapeHtml(message)}</p>
+        <p class="lead">${escapeHtml(safeMessage)}</p>
         <button class="primary-button" type="button" data-action="reload">もう一度ひらく</button>
       </section>
     </main>
@@ -2330,7 +2341,7 @@ function showFormSubmissionError(form, message) {
   const error = document.createElement("div");
   error.className = "form-error form-submit-error";
   error.setAttribute("role", "alert");
-  error.textContent = message || "保存に失敗しました。通信状況を確認して、もう一度お試しください。入力内容は画面に残っています。";
+  error.textContent = safeLearnerErrorMessage(message);
   const textarea = form.querySelector("textarea");
   if (textarea) {
     textarea.insertAdjacentElement("afterend", error);
@@ -2458,7 +2469,7 @@ function showInlineActionError(target, message) {
   const error = document.createElement("div");
   error.className = "form-error inline-action-error";
   error.setAttribute("role", "alert");
-  error.textContent = message || "保存に失敗しました。通信状況を確認して、もう一度お試しください。";
+  error.textContent = safeLearnerErrorMessage(message);
   target.insertAdjacentElement("afterend", error);
   target.focus();
 }
