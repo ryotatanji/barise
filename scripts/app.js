@@ -1996,10 +1996,10 @@ function getLessonCta(lesson) {
 
   if (lesson.miniWork && lesson.progress.mini_work_status === "support_needed") {
     return {
-      label: "サポートに相談する",
-      href: config.supportLineUrl,
-      shortNote: "公式LINEで相談",
-      summary: `「${lesson.lesson_title}」について、公式LINEで一緒に整理しましょう。`
+      label: "ミニワークを確認する",
+      href: hashForLesson(lesson.lesson_id, "mini-work"),
+      shortNote: "提出内容を確認",
+      summary: `「${lesson.lesson_title}」の提出内容を確認し、続きから取り組みましょう。`
     };
   }
 
