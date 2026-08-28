@@ -1008,6 +1008,9 @@ function renderEvaluationResultCard(evaluation, label) {
   const isPassed = evaluation.result_status === "good";
   const nextTitle = isPassed ? "次に進む前に" : "次に意識すること";
   const resultKind = label === "ミニワーク" ? "mini-work" : "work";
+  if (resultKind === "mini-work" && evaluation.layer_decisions && Object.keys(evaluation.layer_decisions).length) {
+    return renderMiniWorkScoreCard(evaluation, label);
+  }
   const resultId = resultKind === "mini-work" ? ` id="mini-work-evaluation-result"` : "";
   const goodPoints = uniqueLearnerItems(evaluation.good_points || []).slice(0, 3);
   const improvementPoints = isPassed ? [] : uniqueLearnerItems(evaluation.improvement_points || []).filter((item) => !goodPoints.includes(item)).slice(0, 3);
@@ -1040,6 +1043,51 @@ function renderEvaluationResultCard(evaluation, label) {
         <span>${escapeHtml(nextTitle)}</span>
         <strong>${escapeHtml(nextActionText)}</strong>
         ${nextQuestion ? `<p>${escapeHtml(nextQuestion)}</p>` : ""}
+      </div>
+    </section>
+  `;
+}
+
+function renderMiniWorkScoreCard(evaluation, label) {
+  const score = Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : 70;
+  const passed = score >= 80 && evaluation.result_status === "good";
+  const layerResults = evaluation.layer_results || {};
+  const layerDecisions = evaluation.layer_decisions || {};
+  const layerKeys = ["L1", "L2", "L3", "L4a", "L4b"];
+  const rows = layerKeys.map((key) => {
+    const item = layerResults[key] || {};
+    const decision = item.decision || layerDecisions[key] || "No";
+    const labelText = item.label || key;
+    return `<li><strong>${escapeHtml(labelText)}</strong><span>${decision === "Yes" ? "満たしています" : "次の伸びしろです"}</span></li>`;
+  });
+  const goodPoints = uniqueLearnerItems(evaluation.good_points || evaluation.good_materials || []).slice(0, 4);
+  const missingPoints = uniqueLearnerItems(evaluation.missing_points || []).slice(0, 4);
+  const rewritePoints = uniqueLearnerItems(evaluation.rewrite_points || []).slice(0, 4);
+  const growthPoints = uniqueLearnerItems(evaluation.growth_points || []).slice(0, 4);
+  const actionPoints = passed ? growthPoints : uniqueLearnerItems([...missingPoints, ...rewritePoints]).slice(0, 4);
+  const failedLayer = evaluation.failed_layer_label || evaluation.failed_layer || "";
+
+  return `
+    <section id="mini-work-evaluation-result" class="evaluation-card" data-result="${escapeAttribute(evaluation.result_status)}" data-evaluation-result="mini-work" aria-label="${escapeAttribute(label)}の評価結果">
+      <p class="ev-k">FEEDBACK <span class="status-badge" data-tone="${passed ? "positive" : "attention"}">${passed ? "合格" : "再提出"}</span></p>
+      <div class="ev-score">
+        <strong>${score}</strong>
+        <small>SCORE / 合格80</small>
+      </div>
+      <p class="ev-help">${escapeHtml(evaluation.reason || `${score}点・${passed ? "合格" : "再提出"}です。`)}</p>
+      ${!passed && failedLayer && failedLayer !== "なし" ? `<p class="ev-help"><strong>最初に見直す層:</strong> ${escapeHtml(failedLayer)}</p>` : ""}
+      <div class="ev-cols">
+        <div>
+          <h4>点数の根拠</h4>
+          <ul class="ev-layer-list">${rows.join("")}</ul>
+        </div>
+        ${goodPoints.length ? `<div><h4>回答で満たした材料</h4><ul>${goodPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+        ${actionPoints.length ? `<div><h4>${passed ? "さらに伸ばすには" : "書き直すポイント"}</h4><ul>${actionPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+      </div>
+      <div class="ev-next">
+        <span>${passed ? "判定" : "再提出について"}</span>
+        <strong>${passed ? "合格です。次へ進めます" : "回答は何度でも再提出できます"}</strong>
+        ${!passed && evaluation.next_question ? `<p>${escapeHtml(evaluation.next_question)}</p>` : ""}
       </div>
     </section>
   `;
