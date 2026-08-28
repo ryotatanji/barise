@@ -56,7 +56,14 @@ export class AiEvaluationClient {
 
     try {
       const body = await this._postToGateway(payload);
-      const rawEvaluation = body?.evaluation || body?.result || body;
+      const sourceEvaluation = body?.evaluation || body?.result || body;
+      const rawEvaluation = sourceEvaluation && typeof sourceEvaluation === "object"
+        ? {
+            ...sourceEvaluation,
+            detail_persisted: body?.persistence?.ok === true && (body?.persistence?.skipped !== true || body?.persistence?.idempotent === true),
+            detail_persistence: body?.persistence || null
+          }
+        : sourceEvaluation;
       return this.normalizeEvaluation(rawEvaluation, payload, "gateway");
     } catch (error) {
       return this.createErrorEvaluation(payload, error);
@@ -316,6 +323,8 @@ function normalizeMiniWorkV2ClientResult(raw = {}, payload = {}, rawModel = "") 
     mini_work_id: raw.miniWorkId || raw.mini_work_id || payload.miniWorkId || payload.mini_work_id || "",
     parent_lesson_id: raw.parentLessonId || raw.parent_lesson_id || payload.parentLessonId || payload.parent_lesson_id || "",
     work_id: String(raw.workId || raw.work_id || payload.workId || payload.work_id || ""),
+    submission_id: raw.submission_id || raw.submissionId || payload.submission_id || payload.submissionId || "",
+    ai_log_id: raw.ai_log_id || raw.aiLogId || payload.ai_log_id || payload.aiLogId || "",
     status: passed ? "passed" : "revision_required",
     standard_status: standardStatus,
     abc_grade: "",
@@ -362,7 +371,9 @@ function normalizeMiniWorkV2ClientResult(raw = {}, payload = {}, rawModel = "") 
     raw_model: raw.meta?.model || raw.raw_model || rawModel || DEFAULT_MODEL,
     evaluated_at: raw.meta?.evaluatedAt || raw.evaluated_at || new Date().toISOString(),
     error_type: raw.errorType || raw.error_type || "",
-    error_message_safe: raw.errorMessageSafe || raw.error_message_safe || ""
+    error_message_safe: raw.errorMessageSafe || raw.error_message_safe || "",
+    detail_persisted: raw.detail_persisted === true,
+    detail_persistence: raw.detail_persistence || null
   };
 }
 

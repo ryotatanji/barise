@@ -1,8 +1,29 @@
+const {
+  appendValues,
+  ensureAppendOnlySheet,
+  getValues,
+  normalizeEmailKey,
+  quoteSheetName
+} = require("./_sheets");
+
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-4o-mini";
 const WORK_SCHEMA_VERSION = "barise-work-evaluation-v1";
 const MINI_WORK_SCHEMA_VERSION = "barise-mini-work-evaluation-v2";
 const DEFAULT_TIMEOUT_MS = 20000; // V7.1採点是正: 12s→20s（偶発タイムアウトで良回答が0点になる事故を防ぐ）
+const AI_EVALUATION_DETAIL_SHEET_NAME = "_AI評価詳細_all";
+const AI_EVALUATION_DETAIL_HEADERS = [
+  "submission_id",
+  "email_key",
+  "work_id",
+  "submitted_at",
+  "score",
+  "status",
+  "failed_layer",
+  "layer_decisions_json",
+  "feedback_json",
+  "evaluated_at"
+];
 
 const ALLOWED_WORK_IDS = new Set([
   "W-P1-05",
@@ -66,6 +87,7 @@ const corsHeaders = {
 exports.handler = async function handler(event) {
   const startedAt = new Date().toISOString();
   let payload = null;
+  let evaluation = null;
 
   try {
     if (event.httpMethod === "OPTIONS") {
@@ -84,34 +106,107 @@ exports.handler = async function handler(event) {
     const apiKey = process.env.OPENAI_API_KEY || "";
 
     if (useMock) {
-      return response(200, {
-        ok: true,
-        evaluation: normalizeEvaluation(createHeuristicEvaluation(payload, startedAt), payload, startedAt, "mock-fixed-json")
-      });
+      evaluation = normalizeEvaluation(createHeuristicEvaluation(payload, startedAt), payload, startedAt, "mock-fixed-json");
+    } else if (!apiKey) {
+      evaluation = createFallbackEvaluation(payload, "missing_api_key", startedAt);
+    } else {
+      const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
+      const rawBody = await callOpenAi(payload, apiKey, model);
+      const rawText = extractOutputText(rawBody);
+      const parsed = JSON.parse(rawText);
+      const rawEvaluation = parsed && parsed.evaluation ? parsed.evaluation : parsed;
+      evaluation = normalizeEvaluation(rawEvaluation, payload, startedAt, model);
     }
-
-    if (!apiKey) {
-      return response(200, {
-        ok: true,
-        evaluation: createFallbackEvaluation(payload, "missing_api_key", startedAt)
-      });
-    }
-
-    const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
-    const rawBody = await callOpenAi(payload, apiKey, model);
-    const rawText = extractOutputText(rawBody);
-    const parsed = JSON.parse(rawText);
-    const rawEvaluation = parsed && parsed.evaluation ? parsed.evaluation : parsed;
-    const evaluation = normalizeEvaluation(rawEvaluation, payload, startedAt, model);
-
-    return response(200, { ok: true, evaluation });
   } catch (error) {
-    return response(200, {
-      ok: true,
-      evaluation: createFallbackEvaluation(payload, safeErrorType(error), startedAt)
-    });
+    evaluation = createFallbackEvaluation(payload, safeErrorType(error), startedAt);
   }
+
+  if (evaluation && payload) {
+    evaluation.submission_id = payload.submissionId || "";
+    evaluation.ai_log_id = payload.aiLogId || "";
+  }
+  const persistence = await persistMiniWorkEvaluationDetailSafe(payload, evaluation);
+  return response(200, { ok: true, evaluation, persistence });
 };
+
+async function persistMiniWorkEvaluationDetailSafe(payload, evaluation) {
+  try {
+    return await persistMiniWorkEvaluationDetail(payload, evaluation);
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      reason: error?.code || "ai_evaluation_detail_write_failed"
+    };
+  }
+}
+
+async function persistMiniWorkEvaluationDetail(payload, evaluation, options = {}) {
+  if (!payload?.isMiniWork || !evaluation) {
+    return { ok: true, skipped: true, reason: "not_mini_work" };
+  }
+  const submissionId = String(payload.submissionId || payload.submission_id || "").trim();
+  const emailKey = normalizeEmailKey(payload.user?.email || payload.email || payload.email_normalized || "");
+  const workId = String(payload.miniWorkId || payload.workId || "").trim();
+  if (!submissionId || !emailKey || !workId) {
+    return { ok: false, skipped: true, reason: "ai_evaluation_detail_identity_missing" };
+  }
+
+  const env = options.env || process.env;
+  const spreadsheetId = options.spreadsheetId || env.BARISE_WORK_SPREADSHEET_ID || env.SPREADSHEET_ID || "";
+  if (!spreadsheetId) {
+    return { ok: false, skipped: true, reason: "spreadsheet_id_missing" };
+  }
+  const sheetName = options.sheetName || env.BARISE_AI_EVALUATION_DETAIL_SHEET_NAME || AI_EVALUATION_DETAIL_SHEET_NAME;
+  const ensureSheet = options.ensureAppendOnlySheet || ensureAppendOnlySheet;
+  const readValues = options.getValues || getValues;
+  const appendRows = options.appendValues || appendValues;
+  const ensured = await ensureSheet(spreadsheetId, sheetName, AI_EVALUATION_DETAIL_HEADERS, options.sheetOperations || {});
+
+  const existingIds = await readValues(spreadsheetId, `${quoteSheetName(sheetName)}!A2:A`);
+  if (existingIds.some((row) => String(row[0] || "").trim() === submissionId)) {
+    return { ok: true, skipped: true, idempotent: true, sheetName, submissionId };
+  }
+
+  const row = buildMiniWorkEvaluationDetailRow(payload, evaluation);
+  await appendRows(spreadsheetId, `${quoteSheetName(sheetName)}!A:J`, [row]);
+  return { ok: true, skipped: false, createdSheet: Boolean(ensured.created), sheetName, submissionId };
+}
+
+function buildMiniWorkEvaluationDetailRow(payload, evaluation) {
+  const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
+  const detailFeedback = {
+    schemaVersion: evaluation.schema_version || evaluation.schemaVersion || MINI_WORK_SCHEMA_VERSION,
+    summary: feedback.summary || evaluation.summary || evaluation.reason || "",
+    reason: evaluation.reason || feedback.summary || "",
+    goodPoints: asArray(feedback.goodPoints || evaluation.good_points),
+    improvementPoints: asArray(feedback.improvementPoints || evaluation.improvement_points),
+    missingPoints: asArray(feedback.missingPoints || evaluation.missing_points),
+    rewritePoints: asArray(feedback.rewritePoints || evaluation.rewrite_points),
+    growthPoints: asArray(feedback.growthPoints || evaluation.growth_points || evaluation.growth_guidance),
+    layerResults: evaluation.layer_results || evaluation.layerResults || feedback.layerResults || {},
+    failedLayerLabel: evaluation.failed_layer_label || evaluation.failedLayerLabel || feedback.failedLayerLabel || "",
+    quotes: evaluation.quotes || feedback.quotes || {},
+    goodMaterials: asArray(evaluation.good_materials || evaluation.goodMaterials),
+    missingMaterials: asArray(evaluation.missing_materials || evaluation.missingMaterials),
+    rewriteGuidance: asArray(evaluation.rewrite_guidance || evaluation.rewriteGuidance),
+    nextQuestion: evaluation.next_question || evaluation.nextQuestion || "",
+    unmetCriteria: asArray(evaluation.unmet_criteria || evaluation.unmetCriteria),
+    metCriteria: asArray(evaluation.met_criteria || evaluation.metCriteria)
+  };
+  return [
+    String(payload.submissionId || payload.submission_id || "").trim(),
+    normalizeEmailKey(payload.user?.email || payload.email || payload.email_normalized || ""),
+    String(payload.miniWorkId || payload.workId || "").trim(),
+    payload.submittedAt || payload.submitted_at || new Date().toISOString(),
+    Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : "",
+    evaluation.standard_status || evaluation.status || "",
+    evaluation.failed_layer || evaluation.failedLayer || "",
+    safeJson(evaluation.layer_decisions || evaluation.layerDecisions || {}),
+    safeJson(detailFeedback),
+    evaluation.evaluated_at || evaluation.meta?.evaluatedAt || new Date().toISOString()
+  ];
+}
 
 function parseRequestBody(event) {
   const body = event.isBase64Encoded
@@ -145,6 +240,8 @@ function normalizePayload(source = {}) {
 
   return {
     requestId: source.requestId || source.request_id || createId("REQ"),
+    submissionId: source.submissionId || source.submission_id || "",
+    aiLogId: source.aiLogId || source.ai_log_id || "",
     sessionId: source.sessionId || source.session_id || "",
     workType,
     contentType: source.contentType || source.content_type || workType,
@@ -1852,6 +1949,14 @@ function uniqueArray(value) {
   });
 }
 
+function safeJson(value) {
+  try {
+    return JSON.stringify(value ?? {});
+  } catch (_error) {
+    return "{}";
+  }
+}
+
 function safeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -1881,9 +1986,12 @@ function safeErrorMessage(errorType) {
 }
 
 exports._test = {
+  AI_EVALUATION_DETAIL_HEADERS,
   MINI_WORK_V2_RUBRICS,
+  buildMiniWorkEvaluationDetailRow,
   buildMiniWorkUserPrompt,
   calculateMiniWorkScore,
   normalizeMiniWorkLayerDecisions,
-  normalizeMiniWorkV2Evaluation
+  normalizeMiniWorkV2Evaluation,
+  persistMiniWorkEvaluationDetail
 };

@@ -50,6 +50,23 @@ const STAFF_FEEDBACK_QUEUE_FIELDS = {
   displayName: ["display_name", "氏名", "表示名", "受講者名", "お名前"]
 };
 
+const AI_EVALUATION_DETAIL_HEADERS = [
+  "submission_id", "email_key", "work_id", "submitted_at", "score", "status",
+  "failed_layer", "layer_decisions_json", "feedback_json", "evaluated_at"
+];
+const AI_EVALUATION_DETAIL_FIELDS = {
+  submissionId: ["submission_id"],
+  emailKey: ["email_key"],
+  workId: ["work_id"],
+  submittedAt: ["submitted_at"],
+  score: ["score"],
+  status: ["status"],
+  failedLayer: ["failed_layer"],
+  layerDecisionsJson: ["layer_decisions_json"],
+  feedbackJson: ["feedback_json"],
+  evaluatedAt: ["evaluated_at"]
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
@@ -234,6 +251,7 @@ function syncConfig() {
     workSpreadsheetId: process.env.BARISE_WORK_SPREADSHEET_ID || process.env.SPREADSHEET_ID || "",
     workSummarySheetName: process.env.BARISE_WORK_SUMMARY_SHEET_NAME || "_ワークサマリー",
     workLogSheetName: process.env.BARISE_WORK_LOG_SHEET_NAME || "_回答ログ_all",
+    aiEvaluationDetailSheetName: process.env.BARISE_AI_EVALUATION_DETAIL_SHEET_NAME || "_AI評価詳細_all",
     aiEvaluationLogSheetName: process.env.BARISE_AI_EVAL_LOG_SHEET_NAME || "ai_evaluation_logs",
     staffFeedbackQueueSheetName: process.env.BARISE_STAFF_FEEDBACK_QUEUE_SHEET_NAME || "staff_feedback_queue"
   };
@@ -445,8 +463,9 @@ async function restoreLearningState(context) {
   const videoLog = await readSheet(config.progressSpreadsheetId, config.videoLogSheetName);
   const answerLog = await readSheet(config.workSpreadsheetId, config.workLogSheetName);
   const workSummary = await readSheet(config.workSpreadsheetId, config.workSummarySheetName);
+  const evaluationDetail = await readOptionalSheet(config.workSpreadsheetId, config.aiEvaluationDetailSheetName);
   const videoState = restoreVideoState(videoLog, emailKey, now);
-  const workState = restoreWorkState(answerLog, workSummary, emailKey, now);
+  const workState = restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetail);
 
   warnings.push(...videoState.warnings, ...workState.warnings);
 
@@ -454,7 +473,8 @@ async function restoreLearningState(context) {
     affected: [
       { sheetName: config.videoLogSheetName, action: "read" },
       { sheetName: config.workLogSheetName, action: "read" },
-      { sheetName: config.workSummarySheetName, action: "read" }
+      { sheetName: config.workSummarySheetName, action: "read" },
+      ...(evaluationDetail.exists ? [{ sheetName: config.aiEvaluationDetailSheetName, action: "read" }] : [])
     ],
     restored: {
       progress: [...videoState.progress, ...workState.progress],
@@ -521,8 +541,9 @@ function restoreVideoState(sheet, emailKey, now) {
   return { progress, clearedTargets, warnings };
 }
 
-function restoreWorkState(answerLog, workSummary, emailKey, now) {
+function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetail = emptyOptionalSheet("_AI評価詳細_all")) {
   const warnings = [];
+  const detailsBySubmission = indexEvaluationDetails(evaluationDetail);
   const emailIndex = findHeaderIndex(answerLog.headers, EMAIL_HEADERS);
   const workIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.workId);
   const miniIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.miniWorkId);
@@ -540,6 +561,7 @@ function restoreWorkState(answerLog, workSummary, emailKey, now) {
   const summaryIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.summary);
   const feedbackIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.feedbackJson);
   const evaluationIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.evaluationJson);
+  const aiLogIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.aiLogId);
 
   if (emailIndex < 0 || (workIndex < 0 && miniIndex < 0)) {
     warnings.push({ sheetName: answerLog.sheetName, warning: "restore_answer_columns_missing" });
@@ -591,18 +613,20 @@ function restoreWorkState(answerLog, workSummary, emailKey, now) {
       ? normalizeMiniWorkStatus(rawStatus)
       : normalizeWorkStatus(rawStatus);
     const submissionId = firstValue(row, [submissionIndex]) || createId("RESTORE-SUB");
-    const score = parseScore(firstValue(row, [scoreIndex]));
-    const feedback = parseJsonCell(firstValue(row, [feedbackIndex]));
+    const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, targetId);
+    const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
+    const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
     const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
+    const feedback = detail ? detail.feedback : answerFeedback;
     const goodPoints = toStringArray(feedback.goodPoints || feedback.good_points || evaluationJson.good_points || evaluationJson.feedback?.goodPoints);
     const improvementPoints = toStringArray(feedback.improvementPoints || feedback.improvement_points || evaluationJson.improvement_points || evaluationJson.feedback?.improvementPoints);
     const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
     const rewritePoints = toStringArray(feedback.rewritePoints || feedback.rewrite_points || evaluationJson.rewrite_points || evaluationJson.feedback?.rewritePoints);
     const growthPoints = toStringArray(feedback.growthPoints || feedback.growth_points || evaluationJson.growth_points || evaluationJson.growth_guidance || evaluationJson.feedback?.growthPoints);
-    const layerDecisions = evaluationJson.layer_decisions || evaluationJson.layerDecisions || feedback.layerDecisions || {};
-    const layerResults = evaluationJson.layer_results || evaluationJson.layerResults || feedback.layerResults || {};
-    const failedLayer = evaluationJson.failed_layer || evaluationJson.failedLayer || feedback.failedLayer || "";
-    const failedLayerLabel = evaluationJson.failed_layer_label || evaluationJson.failedLayerLabel || feedback.failedLayerLabel || "";
+    const layerDecisions = detail?.layerDecisions || evaluationJson.layer_decisions || evaluationJson.layerDecisions || feedback.layerDecisions || {};
+    const layerResults = feedback.layerResults || evaluationJson.layer_results || evaluationJson.layerResults || {};
+    const failedLayer = detail?.failedLayer || evaluationJson.failed_layer || evaluationJson.failedLayer || feedback.failedLayer || "";
+    const failedLayerLabel = feedback.failedLayerLabel || evaluationJson.failed_layer_label || evaluationJson.failedLayerLabel || "";
 
     submissions.push({
       submission_id: submissionId,
@@ -613,6 +637,7 @@ function restoreWorkState(answerLog, workSummary, emailKey, now) {
       status: uiStatus,
       score,
       submitted_at: submittedAt,
+      ai_log_id: firstValue(row, [aiLogIndex]),
       restored_from_sheets: true
     });
 
@@ -626,11 +651,12 @@ function restoreWorkState(answerLog, workSummary, emailKey, now) {
       parent_lesson_id: lessonId,
       work_id: targetId,
       work_title: firstValue(row, [titleIndex]),
+      schema_version: feedback.schemaVersion || evaluationJson.schema_version || evaluationJson.schemaVersion || "",
       result_status: uiStatus,
       standard_status: normalizeStandardStatus(rawStatus),
       abc_grade: firstValue(row, [abcIndex]) || evaluationJson.abc_grade || evaluationJson.abcGrade || "",
       score,
-      reason: evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
+      reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
       good_points: goodPoints,
       improvement_points: uiStatus === "good" ? [] : improvementPoints,
       unmet_criteria: uiStatus === "good" ? [] : toStringArray(evaluationJson.unmet_criteria || evaluationJson.unmetCriteria),
@@ -639,8 +665,10 @@ function restoreWorkState(answerLog, workSummary, emailKey, now) {
       failed_layer: failedLayer,
       failed_layer_label: failedLayerLabel,
       rubric_title: evaluationJson.rubric_title || evaluationJson.rubricTitle || "",
-      quotes: evaluationJson.quotes || {},
-      good_materials: toStringArray(evaluationJson.good_materials || evaluationJson.goodMaterials),
+      quotes: feedback.quotes || evaluationJson.quotes || {},
+      good_materials: toStringArray(feedback.goodMaterials || evaluationJson.good_materials || evaluationJson.goodMaterials),
+      missing_materials: toStringArray(feedback.missingMaterials || evaluationJson.missing_materials || evaluationJson.missingMaterials),
+      rewrite_guidance: toStringArray(feedback.rewriteGuidance || evaluationJson.rewrite_guidance || evaluationJson.rewriteGuidance),
       missing_points: missingPoints,
       rewrite_points: rewritePoints,
       growth_points: growthPoints,
@@ -657,9 +685,10 @@ function restoreWorkState(answerLog, workSummary, emailKey, now) {
         failedLayer,
         failedLayerLabel
       },
-      next_question: evaluationJson.next_question || evaluationJson.nextQuestion || "",
+      next_question: feedback.nextQuestion || evaluationJson.next_question || evaluationJson.nextQuestion || "",
       next_action_text: evaluationJson.next_action_text || evaluationJson.next_action || "",
-      evaluated_at: submittedAt,
+      ai_log_id: firstValue(row, [aiLogIndex]),
+      evaluated_at: detail?.evaluatedAt || submittedAt,
       restored_from_sheets: true
     });
 
@@ -844,6 +873,55 @@ function parseJsonCell(value) {
   }
 }
 
+function emptyOptionalSheet(sheetName) {
+  return { sheetName, headers: [], rows: [], rowRefs: [], exists: false };
+}
+
+function indexEvaluationDetails(sheet = emptyOptionalSheet("_AI評価詳細_all")) {
+  const bySubmission = new Map();
+  const submissionIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.submissionId);
+  const emailIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.emailKey);
+  const workIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.workId);
+  const submittedIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.submittedAt);
+  const scoreIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.score);
+  const statusIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.status);
+  const failedLayerIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.failedLayer);
+  const layerDecisionsIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.layerDecisionsJson);
+  const feedbackIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.feedbackJson);
+  const evaluatedIndex = findHeaderIndex(sheet.headers, AI_EVALUATION_DETAIL_FIELDS.evaluatedAt);
+  if (submissionIndex < 0 || emailIndex < 0 || workIndex < 0) return bySubmission;
+
+  (sheet.rowRefs || []).forEach((rowRef) => {
+    const submissionId = String(rowRef.row[submissionIndex] || "").trim();
+    if (!submissionId) return;
+    const detail = {
+      submissionId,
+      emailKey: normalizeEmailKey(rowRef.row[emailIndex]),
+      workId: String(rowRef.row[workIndex] || "").trim(),
+      submittedAt: firstValue(rowRef.row, [submittedIndex]),
+      score: parseScore(firstValue(rowRef.row, [scoreIndex])),
+      status: firstValue(rowRef.row, [statusIndex]),
+      failedLayer: firstValue(rowRef.row, [failedLayerIndex]),
+      layerDecisions: parseJsonCell(firstValue(rowRef.row, [layerDecisionsIndex])),
+      feedback: parseJsonCell(firstValue(rowRef.row, [feedbackIndex])),
+      evaluatedAt: firstValue(rowRef.row, [evaluatedIndex]),
+      rowNumber: rowRef.rowNumber || 0
+    };
+    if (!bySubmission.has(submissionId)) bySubmission.set(submissionId, []);
+    bySubmission.get(submissionId).push(detail);
+  });
+  return bySubmission;
+}
+
+function selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, workId) {
+  return (detailsBySubmission.get(String(submissionId || "").trim()) || [])
+    .filter((detail) => detail.emailKey === normalizeEmailKey(emailKey) && detail.workId === String(workId || "").trim())
+    .sort((a, b) => {
+      const timeDifference = new Date(b.evaluatedAt || b.submittedAt || 0) - new Date(a.evaluatedAt || a.submittedAt || 0);
+      return timeDifference || b.rowNumber - a.rowNumber;
+    })[0] || null;
+}
+
 function toStringArray(value) {
   if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
   if (typeof value === "string" && value.trim()) return [value.trim()];
@@ -859,6 +937,11 @@ async function readSheet(spreadsheetId, sheetName) {
     rows: values.slice(1),
     rowRefs: values.slice(1).map((row, index) => ({ row, rowNumber: index + 2 }))
   };
+}
+
+async function readOptionalSheet(spreadsheetId, sheetName) {
+  if (!(await sheetExists(spreadsheetId, sheetName))) return emptyOptionalSheet(sheetName);
+  return { ...(await readSheet(spreadsheetId, sheetName)), exists: true };
 }
 
 async function upsertByEmail({ spreadsheetId, sheet, fieldMap, emailKey, values }) {
@@ -1151,15 +1234,19 @@ function response(statusCode, body) {
 }
 
 exports._test = {
+  AI_EVALUATION_DETAIL_FIELDS,
+  AI_EVALUATION_DETAIL_HEADERS,
   ANSWER_LOG_FIELDS,
   PROGRESS_SUMMARY_FIELDS,
   VIDEO_LOG_FIELDS,
   WORK_SUMMARY_FIELDS,
   fieldForHeader,
+  indexEvaluationDetails,
   normalizeEvaluation,
   normalizeWorkType,
   restoreVideoState,
   restoreWorkState,
+  selectEvaluationDetail,
   selectLatestRow,
   syncConfig
 };

@@ -1,4 +1,4 @@
-import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-2-11-r2";
+import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-2-12-r3";
 
 const DATA_URL = "./data/learning-data.json?v=5-1-2";
 const STORAGE_KEY = "barise-learning-local-state:v11";
@@ -175,6 +175,9 @@ export class LocalJsonLearningProvider {
     this.syncEndpointUrl = "";
     this.syncFallbackToLocal = true;
     this.restoreCache = new Map();
+    this.initialRestoreCompleted = new Set();
+    this.restoreRequestGeneration = new Map();
+    this.learningMutationGeneration = new Map();
     this.lastRestoreError = null;
     this.lastRestoredAiWorkIds = new Set();
     this.memoryState = null;
@@ -240,7 +243,8 @@ export class LocalJsonLearningProvider {
     user.updated_at = this._now();
     this._write(db);
 
-    await this._restoreLearningState(emailNormalized, { force: true });
+    this._prepareInitialRestore(emailNormalized);
+    await this._restoreLearningState(emailNormalized, { initialLoad: true });
     const restoredDb = this._read();
     const restoredUser = restoredDb.users.find((item) => item.email_normalized === emailNormalized) || user;
 
@@ -283,7 +287,7 @@ export class LocalJsonLearningProvider {
 
   async getLearningState(email) {
     const emailNormalized = normalizeEmail(email);
-    await this._restoreLearningState(emailNormalized);
+    await this._restoreLearningState(emailNormalized, { initialLoad: true });
     const db = this._read();
     const user = db.users.find((item) => item.email_normalized === emailNormalized);
 
@@ -419,7 +423,6 @@ export class LocalJsonLearningProvider {
       clientEventId: this._createId("VID")
     });
     if (syncResult?.ok === false) {
-      await this._restoreLearningState(emailNormalized, { force: true });
       throw new Error(SAVE_FAILURE_MESSAGE);
     }
 
@@ -445,8 +448,11 @@ export class LocalJsonLearningProvider {
     db.aiEvaluationLogs = db.aiEvaluationLogs || [];
     db.staffFeedbackQueue = db.staffFeedbackQueue || [];
 
+    this._markLearningMutation(emailNormalized);
+    const aiLogId = this._createId("AI-MW-LOG");
     const submission = {
       submission_id: this._createId("SUB"),
+      ai_log_id: aiLogId,
       email_normalized: emailNormalized,
       target_type: "mini_work",
       target_id: miniWorkId,
@@ -511,7 +517,8 @@ export class LocalJsonLearningProvider {
       submittedAt: now,
       retryCount: evaluation.retry_count,
       evaluation: this._syncEvaluationPayload(evaluation, effectiveResultStatus),
-      clientSubmissionId: submission.submission_id
+      clientSubmissionId: submission.submission_id,
+      aiLogId
     });
 
     progress.mini_work_status = effectiveResultStatus;
@@ -1295,6 +1302,8 @@ export class LocalJsonLearningProvider {
       requestId,
       submission_id: submission.submission_id,
       submissionId: submission.submission_id,
+      ai_log_id: submission.ai_log_id || "",
+      aiLogId: submission.ai_log_id || "",
       user_id: user?.user_id || "",
       user: {
         userId: user?.user_id || "",
@@ -1450,6 +1459,7 @@ export class LocalJsonLearningProvider {
     return {
       evaluation_id: this._createId("EV"),
       submission_id: submission.submission_id,
+      ai_log_id: submission.ai_log_id || aiEvaluation.ai_log_id || "",
       criteria_id: criteria?.criteria_id || miniWork.evaluation_criteria_id || null,
       target_type: "mini_work",
       target_id: miniWork.mini_work_id,
@@ -1556,7 +1566,7 @@ export class LocalJsonLearningProvider {
   _storeMiniWorkEvaluationLog(db, email, miniWork, lesson, submission, payload, aiEvaluation, evaluation, now) {
     db.aiEvaluationLogs = db.aiEvaluationLogs || [];
     db.aiEvaluationLogs.push({
-      log_id: this._createId("AI-MW-LOG"),
+      log_id: submission.ai_log_id || payload.ai_log_id || payload.aiLogId || this._createId("AI-MW-LOG"),
       submission_id: submission.submission_id,
       request_id: payload.request_id,
       user_id: payload.user_id || "",
@@ -2804,15 +2814,31 @@ export class LocalJsonLearningProvider {
     }
   }
 
+  _prepareInitialRestore(email) {
+    const emailNormalized = normalizeEmail(email);
+    this.initialRestoreCompleted.delete(emailNormalized);
+    this.restoreCache.delete(emailNormalized);
+    this.restoreRequestGeneration.set(emailNormalized, (this.restoreRequestGeneration.get(emailNormalized) || 0) + 1);
+  }
+
+  _markLearningMutation(email) {
+    const emailNormalized = normalizeEmail(email);
+    this.learningMutationGeneration.set(emailNormalized, (this.learningMutationGeneration.get(emailNormalized) || 0) + 1);
+    // 提出開始後は、先に開始していたrestoreも後続のgetLearningStateも適用させない。
+    this.initialRestoreCompleted.add(emailNormalized);
+  }
+
   async _restoreLearningState(email, options = {}) {
     const emailNormalized = normalizeEmail(email);
     if (!this.syncEndpointUrl || !emailNormalized || !isValidEmailFormat(emailNormalized)) return { ok: true, skipped: true };
-
-    const now = Date.now();
-    const lastRestoreAt = this.restoreCache.get(emailNormalized) || 0;
-    if (!options.force && now - lastRestoreAt < 30000) {
-      return { ok: true, skipped: true, reason: "restore_throttled" };
+    if (!options.initialLoad) return { ok: true, skipped: true, reason: "restore_initial_load_only" };
+    if (this.initialRestoreCompleted.has(emailNormalized)) {
+      return { ok: true, skipped: true, reason: "initial_restore_complete" };
     }
+
+    const mutationGeneration = this.learningMutationGeneration.get(emailNormalized) || 0;
+    const requestGeneration = (this.restoreRequestGeneration.get(emailNormalized) || 0) + 1;
+    this.restoreRequestGeneration.set(emailNormalized, requestGeneration);
 
     try {
       const response = await fetch(this.syncEndpointUrl, {
@@ -2824,8 +2850,14 @@ export class LocalJsonLearningProvider {
       if (!response.ok || body.ok === false) {
         throw new Error(body.message || "Sheetsから進捗を復元できませんでした。");
       }
+      const superseded = this.restoreRequestGeneration.get(emailNormalized) !== requestGeneration;
+      const mutated = (this.learningMutationGeneration.get(emailNormalized) || 0) !== mutationGeneration;
+      if (superseded || mutated || this.initialRestoreCompleted.has(emailNormalized)) {
+        return { ok: true, skipped: true, reason: "stale_restore_ignored" };
+      }
       this._applyRestoredLearningState(emailNormalized, body.restored || {});
-      this.restoreCache.set(emailNormalized, now);
+      this.initialRestoreCompleted.add(emailNormalized);
+      this.restoreCache.set(emailNormalized, Date.now());
       this.lastRestoreError = null;
       return body;
     } catch (error) {
