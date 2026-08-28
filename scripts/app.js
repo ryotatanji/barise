@@ -1394,15 +1394,17 @@ function renderAiIntakeFollowupForm(work, session) {
 }
 
 function renderAiFollowupForm(work, session) {
+  const isGoalSettingWork = work.work_id === "W-P1-05";
+  const followupQuestions = getAiFollowupQuestions(session);
   return `
     ${renderAiGeneratedPrompt(session)}
     ${renderAiCriteriaProgress(session)}
     ${renderAiEvaluationSummary(session)}
     <div class="ai-block ai-block--focus">
-      <span>今回答える質問</span>
+      <span>${isGoalSettingWork ? "フィードバック" : "今回答える質問"}</span>
       <p>${escapeHtml(session.ai_summary || "追加質問に回答してください。")}</p>
     </div>
-    ${renderFollowupQuestionPanel(getAiFollowupQuestions(session))}
+    ${isGoalSettingWork ? renderAdditionalQuestions(followupQuestions) : renderFollowupQuestionPanel(followupQuestions)}
     ${renderMissingPoints(session.unmet_criteria, "追記すべき観点")}
     ${renderFollowupHistory(session.followup_history)}
     <form class="ai-work-form" data-form="ai-followup" data-work-id="${escapeAttribute(work.work_id)}">
@@ -1413,6 +1415,7 @@ function renderAiFollowupForm(work, session) {
 }
 
 function renderAiRevisionForm(work, session) {
+  const followupQuestions = getAiFollowupQuestions(session);
   return `
     ${renderAiGeneratedPrompt(session)}
     <div class="ai-block ai-block--focus">
@@ -1421,7 +1424,7 @@ function renderAiRevisionForm(work, session) {
     </div>
     ${renderMissingPoints(session.unmet_criteria, "追記すべき観点")}
     ${renderStaffFeedbackNotice(session)}
-    ${renderFollowupQuestionPanel(getAiFollowupQuestions(session), "今回答える質問")}
+    ${work.work_id === "W-P1-05" ? renderAdditionalQuestions(followupQuestions) : renderFollowupQuestionPanel(followupQuestions, "今回答える質問")}
     ${renderAiEvaluationSummary(session, { compact: true })}
     ${renderRevisionHistory(session.revision_history, { collapsed: true })}
     <form class="ai-work-form" data-form="ai-revision" data-work-id="${escapeAttribute(work.work_id)}">
@@ -1793,6 +1796,18 @@ function renderFollowupQuestionPanel(questions = [], title = "今回答える質
       <span>${escapeHtml(title)}</span>
       <ol>${questions.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}</ol>
     </div>
+  `;
+}
+
+function renderAdditionalQuestions(questions = []) {
+  const items = uniqueLearnerItems(questions);
+  if (!items.length) return "";
+  return `
+    <section class="ai-block ai-block--focus" aria-labelledby="additional-questions-heading">
+      <span id="additional-questions-heading">追加質問</span>
+      <p>以下の質問に答えて再提出してください。</p>
+      <ol>${items.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}</ol>
+    </section>
   `;
 }
 
