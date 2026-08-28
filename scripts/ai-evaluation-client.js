@@ -279,7 +279,20 @@ export class AiEvaluationClient {
 
 function isMiniWorkV2Evaluation(raw = {}, payload = {}) {
   const isMiniWork = payload?.workType === "miniWork" || payload?.isMiniWork || payload?.contentType === "miniWork";
-  return Boolean(isMiniWork && (raw.layerDecisions || raw.layer_decisions || raw.layerResults || raw.layer_results));
+  if (!isMiniWork) return false;
+  const feedback = raw.feedback && typeof raw.feedback === "object" ? raw.feedback : {};
+  const schemaVersion = String(raw.schema_version || raw.schemaVersion || raw.meta?.schemaVersion || "");
+  const v2DetailGroups = [
+    raw.missing_points,
+    raw.rewrite_points,
+    raw.growth_points,
+    feedback.missingPoints,
+    feedback.rewritePoints,
+    feedback.growthPoints
+  ];
+  return schemaVersion === MINI_WORK_EVALUATION_SCHEMA_VERSION ||
+    Boolean(raw.layerDecisions || raw.layer_decisions || raw.layerResults || raw.layer_results) ||
+    v2DetailGroups.some((items) => Array.isArray(items) && items.some((item) => String(item || "").trim()));
 }
 
 function normalizeMiniWorkV2ClientResult(raw = {}, payload = {}, rawModel = "") {
