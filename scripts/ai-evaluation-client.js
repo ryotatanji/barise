@@ -290,6 +290,9 @@ function normalizeMiniWorkV2ClientResult(raw = {}, payload = {}, rawModel = "") 
   const layerResults = raw.layerResults || raw.layer_results || {};
   const goodPoints = toStringArray(raw.feedback?.goodPoints || raw.good_points || raw.goodMaterials || raw.good_materials);
   const improvementPoints = toStringArray(raw.feedback?.improvementPoints || raw.improvement_points || raw.rewriteGuidance || raw.rewrite_guidance);
+  const missingPoints = toStringArray(raw.missing_points || raw.feedback?.missingPoints).slice(0, 4);
+  const rewritePoints = toStringArray(raw.rewrite_points || raw.feedback?.rewritePoints).slice(0, 4);
+  const growthPoints = toStringArray(raw.growth_points || raw.growth_guidance || raw.feedback?.growthPoints).slice(0, 4);
   const nextQuestion = String(raw.nextQuestion || raw.next_question || "").trim();
   const flags = normalizeFlags(raw.flags);
   flags.needsFollowup = !passed;
@@ -311,9 +314,17 @@ function normalizeMiniWorkV2ClientResult(raw = {}, payload = {}, rawModel = "") 
     reason: String(raw.reason || raw.feedback?.summary || "").trim(),
     good_points: goodPoints.slice(0, 4),
     improvement_points: improvementPoints.slice(0, 4),
-    missing_points: toStringArray(raw.missing_points || raw.feedback?.missingPoints).slice(0, 4),
-    rewrite_points: toStringArray(raw.rewrite_points || raw.feedback?.rewritePoints).slice(0, 4),
-    growth_points: toStringArray(raw.growth_points || raw.growth_guidance || raw.feedback?.growthPoints).slice(0, 4),
+    missing_points: missingPoints,
+    rewrite_points: rewritePoints,
+    growth_points: growthPoints,
+    feedback: {
+      summary: String(raw.feedback?.summary || raw.summary || raw.reason || "").trim(),
+      goodPoints: goodPoints.slice(0, 4),
+      improvementPoints: improvementPoints.slice(0, 4),
+      missingPoints,
+      rewritePoints,
+      growthPoints
+    },
     unmet_criteria: passed ? [] : toStringArray(raw.unmet_criteria),
     met_criteria: toStringArray(raw.met_criteria),
     next_action: nextQuestion || (passed ? "次へ進みましょう。" : "不足材料を足して再提出してください。"),

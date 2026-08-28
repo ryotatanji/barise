@@ -596,6 +596,13 @@ function restoreWorkState(answerLog, workSummary, emailKey, now) {
     const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
     const goodPoints = toStringArray(feedback.goodPoints || feedback.good_points || evaluationJson.good_points || evaluationJson.feedback?.goodPoints);
     const improvementPoints = toStringArray(feedback.improvementPoints || feedback.improvement_points || evaluationJson.improvement_points || evaluationJson.feedback?.improvementPoints);
+    const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
+    const rewritePoints = toStringArray(feedback.rewritePoints || feedback.rewrite_points || evaluationJson.rewrite_points || evaluationJson.feedback?.rewritePoints);
+    const growthPoints = toStringArray(feedback.growthPoints || feedback.growth_points || evaluationJson.growth_points || evaluationJson.growth_guidance || evaluationJson.feedback?.growthPoints);
+    const layerDecisions = evaluationJson.layer_decisions || evaluationJson.layerDecisions || feedback.layerDecisions || {};
+    const layerResults = evaluationJson.layer_results || evaluationJson.layerResults || feedback.layerResults || {};
+    const failedLayer = evaluationJson.failed_layer || evaluationJson.failedLayer || feedback.failedLayer || "";
+    const failedLayerLabel = evaluationJson.failed_layer_label || evaluationJson.failedLayerLabel || feedback.failedLayerLabel || "";
 
     submissions.push({
       submission_id: submissionId,
@@ -627,16 +634,29 @@ function restoreWorkState(answerLog, workSummary, emailKey, now) {
       good_points: goodPoints,
       improvement_points: uiStatus === "good" ? [] : improvementPoints,
       unmet_criteria: uiStatus === "good" ? [] : toStringArray(evaluationJson.unmet_criteria || evaluationJson.unmetCriteria),
-      layer_decisions: evaluationJson.layer_decisions || evaluationJson.layerDecisions || {},
-      layer_results: evaluationJson.layer_results || evaluationJson.layerResults || {},
-      failed_layer: evaluationJson.failed_layer || evaluationJson.failedLayer || "",
-      failed_layer_label: evaluationJson.failed_layer_label || evaluationJson.failedLayerLabel || "",
+      layer_decisions: layerDecisions,
+      layer_results: layerResults,
+      failed_layer: failedLayer,
+      failed_layer_label: failedLayerLabel,
       rubric_title: evaluationJson.rubric_title || evaluationJson.rubricTitle || "",
       quotes: evaluationJson.quotes || {},
       good_materials: toStringArray(evaluationJson.good_materials || evaluationJson.goodMaterials),
-      missing_points: toStringArray(evaluationJson.missing_points || evaluationJson.feedback?.missingPoints),
-      rewrite_points: toStringArray(evaluationJson.rewrite_points || evaluationJson.feedback?.rewritePoints),
-      growth_points: toStringArray(evaluationJson.growth_points || evaluationJson.growth_guidance || evaluationJson.feedback?.growthPoints),
+      missing_points: missingPoints,
+      rewrite_points: rewritePoints,
+      growth_points: growthPoints,
+      feedback: {
+        ...feedback,
+        summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || "",
+        goodPoints,
+        improvementPoints,
+        missingPoints,
+        rewritePoints,
+        growthPoints,
+        layerDecisions,
+        layerResults,
+        failedLayer,
+        failedLayerLabel
+      },
       next_question: evaluationJson.next_question || evaluationJson.nextQuestion || "",
       next_action_text: evaluationJson.next_action_text || evaluationJson.next_action || "",
       evaluated_at: submittedAt,
@@ -1041,6 +1061,15 @@ function normalizeWorkType(value) {
 function normalizeEvaluation(source = {}) {
   const feedback = source.feedback || {};
   const flags = source.flags || {};
+  const goodPoints = toStringArray(feedback.goodPoints || source.good_points);
+  const improvementPoints = toStringArray(feedback.improvementPoints || source.improvement_points);
+  const missingPoints = toStringArray(feedback.missingPoints || source.missing_points);
+  const rewritePoints = toStringArray(feedback.rewritePoints || source.rewrite_points);
+  const growthPoints = toStringArray(feedback.growthPoints || source.growth_points || source.growth_guidance);
+  const layerDecisions = source.layer_decisions || source.layerDecisions || feedback.layerDecisions || {};
+  const layerResults = source.layer_results || source.layerResults || feedback.layerResults || {};
+  const failedLayer = source.failed_layer || source.failedLayer || feedback.failedLayer || "";
+  const failedLayerLabel = source.failed_layer_label || source.failedLayerLabel || feedback.failedLayerLabel || "";
   return {
     raw: source,
     status: source.standard_status || source.status || source.result_status || "",
@@ -1053,8 +1082,15 @@ function normalizeEvaluation(source = {}) {
     summary: feedback.summary || source.summary || "",
     feedback: {
       summary: feedback.summary || source.summary || "",
-      goodPoints: feedback.goodPoints || source.good_points || [],
-      improvementPoints: feedback.improvementPoints || source.improvement_points || []
+      goodPoints,
+      improvementPoints,
+      missingPoints,
+      rewritePoints,
+      growthPoints,
+      layerDecisions,
+      layerResults,
+      failedLayer,
+      failedLayerLabel
     },
     retryCount: source.retry_count || source.retryCount || ""
   };

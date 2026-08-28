@@ -1432,9 +1432,20 @@ export class LocalJsonLearningProvider {
     // v2は70点なら回数制限なく再提出できる。旧ログのsupport_neededは読込時にそのまま保持する。
     const resultStatus = passed ? "good" : "needs_more";
     const improvementPoints = this._safeLearnerList(
-      aiEvaluation.improvement_points || localReview.improvementPoints,
+      aiEvaluation.improvement_points || aiEvaluation.feedback?.improvementPoints || localReview.improvementPoints,
       resultStatus === "good" ? [] : ["不足している固有基準の材料を足して再提出してください。"]
     );
+    const goodPoints = this._safeLearnerList(
+      aiEvaluation.good_points || aiEvaluation.feedback?.goodPoints || localReview.goodPoints,
+      ["回答を自分の言葉で整理できています。"]
+    );
+    const missingPoints = this._safeLearnerList(aiEvaluation.missing_points || aiEvaluation.feedback?.missingPoints, []);
+    const rewritePoints = this._safeLearnerList(aiEvaluation.rewrite_points || aiEvaluation.feedback?.rewritePoints, []);
+    const growthPoints = this._safeLearnerList(aiEvaluation.growth_points || aiEvaluation.growth_guidance || aiEvaluation.feedback?.growthPoints, []);
+    const layerDecisions = structuredClone(aiEvaluation.layer_decisions || aiEvaluation.layerDecisions || aiEvaluation.feedback?.layerDecisions || {});
+    const layerResults = structuredClone(aiEvaluation.layer_results || aiEvaluation.layerResults || aiEvaluation.feedback?.layerResults || {});
+    const failedLayer = aiEvaluation.failed_layer || aiEvaluation.failedLayer || aiEvaluation.feedback?.failedLayer || "なし";
+    const failedLayerLabel = aiEvaluation.failed_layer_label || aiEvaluation.failedLayerLabel || aiEvaluation.feedback?.failedLayerLabel || "なし";
 
     return {
       evaluation_id: this._createId("EV"),
@@ -1455,21 +1466,21 @@ export class LocalJsonLearningProvider {
       followup_reason: aiEvaluation.followup_reason || aiEvaluation.followupReason || "",
       score,
       passed,
-      failed_layer: aiEvaluation.failed_layer || aiEvaluation.failedLayer || "なし",
-      failed_layer_label: aiEvaluation.failed_layer_label || aiEvaluation.failedLayerLabel || "なし",
-      layer_decisions: structuredClone(aiEvaluation.layer_decisions || aiEvaluation.layerDecisions || {}),
-      layer_results: structuredClone(aiEvaluation.layer_results || aiEvaluation.layerResults || {}),
+      failed_layer: failedLayer,
+      failed_layer_label: failedLayerLabel,
+      layer_decisions: layerDecisions,
+      layer_results: layerResults,
       rubric_title: aiEvaluation.rubric_title || aiEvaluation.rubricTitle || "",
       required_quotes: structuredClone(aiEvaluation.required_quotes || aiEvaluation.requiredQuotes || []),
       quotes: structuredClone(aiEvaluation.quotes || {}),
       good_materials: this._safeLearnerList(aiEvaluation.good_materials || aiEvaluation.goodMaterials, []),
       missing_materials: this._safeLearnerList(aiEvaluation.missing_materials || aiEvaluation.missingMaterials, []),
       rewrite_guidance: this._safeLearnerList(aiEvaluation.rewrite_guidance || aiEvaluation.rewriteGuidance, []),
-      missing_points: this._safeLearnerList(aiEvaluation.missing_points, []),
-      rewrite_points: this._safeLearnerList(aiEvaluation.rewrite_points, []),
-      growth_points: this._safeLearnerList(aiEvaluation.growth_points || aiEvaluation.growth_guidance, []),
+      missing_points: missingPoints,
+      rewrite_points: rewritePoints,
+      growth_points: growthPoints,
       reason: aiEvaluation.reason || aiEvaluation.summary || localReview.summary,
-      good_points: this._safeLearnerList(aiEvaluation.good_points || localReview.goodPoints, ["回答を自分の言葉で整理できています。"]),
+      good_points: goodPoints,
       improvement_points: improvementPoints,
       unmet_criteria: resultStatus === "good" ? [] : this._safeLearnerList(aiEvaluation.unmet_criteria || localReview.unmetCriteria, ["具体的な場面・数字・行動を1つ足してください。"]),
       next_question: aiEvaluation.next_question || aiEvaluation.next_action || localReview.followupQuestions?.[0] || this._miniWorkNextQuestion(miniWork, localReview.unmetCriteria),
@@ -1478,12 +1489,29 @@ export class LocalJsonLearningProvider {
       submission_count: retryCountBefore + 1,
       passed_at: resultStatus === "good" ? now : "",
       evaluated_at: aiEvaluation.evaluated_at || now,
+      feedback: {
+        summary: aiEvaluation.summary || aiEvaluation.feedback?.summary || localReview.summary || "",
+        goodPoints,
+        improvementPoints,
+        missingPoints,
+        rewritePoints,
+        growthPoints,
+        layerDecisions,
+        layerResults,
+        failedLayer,
+        failedLayerLabel
+      },
       feedback_json: JSON.stringify({
         summary: aiEvaluation.summary || localReview.summary || "",
-        goodPoints: aiEvaluation.good_points || localReview.goodPoints || [],
+        goodPoints,
         improvementPoints,
-        layerDecisions: aiEvaluation.layer_decisions || aiEvaluation.layerDecisions || {},
-        failedLayer: aiEvaluation.failed_layer || aiEvaluation.failedLayer || "なし",
+        missingPoints,
+        rewritePoints,
+        growthPoints,
+        layerDecisions,
+        layerResults,
+        failedLayer,
+        failedLayerLabel,
         quotes: aiEvaluation.quotes || {},
         needsFollowup: Boolean(aiEvaluation.needsFollowup || aiEvaluation.needs_followup),
         followupReason: aiEvaluation.followup_reason || aiEvaluation.followupReason || ""
@@ -2888,6 +2916,16 @@ export class LocalJsonLearningProvider {
   _normalizeRestoredEvaluation(evaluation = {}) {
     const targetType = this._normalizeRestoredTargetType(evaluation.target_type || evaluation.work_type || "");
     const resultStatus = this._normalizeRestoredUiStatus(evaluation.result_status || evaluation.status || "");
+    const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
+    const goodPoints = this._safeLearnerList(evaluation.good_points || evaluation.goodPoints || feedback.goodPoints, []);
+    const improvementPoints = this._safeLearnerList(evaluation.improvement_points || evaluation.improvementPoints || feedback.improvementPoints, []);
+    const missingPoints = this._safeLearnerList(evaluation.missing_points || evaluation.missingPoints || feedback.missingPoints, []);
+    const rewritePoints = this._safeLearnerList(evaluation.rewrite_points || evaluation.rewritePoints || feedback.rewritePoints, []);
+    const growthPoints = this._safeLearnerList(evaluation.growth_points || evaluation.growthPoints || feedback.growthPoints, []);
+    const layerDecisions = structuredClone(evaluation.layer_decisions || evaluation.layerDecisions || feedback.layerDecisions || {});
+    const layerResults = structuredClone(evaluation.layer_results || evaluation.layerResults || feedback.layerResults || {});
+    const failedLayer = evaluation.failed_layer || evaluation.failedLayer || feedback.failedLayer || "";
+    const failedLayerLabel = evaluation.failed_layer_label || evaluation.failedLayerLabel || feedback.failedLayerLabel || "";
     return {
       ...structuredClone(evaluation),
       evaluation_id: evaluation.evaluation_id || this._createId("RESTORE-EV"),
@@ -2897,8 +2935,27 @@ export class LocalJsonLearningProvider {
       result_status: resultStatus,
       status: resultStatus,
       score: Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : null,
-      good_points: this._safeLearnerList(evaluation.good_points || evaluation.goodPoints, []),
-      improvement_points: resultStatus === "good" ? [] : this._safeLearnerList(evaluation.improvement_points || evaluation.improvementPoints, []),
+      good_points: goodPoints,
+      improvement_points: resultStatus === "good" ? [] : improvementPoints,
+      missing_points: missingPoints,
+      rewrite_points: rewritePoints,
+      growth_points: growthPoints,
+      layer_decisions: layerDecisions,
+      layer_results: layerResults,
+      failed_layer: failedLayer,
+      failed_layer_label: failedLayerLabel,
+      feedback: {
+        ...structuredClone(feedback),
+        goodPoints,
+        improvementPoints,
+        missingPoints,
+        rewritePoints,
+        growthPoints,
+        layerDecisions,
+        layerResults,
+        failedLayer,
+        failedLayerLabel
+      },
       unmet_criteria: resultStatus === "good" ? [] : this._safeLearnerList(evaluation.unmet_criteria || evaluation.unmetCriteria, []),
       restored_from_sheets: true
     };
@@ -3064,6 +3121,7 @@ export class LocalJsonLearningProvider {
 
   _syncEvaluationPayload(evaluation, overrideStatus = "") {
     const status = overrideStatus || evaluation.standard_status || evaluation.status || evaluation.result_status || "";
+    const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
     return {
       ...structuredClone(evaluation || {}),
       status,
@@ -3076,9 +3134,17 @@ export class LocalJsonLearningProvider {
       needs_followup: Boolean(evaluation.needs_followup || evaluation.needsFollowup),
       reason: evaluation.reason || evaluation.summary || "",
       feedback: {
-        summary: evaluation.summary || evaluation.reason || "",
-        goodPoints: evaluation.good_points || evaluation.goodPoints || [],
-        improvementPoints: evaluation.improvement_points || evaluation.improvementPoints || []
+        ...structuredClone(feedback),
+        summary: feedback.summary || evaluation.summary || evaluation.reason || "",
+        goodPoints: evaluation.good_points || evaluation.goodPoints || feedback.goodPoints || [],
+        improvementPoints: evaluation.improvement_points || evaluation.improvementPoints || feedback.improvementPoints || [],
+        missingPoints: evaluation.missing_points || evaluation.missingPoints || feedback.missingPoints || [],
+        rewritePoints: evaluation.rewrite_points || evaluation.rewritePoints || feedback.rewritePoints || [],
+        growthPoints: evaluation.growth_points || evaluation.growthPoints || feedback.growthPoints || [],
+        layerDecisions: evaluation.layer_decisions || evaluation.layerDecisions || feedback.layerDecisions || {},
+        layerResults: evaluation.layer_results || evaluation.layerResults || feedback.layerResults || {},
+        failedLayer: evaluation.failed_layer || evaluation.failedLayer || feedback.failedLayer || "",
+        failedLayerLabel: evaluation.failed_layer_label || evaluation.failedLayerLabel || feedback.failedLayerLabel || ""
       },
       flags: evaluation.flags || {}
     };
