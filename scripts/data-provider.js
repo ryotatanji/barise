@@ -479,6 +479,9 @@ export class LocalJsonLearningProvider {
       now
     );
     const aiEvaluation = await this.aiClient.evaluateWork(payload);
+    if (this.aiClient.mode === "gateway" && aiEvaluation.detail_persisted !== true) {
+      throw new Error(SAVE_FAILURE_MESSAGE);
+    }
     const evaluation = this._convertMiniAiEvaluationToResult(
       miniWork,
       lesson,
