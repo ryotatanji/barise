@@ -1387,9 +1387,10 @@ export class LocalJsonLearningProvider {
     const retryCount = retryCountBefore + (passed ? 0 : 1);
     // v2は70点なら回数制限なく再提出できる。旧ログのsupport_neededは読込時にそのまま保持する。
     const resultStatus = passed ? "good" : "needs_more";
-    const improvementPoints = resultStatus === "good"
-      ? []
-      : this._safeLearnerList(aiEvaluation.improvement_points || localReview.improvementPoints, ["実際の場面・数字・次に取る行動を1つ足してください。"]);
+    const improvementPoints = this._safeLearnerList(
+      aiEvaluation.improvement_points || localReview.improvementPoints,
+      resultStatus === "good" ? [] : ["不足している固有基準の材料を足して再提出してください。"]
+    );
 
     return {
       evaluation_id: this._createId("EV"),
@@ -1420,6 +1421,9 @@ export class LocalJsonLearningProvider {
       good_materials: this._safeLearnerList(aiEvaluation.good_materials || aiEvaluation.goodMaterials, []),
       missing_materials: this._safeLearnerList(aiEvaluation.missing_materials || aiEvaluation.missingMaterials, []),
       rewrite_guidance: this._safeLearnerList(aiEvaluation.rewrite_guidance || aiEvaluation.rewriteGuidance, []),
+      missing_points: this._safeLearnerList(aiEvaluation.missing_points, []),
+      rewrite_points: this._safeLearnerList(aiEvaluation.rewrite_points, []),
+      growth_points: this._safeLearnerList(aiEvaluation.growth_points || aiEvaluation.growth_guidance, []),
       reason: aiEvaluation.reason || aiEvaluation.summary || localReview.summary,
       good_points: this._safeLearnerList(aiEvaluation.good_points || localReview.goodPoints, ["回答を自分の言葉で整理できています。"]),
       improvement_points: improvementPoints,

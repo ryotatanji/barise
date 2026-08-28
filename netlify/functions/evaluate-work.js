@@ -596,6 +596,42 @@ function normalizeMiniWorkQuotes(value, requiredQuotes = []) {
   return Object.fromEntries(requiredQuotes.map((label) => [label, safeText(fromArray[label] || "")]));
 }
 
+function buildMiniWorkLearnerFeedback({ rubric, calculated, quotes, goodMaterials, missingMaterials, rewriteGuidance }) {
+  const quotedGood = Object.entries(quotes)
+    .filter(([, quote]) => quote)
+    .map(([label, quote]) => `「${quote}」から、${label}が確認できます。`);
+  const metCore = ["L1", "L2", "L3"]
+    .filter((key) => calculated.layers[key] === "Yes")
+    .map((key) => `${rubric.layerLabels[key]}を満たしています。`);
+  const goodPoints = uniqueArray([...goodMaterials, ...quotedGood, ...metCore]).slice(0, 4);
+  const noLayerKeys = MINI_WORK_LAYER_KEYS.filter((key) => calculated.layers[key] === "No");
+  const layerMissing = noLayerKeys.map((key) => `${rubric.layerLabels[key]}がまだ確認できません。`);
+  const missingPoints = uniqueArray([...missingMaterials, ...layerMissing]).slice(0, 4);
+  const growthPoints = ["L4a", "L4b"]
+    .filter((key) => calculated.layers[key] === "No")
+    .map((key) => `${rubric.layerLabels[key]}を加えると、さらに点数を伸ばせます。`);
+  const failedLabel = calculated.failedLayer === "なし" ? "" : rubric.layerLabels[calculated.failedLayer];
+  const fallbackRewrite = failedLabel
+    ? [`${failedLabel}が読み取れる具体的な材料を回答に足してください。`]
+    : growthPoints;
+  const rewritePoints = uniqueArray([...rewriteGuidance, ...fallbackRewrite]).slice(0, 4);
+
+  let summary = `${calculated.score}点・${calculated.passed ? "合格" : "再提出"}です。`;
+  if (calculated.score === 70) {
+    summary += ` 最初に満たせなかったのは「${failedLabel}」です。回答は何度でも再提出できます。`;
+  } else if (calculated.score === 80) {
+    summary += ` 必須の3層を満たしています。「${rubric.layerLabels.L4a}」と「${rubric.layerLabels.L4b}」が次の伸びしろです。`;
+  } else if (calculated.score === 90) {
+    const met = calculated.layers.L4a === "Yes" ? rubric.layerLabels.L4a : rubric.layerLabels.L4b;
+    const growth = calculated.layers.L4a === "No" ? rubric.layerLabels.L4a : rubric.layerLabels.L4b;
+    summary += ` 「${met}」まで満たしています。「${growth}」が次の伸びしろです。`;
+  } else {
+    summary += " 必須の3層と2つの発展層をすべて満たしています。";
+  }
+
+  return { summary, goodPoints, missingPoints, rewritePoints, growthPoints };
+}
+
 function normalizeMiniWorkV2Evaluation(source, payload, evaluatedAt, rawModel) {
   const rubric = getMiniWorkV2Rubric(payload.miniWorkId || payload.workId);
   if (!rubric) throw new Error("validation_error");
@@ -609,9 +645,9 @@ function normalizeMiniWorkV2Evaluation(source, payload, evaluatedAt, rawModel) {
     label: rubric.layerLabels[key]
   }]));
   const failedLabel = calculated.failedLayer === "なし" ? "なし" : rubric.layerLabels[calculated.failedLayer];
-  const passedText = calculated.passed ? "合格" : "再提出";
   const metLayerLabels = MINI_WORK_LAYER_KEYS.filter((key) => calculated.layers[key] === "Yes").map((key) => rubric.layerLabels[key]);
   const unmetLayerLabels = MINI_WORK_LAYER_KEYS.filter((key) => calculated.layers[key] === "No").map((key) => rubric.layerLabels[key]);
+  const learnerFeedback = buildMiniWorkLearnerFeedback({ rubric, calculated, quotes, goodMaterials, missingMaterials, rewriteGuidance });
 
   return {
     schema_version: MINI_WORK_SCHEMA_VERSION,
@@ -648,17 +684,25 @@ function normalizeMiniWorkV2Evaluation(source, payload, evaluatedAt, rawModel) {
     missing_materials: missingMaterials,
     rewriteGuidance,
     rewrite_guidance: rewriteGuidance,
-    reason: `${rubric.title}の固有基準で${calculated.score}点（${passedText}）です。`,
+    growthGuidance: learnerFeedback.growthPoints,
+    growth_guidance: learnerFeedback.growthPoints,
+    reason: learnerFeedback.summary,
     feedback: {
-      summary: safeText(source.feedback?.summary || source.feedback) || `${calculated.score}点・${passedText}です。`,
-      goodPoints: goodMaterials,
-      improvementPoints: calculated.passed ? rewriteGuidance : uniqueArray([...missingMaterials, ...rewriteGuidance]).slice(0, 4)
+      summary: learnerFeedback.summary,
+      goodPoints: learnerFeedback.goodPoints,
+      missingPoints: learnerFeedback.missingPoints,
+      rewritePoints: learnerFeedback.rewritePoints,
+      growthPoints: learnerFeedback.growthPoints,
+      improvementPoints: uniqueArray([...learnerFeedback.missingPoints, ...learnerFeedback.rewritePoints]).slice(0, 4)
     },
-    good_points: goodMaterials,
-    improvement_points: calculated.passed ? rewriteGuidance : uniqueArray([...missingMaterials, ...rewriteGuidance]).slice(0, 4),
+    good_points: learnerFeedback.goodPoints,
+    missing_points: learnerFeedback.missingPoints,
+    rewrite_points: learnerFeedback.rewritePoints,
+    growth_points: learnerFeedback.growthPoints,
+    improvement_points: uniqueArray([...learnerFeedback.missingPoints, ...learnerFeedback.rewritePoints]).slice(0, 4),
     unmet_criteria: unmetLayerLabels,
     met_criteria: metLayerLabels,
-    nextQuestion: calculated.passed ? "次へ進みましょう。" : (rewriteGuidance[0] || `${failedLabel}が分かる材料を足して再提出してください。`),
+    nextQuestion: calculated.passed ? "次へ進みましょう。" : (learnerFeedback.rewritePoints[0] || `${failedLabel}が分かる材料を足して再提出してください。`),
     needsFollowup: !calculated.passed,
     needs_followup: !calculated.passed,
     flags: {
