@@ -640,7 +640,12 @@ function renderChapterRow(learning, phase) {
   `;
 
   if (stateName === "locked") {
-    return `<div class="ch-row is-locked" aria-label="${escapeAttribute(phase.phase_title)}（解放待ち）">${inner}</div>`;
+    return `
+      <div>
+        <button class="ch-row is-locked" type="button" disabled aria-disabled="true" aria-label="${escapeAttribute(phase.phase_title)}（解放待ち）">${inner}</button>
+        ${phase.gateMessage ? `<p class="phase-locked-note">${escapeHtml(phase.gateMessage)}</p>` : ""}
+      </div>
+    `;
   }
 
   const target = chapterTargetLesson(learning, phase);
@@ -697,7 +702,7 @@ function renderPhaseGroup(learning, phase, index) {
           <span class="ph-title"><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</span>
           <span class="ph-count">🔒 解放待ち</span>
         </div>
-        <p class="phase-locked-note">${escapeHtml(phase.phase_summary || "前の章を登りきると、この章の景色がひらけます。")}</p>
+        <p class="phase-locked-note">${escapeHtml(phase.gateMessage || phase.phase_summary || "前の章を登りきると、この章の景色がひらけます。")}</p>
       </section>
     `;
   }

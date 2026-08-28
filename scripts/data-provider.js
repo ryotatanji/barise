@@ -316,6 +316,7 @@ export class LocalJsonLearningProvider {
     const currentPhaseId = user.current_phase_id || db.phases[0]?.phase_id;
     const currentPhase = db.phases.find((phase) => phase.phase_id === currentPhaseId) || db.phases[0];
     const currentPhaseOrder = currentPhase?.phase_order || 1;
+    const phase2Gate = this._phase2GateState(db, emailNormalized, currentPhaseOrder, aiSessionsByWork);
 
     const phases = db.phases
       .slice()
@@ -328,23 +329,30 @@ export class LocalJsonLearningProvider {
 
         const completedCount = lessons.filter((lesson) => lesson.isComplete).length;
         const isCurrent = phase.phase_id === currentPhaseId;
+        const isPhase2 = Number(phase.phase_order) === 2;
+        const isAccessible = isPhase2
+          ? phase2Gate.unlocked
+          : (!phase.unlock_condition || phase.phase_order <= currentPhaseOrder);
 
         return {
           ...phase,
           lessons,
           isCurrent,
-          isAccessible: !phase.unlock_condition || phase.phase_order <= currentPhaseOrder,
+          isAccessible,
+          gateMessage: isPhase2 && !isAccessible ? phase2Gate.message : "",
+          gateReason: isPhase2 ? phase2Gate.reason : "",
           completedCount,
           lessonCount: lessons.length
         };
       });
 
     const allLessons = phases.flatMap((phase) => phase.lessons);
+    const accessibleLessons = phases.filter((phase) => phase.isAccessible).flatMap((phase) => phase.lessons);
     const works = this._buildWorkList(db, emailNormalized, phases, progressByLesson, aiSessionsByWork);
     const currentLesson =
-      allLessons.find((lesson) => !lesson.isComplete) ||
-      allLessons.find((lesson) => lesson.lesson_id === user.current_lesson_id) ||
-      allLessons[0] ||
+      accessibleLessons.find((lesson) => !lesson.isComplete) ||
+      accessibleLessons.find((lesson) => lesson.lesson_id === user.current_lesson_id) ||
+      accessibleLessons[0] ||
       null;
 
     return {
@@ -360,6 +368,33 @@ export class LocalJsonLearningProvider {
       evaluationResults: structuredClone(db.evaluationResults || []),
       progressSummary: this._buildProgressSummary(allLessons, works)
     };
+  }
+
+  _phase2GateState(db, email, currentPhaseOrder, aiSessionsByWork = new Map()) {
+    const guide = "フェーズ1の本ワーク『目標・目的設定』に合格するとフェーズ2へ進めます。";
+    const phase1Session = aiSessionsByWork.get("W-P1-05") || null;
+    const phase1SubmissionIds = new Set((db.submissions || [])
+      .filter((item) => item.email_normalized === email && item.target_type === "work" && item.target_id === "W-P1-05")
+      .map((item) => item.submission_id));
+    const phase1Passed = ["completed", "final_feedback_ready"].includes(phase1Session?.status) ||
+      (db.evaluationResults || []).some((item) => phase1SubmissionIds.has(item.submission_id) && item.result_status === "good");
+    const hasPhase2Progress = (db.progress || []).some((item) =>
+      item.email_normalized === email &&
+      String(item.phase_id || "").startsWith("P2") &&
+      [item.video_status, item.mini_work_status, item.work_status].some((status) =>
+        ["watched", "good", "needs_more", "support_needed", "submitted", "reviewing", "unlocked"].includes(status)
+      )
+    );
+    const hasPhase2Submission = (db.submissions || []).some((item) =>
+      item.email_normalized === email && /(?:MW-|W-)?P2-/.test(String(item.target_id || ""))
+    );
+    const grandfathered = Number(currentPhaseOrder) >= 2 || hasPhase2Progress || hasPhase2Submission;
+    const restoreAvailable = !this.lastRestoreError;
+
+    if (grandfathered) return { unlocked: true, reason: "existing_phase2_progress", message: "" };
+    if (!restoreAvailable) return { unlocked: false, reason: "restore_unavailable", message: guide };
+    if (phase1Passed) return { unlocked: true, reason: "phase1_goal_work_passed", message: "" };
+    return { unlocked: false, reason: phase1Session ? "phase1_goal_work_not_passed" : "phase1_goal_work_missing", message: guide };
   }
 
   async markVideoWatched(email, lessonId) {
