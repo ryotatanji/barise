@@ -1382,15 +1382,11 @@ export class LocalJsonLearningProvider {
   _convertMiniAiEvaluationToResult(miniWork, lesson, submission, criteria, localReview, aiEvaluation, retryCountBefore, now) {
     const standardStatus = aiEvaluation.standard_status || this._miniWorkStandardStatusFromInternal(aiEvaluation.status);
     const isAiError = aiEvaluation.status === "ai_error" || aiEvaluation.flags?.aiError;
-    const retryCount = retryCountBefore + (standardStatus === "retry" || isAiError ? 1 : 0);
-    const shouldReview = standardStatus === "review" || retryCount >= Number(miniWork.maxRetryBeforeReview || miniWork.max_retry_before_review || MINI_WORK_MAX_RETRY_BEFORE_REVIEW);
-    const resultStatus = isAiError
-      ? "failed"
-      : standardStatus === "pass"
-        ? "good"
-        : shouldReview
-          ? "support_needed"
-          : "needs_more";
+    const score = Number.isFinite(Number(aiEvaluation.score)) ? Number(aiEvaluation.score) : 70;
+    const passed = standardStatus === "pass" && score >= MINI_WORK_PASS_THRESHOLD;
+    const retryCount = retryCountBefore + (passed ? 0 : 1);
+    // v2は70点なら回数制限なく再提出できる。旧ログのsupport_neededは読込時にそのまま保持する。
+    const resultStatus = passed ? "good" : "needs_more";
     const improvementPoints = resultStatus === "good"
       ? []
       : this._safeLearnerList(aiEvaluation.improvement_points || localReview.improvementPoints, ["実際の場面・数字・次に取る行動を1つ足してください。"]);
@@ -1408,11 +1404,22 @@ export class LocalJsonLearningProvider {
       work_title: miniWork.workTitle || `${lesson.lesson_id} ミニワーク：${miniWork.title}`,
       work_purpose: miniWork.workPurpose || miniWork.goal || "",
       result_status: resultStatus,
-      standard_status: isAiError ? "retry" : (shouldReview && standardStatus !== "pass" ? "review" : standardStatus),
-      abc_grade: aiEvaluation.abc_grade || aiEvaluation.abcGrade || "",
+      standard_status: passed ? "pass" : "retry",
+      abc_grade: "",
       needs_followup: Boolean(aiEvaluation.needsFollowup || aiEvaluation.needs_followup),
       followup_reason: aiEvaluation.followup_reason || aiEvaluation.followupReason || "",
-      score: Number.isFinite(Number(aiEvaluation.score)) ? Number(aiEvaluation.score) : null,
+      score,
+      passed,
+      failed_layer: aiEvaluation.failed_layer || aiEvaluation.failedLayer || "なし",
+      failed_layer_label: aiEvaluation.failed_layer_label || aiEvaluation.failedLayerLabel || "なし",
+      layer_decisions: structuredClone(aiEvaluation.layer_decisions || aiEvaluation.layerDecisions || {}),
+      layer_results: structuredClone(aiEvaluation.layer_results || aiEvaluation.layerResults || {}),
+      rubric_title: aiEvaluation.rubric_title || aiEvaluation.rubricTitle || "",
+      required_quotes: structuredClone(aiEvaluation.required_quotes || aiEvaluation.requiredQuotes || []),
+      quotes: structuredClone(aiEvaluation.quotes || {}),
+      good_materials: this._safeLearnerList(aiEvaluation.good_materials || aiEvaluation.goodMaterials, []),
+      missing_materials: this._safeLearnerList(aiEvaluation.missing_materials || aiEvaluation.missingMaterials, []),
+      rewrite_guidance: this._safeLearnerList(aiEvaluation.rewrite_guidance || aiEvaluation.rewriteGuidance, []),
       reason: aiEvaluation.reason || aiEvaluation.summary || localReview.summary,
       good_points: this._safeLearnerList(aiEvaluation.good_points || localReview.goodPoints, ["回答を自分の言葉で整理できています。"]),
       improvement_points: improvementPoints,
@@ -1427,14 +1434,16 @@ export class LocalJsonLearningProvider {
         summary: aiEvaluation.summary || localReview.summary || "",
         goodPoints: aiEvaluation.good_points || localReview.goodPoints || [],
         improvementPoints,
-        abcGrade: aiEvaluation.abc_grade || aiEvaluation.abcGrade || "",
+        layerDecisions: aiEvaluation.layer_decisions || aiEvaluation.layerDecisions || {},
+        failedLayer: aiEvaluation.failed_layer || aiEvaluation.failedLayer || "なし",
+        quotes: aiEvaluation.quotes || {},
         needsFollowup: Boolean(aiEvaluation.needsFollowup || aiEvaluation.needs_followup),
         followupReason: aiEvaluation.followup_reason || aiEvaluation.followupReason || ""
       }),
       criteria_json: JSON.stringify(this._miniWorkCriteriaBundle(miniWork, criteria)),
       flags_json: JSON.stringify(aiEvaluation.flags || {}),
       normalized_response_json: JSON.stringify(aiEvaluation),
-      error_type: aiEvaluation.error_type || "",
+      error_type: isAiError ? (aiEvaluation.error_type || "ai_error") : (aiEvaluation.error_type || ""),
       error_message_safe: aiEvaluation.error_message_safe || ""
     };
   }

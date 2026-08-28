@@ -1,7 +1,7 @@
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-4o-mini";
 const WORK_SCHEMA_VERSION = "barise-work-evaluation-v1";
-const MINI_WORK_SCHEMA_VERSION = "barise-mini-work-evaluation-v1";
+const MINI_WORK_SCHEMA_VERSION = "barise-mini-work-evaluation-v2";
 const DEFAULT_TIMEOUT_MS = 20000; // V7.1採点是正: 12s→20s（偶発タイムアウトで良回答が0点になる事故を防ぐ）
 
 const ALLOWED_WORK_IDS = new Set([
@@ -23,6 +23,39 @@ const CRITERIA_KEYS = [
   "workPurposeFit",
   "lessonConnection"
 ];
+
+const MINI_WORK_LAYER_KEYS = ["L1", "L2", "L3", "L4a", "L4b"];
+
+// 評価基準v2の18本をIDで一意に選ぶ。点数・合否はこの定義ではなく
+// calculateMiniWorkScore() だけで決める。
+const MINI_WORK_V2_RUBRICS = {
+  "MW-P1-01": miniRubric("ビジネス遂行力", "行動の選択と3つの回答", "実践場面の具体性", "完了報告だけに限定しない理解", "現在の実践状況", "相手視点", ["選んだ行動", "実践する場面", "選んだ理由"]),
+  "MW-P1-02": miniRubric("自己管理・セルフマネジメント", "方法の選択と3つの回答", "実践場面の具体性", "やる気任せにしない理解", "現在の実践状況", "仕組み・環境による継続", ["選んだ方法", "実践する場面", "選んだ理由"]),
+  "MW-P1-03": miniRubric("タスク管理", "方法の選択と3つの回答", "対象タスク・場面の具体性", "忙しさを減らすだけにしない理解", "現在の実践状況", "捨てる判断と空いた時間の使い方", ["選んだ方法", "対象タスク", "選んだ理由"]),
+  "MW-P1-04": miniRubric("マスト1思考", "3件以上のタスクと最優先1件", "タスク名の具体性", "緊急度だけ・全部大事にしない理解", "選定の判断基準", "残りのタスクの扱い", ["タスク一覧", "選んだ1件", "選んだ理由"]),
+  "MW-P1-05": miniRubric("ビジョン", "Step 1・2・3と叶えたいこと1つ", "場所・相手・行動の具体性", "制限を外して考える理解", "Step 1・2とStep 3の接続", "年・年齢まで特定した期限", ["Step 1", "Step 2", "本当に叶えたいこと", "期限"]),
+  "MW-P1-06": miniRubric("自責思考の罠", "出来事・自分側・構造側の3点", "いつ何が起きたかの具体性", "自己否定・他責・同じ視点にしない理解", "自分側を行動で表す改善", "仕組み・構造を主語にした改善", ["出来事", "自分側の改善", "構造側の改善"]),
+  "MW-P1-07": miniRubric("言葉の定義", "具体と抽象の往復と2つの事柄", "対象業務の具体性", "細部や見た目だけにしない理解", "絞り込みの軸", "役割・機能・目的の共通性", ["対象業務", "絞り込み", "2つの事柄", "共通点"]),
+  "MW-P1-08": miniRubric("クリティカルシンキング", "実践方法の選択と3つの回答", "いつ・誰との場面かの具体性", "批判や全否定にしない理解", "現在の実践状況", "問い直す対象の特定", ["選んだ実践", "実践する場面", "選んだ理由"]),
+  "MW-P2-01": miniRubric("数値化の鬼", "対象業務1つと3つの回答", "数値・単位・振り返り方法", "結果でなく自分の行動量を測る理解", "数値を選んだ根拠", "未達時の打ち手", ["対象業務", "数値と単位", "振り返り方法"]),
+  "MW-P2-02": miniRubric("戦略と戦術", "目的・戦略・戦術の3層", "自身の業務への具体化", "3層を混同しない理解", "目的の受け手", "戦わない場所", ["目的", "戦略", "戦術"]),
+  "MW-P2-03": miniRubric("KPI", "KPI1つと3つの回答", "数値・単位・追跡方法", "KGIでなく制御可能な行動指標の理解", "KGIまでの経路", "経路を数量で示すこと", ["KPI", "KGIとの接続", "追跡方法"]),
+  "MW-P2-04": miniRubric("KPI地獄", "KPI2件以上と最優先1件", "各KPIの数値・単位", "全部大事や結果指標だけにしない理解", "KGIへ直結する理由", "絞らなかったKPIの扱い", ["KPI一覧と件数", "選んだKPI", "選んだ理由", "残りの扱い"]),
+  "MW-P2-05": miniRubric("イシュー", "課題・問い・サブイシュー", "いつ・どこで・何が起きるか", "行動やタスクでなく問いにする理解", "仮説を含む問い", "サブイシューの従属関係", ["課題", "問い", "サブイシュー"]),
+  "MW-P2-06": miniRubric("仮説思考", "課題・仮説・検証方法", "誰・何・データの具体性", "解決策や課題の言い換えにしない理解", "原因のメカニズム", "反証条件の設計", ["課題", "仮説", "検証方法"]),
+  "MW-P2-07": miniRubric("なぜなぜ分析", "事象・3回以上のなぜ・真因", "いつ何が起きたかの具体性", "対策や飛躍でなく原因をつなぐ理解", "5回以上掘る深さ", "仕組み・構造を主語にした真因", ["事象", "なぜの連鎖", "真因"]),
+  "MW-P2-08": miniRubric("ふりかえり", "K・P・Try・W・Mの5項目とTry1件", "実際の1週間の出来事", "自己批判にせずKを空にしない理解", "行動から得た新しい学び", "Mに対応する具体的な期待効果", ["Keep", "Problem", "Try", "Will/Learn", "Meaning"]),
+  "MW-P2-09": miniRubric("ピラミッドストラクチャー", "テーマ・3つの根拠・So What", "事実と伝える相手の具体性", "So Whatを根拠の要約にしない理解", "重複しない3つの観点", "行動につながる主張", ["テーマ", "3つの根拠", "So What"]),
+  "MW-P2-10": miniRubric("ロジックツリー", "課題・Why/How・2本以上の枝・優先1件", "枝と優先箇所の具体性", "WhyとHowを混ぜず2段階以上に分ける理解", "枝の重複・漏れを抑えた分解", "優先順位の比較軸", ["課題", "Why/How", "枝", "優先箇所", "選んだ理由"])
+};
+
+function miniRubric(title, l1, l2, l3, l4a, l4b, requiredQuotes) {
+  return {
+    title,
+    layerLabels: { L1: l1, L2: l2, L3: l3, L4a: l4a, L4b: l4b },
+    requiredQuotes
+  };
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -190,7 +223,7 @@ function validatePayload(payload) {
     throw new Error("validation_error");
   }
   if (payload.isMiniWork) {
-    if (!/^MW-P[0-9]+-[0-9]+/.test(payload.miniWorkId || payload.workId || "")) {
+    if (!getMiniWorkV2Rubric(payload.miniWorkId || payload.workId || "")) {
       throw new Error("validation_error");
     }
   } else if (!ALLOWED_WORK_IDS.has(payload.workId)) {
@@ -212,9 +245,6 @@ async function callOpenAi(payload, apiKey, model) {
     if (error && error.name === "AbortError") {
       // V7.1採点是正: タイムアウト時は1回リトライ（MW-P2-05は圧縮プロンプト、他は同プロンプトで再試行）
       try {
-        if (payload?.miniWorkId === "MW-P2-05") {
-          return await postOpenAiPrompt(payload, apiKey, model, buildMiniWorkCompactUserPrompt(payload), Math.max(timeoutMs, 20000));
-        }
         return await postOpenAiPrompt(payload, apiKey, model, buildUserPrompt(payload), timeoutMs);
       } catch (retryError) {
         throw new Error("openai_timeout");
@@ -239,7 +269,7 @@ async function postOpenAiPrompt(payload, apiKey, model, userPrompt, timeoutMs) {
       body: JSON.stringify({
         model,
         input: [
-          { role: "system", content: buildSystemPrompt() },
+          { role: "system", content: buildSystemPrompt(payload) },
           { role: "user", content: userPrompt }
         ],
         text: {
@@ -258,7 +288,18 @@ async function postOpenAiPrompt(payload, apiKey, model, userPrompt, timeoutMs) {
   }
 }
 
-function buildSystemPrompt() {
+function buildSystemPrompt(payload = {}) {
+  if (payload.isMiniWork) {
+    return [
+      "あなたはBariseミニワークの根拠抽出・層判定AIです。",
+      "対象ワーク固有の評価基準v2だけを使い、L1・L2・L3・L4a・L4bを判定してください。",
+      "各判定値は文字列のYesまたはNoだけです。迷う場合、欠損、不明、判定不能はNoです。",
+      "点数、合否、pass/retry、A/B/C、落ちた層は決めず、出力にも含めないでください。",
+      "回答中の根拠を短く引用し、良かった材料、不足材料、書き直し方を区別してください。",
+      "完成回答を代筆せず、受講者の経験・数値・業務実態を捏造しないでください。",
+      "返却は指定されたJSONのみです。"
+    ].join("\n");
+  }
   return [
     "あなたはBarise学習ページ内のワーク判定AIです。",
     "受講者の回答を、目的と判定基準に沿って評価してください。",
@@ -348,6 +389,43 @@ function buildWorkUserPrompt(payload) {
 }
 
 function buildMiniWorkUserPrompt(payload) {
+  const rubric = getMiniWorkV2Rubric(payload.miniWorkId || payload.workId);
+  return [
+    "以下のBariseミニワーク回答について、5層の判定と根拠材料だけを返してください。",
+    `miniWorkId: ${payload.miniWorkId || payload.workId}`,
+    `title: ${payload.workTitle}`,
+    "",
+    "受講者への問い:",
+    payload.learnerPromptFull || payload.workPurpose || "",
+    "",
+    "評価基準v2（この対象ID専用）:",
+    JSON.stringify(rubric, null, 2),
+    "",
+    "動画の核心メッセージ:",
+    JSON.stringify(payload.coreMessages || [], null, 2),
+    "",
+    "よくある誤解:",
+    JSON.stringify(payload.commonMisconceptions || [], null, 2),
+    "",
+    "判定ルール:",
+    "- L1は必要な回答欄・選択・件数が揃っているか。",
+    "- L2はこのワーク固有の具体性を満たすか。",
+    "- L3は核心を理解し、よくある誤解に1つも該当しないか。",
+    "- L4a/L4bは固有の発展条件をそれぞれ独立に判定する。",
+    "- 言い換えは意味で判定するが、推測で回答を補わない。迷えばNo。",
+    "- quotesはrequiredQuotesの各項目について回答本文に実在する短い引用だけを返す。該当なしは空文字。",
+    "- goodMaterials、missingMaterials、rewriteGuidanceは具体的に区別する。",
+    "",
+    "返却JSONスキーマ:",
+    JSON.stringify(createEmptyMiniWorkAiResponse(rubric), null, 2),
+    "",
+    "受講者回答:",
+    payload.userAnswer || ""
+  ].join("\n");
+}
+
+// 旧形式を読み込む後方互換の参照用。新規のAIリクエストには使用しない。
+function buildLegacyMiniWorkUserPrompt(payload) {
   return [
     "以下のBariseミニワーク回答を判定してください。",
     "",
@@ -476,8 +554,135 @@ function extractOutputText(body) {
   throw new Error("invalid_json");
 }
 
+function getMiniWorkV2Rubric(miniWorkId) {
+  return MINI_WORK_V2_RUBRICS[String(miniWorkId || "")] || null;
+}
+
+function createEmptyMiniWorkAiResponse(rubric = null) {
+  return {
+    layerDecisions: { L1: "No", L2: "No", L3: "No", L4a: "No", L4b: "No" },
+    quotes: Object.fromEntries((rubric?.requiredQuotes || []).map((label) => [label, ""])),
+    goodMaterials: [],
+    missingMaterials: [],
+    rewriteGuidance: [],
+    feedback: ""
+  };
+}
+
+function normalizeMiniWorkLayerDecisions(source = {}) {
+  const raw = source.layerDecisions || source.layer_decisions || source.layers || source;
+  return Object.fromEntries(MINI_WORK_LAYER_KEYS.map((key) => [key, raw?.[key] === "Yes" ? "Yes" : "No"]));
+}
+
+function calculateMiniWorkScore(layerDecisions = {}) {
+  const layers = normalizeMiniWorkLayerDecisions({ layerDecisions });
+  let score = 80;
+  if (layers.L1 === "No" || layers.L2 === "No" || layers.L3 === "No") {
+    score = 70;
+  } else if (layers.L4a === "Yes" && layers.L4b === "Yes") {
+    score = 100;
+  } else if (layers.L4a === "Yes" || layers.L4b === "Yes") {
+    score = 90;
+  }
+  const failedLayer = ["L1", "L2", "L3"].find((key) => layers[key] === "No") || "なし";
+  return { layers, score, passed: score >= 80, failedLayer };
+}
+
+function normalizeMiniWorkQuotes(value, requiredQuotes = []) {
+  const source = value && typeof value === "object" ? value : {};
+  const fromArray = Array.isArray(source)
+    ? Object.fromEntries(source.map((item) => [safeText(item?.label || item?.field), safeText(item?.quote)]).filter(([key]) => key))
+    : source;
+  return Object.fromEntries(requiredQuotes.map((label) => [label, safeText(fromArray[label] || "")]));
+}
+
+function normalizeMiniWorkV2Evaluation(source, payload, evaluatedAt, rawModel) {
+  const rubric = getMiniWorkV2Rubric(payload.miniWorkId || payload.workId);
+  if (!rubric) throw new Error("validation_error");
+  const calculated = calculateMiniWorkScore(normalizeMiniWorkLayerDecisions(source));
+  const quotes = normalizeMiniWorkQuotes(source.quotes || source.evidence?.quotes, rubric.requiredQuotes);
+  const goodMaterials = uniqueArray(source.goodMaterials || source.good_materials || source.evidence?.goodMaterials).slice(0, 4);
+  const missingMaterials = uniqueArray(source.missingMaterials || source.missing_materials || source.evidence?.missingMaterials).slice(0, 4);
+  const rewriteGuidance = uniqueArray(source.rewriteGuidance || source.rewrite_guidance || source.evidence?.rewriteGuidance).slice(0, 4);
+  const layerResults = Object.fromEntries(MINI_WORK_LAYER_KEYS.map((key) => [key, {
+    decision: calculated.layers[key],
+    label: rubric.layerLabels[key]
+  }]));
+  const failedLabel = calculated.failedLayer === "なし" ? "なし" : rubric.layerLabels[calculated.failedLayer];
+  const passedText = calculated.passed ? "合格" : "再提出";
+  const metLayerLabels = MINI_WORK_LAYER_KEYS.filter((key) => calculated.layers[key] === "Yes").map((key) => rubric.layerLabels[key]);
+  const unmetLayerLabels = MINI_WORK_LAYER_KEYS.filter((key) => calculated.layers[key] === "No").map((key) => rubric.layerLabels[key]);
+
+  return {
+    schema_version: MINI_WORK_SCHEMA_VERSION,
+    workType: "miniWork",
+    work_type: "miniWork",
+    miniWorkId: payload.miniWorkId || payload.workId,
+    mini_work_id: payload.miniWorkId || payload.workId,
+    parentLessonId: payload.parentLessonId || payload.context?.lessonId || "",
+    parent_lesson_id: payload.parentLessonId || payload.context?.lessonId || "",
+    workId: payload.workId,
+    work_id: payload.workId,
+    status: calculated.passed ? "pass" : "retry",
+    standard_status: calculated.passed ? "pass" : "retry",
+    abcGrade: "",
+    abc_grade: "",
+    score: calculated.score,
+    passed: calculated.passed,
+    failedLayer: calculated.failedLayer,
+    failed_layer: calculated.failedLayer,
+    failedLayerLabel: failedLabel,
+    failed_layer_label: failedLabel,
+    layerDecisions: calculated.layers,
+    layer_decisions: calculated.layers,
+    layerResults,
+    layer_results: layerResults,
+    rubricTitle: rubric.title,
+    rubric_title: rubric.title,
+    requiredQuotes: rubric.requiredQuotes,
+    required_quotes: rubric.requiredQuotes,
+    quotes,
+    goodMaterials,
+    good_materials: goodMaterials,
+    missingMaterials,
+    missing_materials: missingMaterials,
+    rewriteGuidance,
+    rewrite_guidance: rewriteGuidance,
+    reason: `${rubric.title}の固有基準で${calculated.score}点（${passedText}）です。`,
+    feedback: {
+      summary: safeText(source.feedback?.summary || source.feedback) || `${calculated.score}点・${passedText}です。`,
+      goodPoints: goodMaterials,
+      improvementPoints: calculated.passed ? rewriteGuidance : uniqueArray([...missingMaterials, ...rewriteGuidance]).slice(0, 4)
+    },
+    good_points: goodMaterials,
+    improvement_points: calculated.passed ? rewriteGuidance : uniqueArray([...missingMaterials, ...rewriteGuidance]).slice(0, 4),
+    unmet_criteria: unmetLayerLabels,
+    met_criteria: metLayerLabels,
+    nextQuestion: calculated.passed ? "次へ進みましょう。" : (rewriteGuidance[0] || `${failedLabel}が分かる材料を足して再提出してください。`),
+    needsFollowup: !calculated.passed,
+    needs_followup: !calculated.passed,
+    flags: {
+      needsHumanReview: false,
+      needsSupport: false,
+      needsFollowup: !calculated.passed,
+      aiError: Boolean(source.flags?.aiError),
+      policyWarning: Boolean(source.flags?.policyWarning)
+    },
+    meta: {
+      model: rawModel || DEFAULT_MODEL,
+      schemaVersion: MINI_WORK_SCHEMA_VERSION,
+      evaluatedAt
+    },
+    raw_model: rawModel || DEFAULT_MODEL,
+    evaluated_at: evaluatedAt
+  };
+}
+
 function normalizeEvaluation(raw = {}, payload, evaluatedAt, rawModel) {
   const source = raw && typeof raw === "object" ? raw : {};
+  if (payload.isMiniWork) {
+    return normalizeMiniWorkV2Evaluation(source, payload, evaluatedAt, rawModel);
+  }
   const flags = normalizeFlags(source.flags);
   let score = clampScore(source.score);
   const supportRequested = isSupportRequested(payload.userAnswer);
@@ -688,33 +893,23 @@ function createEmptyEvaluation(payload, status, evaluatedAt) {
 function createHeuristicEvaluation(payload, evaluatedAt) {
   if (payload.isMiniWork) {
     const assessment = assessMiniWorkRubric(payload);
-    const supportRequested = isSupportRequested(payload.userAnswer || "");
-    const review = supportRequested || (payload.submissionCount >= payload.maxRetryBeforeReview && assessment.status !== "pass");
-    const status = review ? "review" : assessment.status;
-    const evaluation = createEmptyEvaluation(payload, status, evaluatedAt);
-    evaluation.score = status === "review" ? 58 : assessment.score;
-    evaluation.abcGrade = status === "review" ? assessment.abcGrade : assessment.abcGrade;
-    evaluation.abc_grade = evaluation.abcGrade;
-    evaluation.needsFollowup = status === "retry" && assessment.needsFollowup;
-    evaluation.needs_followup = evaluation.needsFollowup;
-    evaluation.followupReason = assessment.followupReason;
-    evaluation.followup_reason = evaluation.followupReason;
-    evaluation.reason = assessment.reason;
-    evaluation.feedback.goodPoints = assessment.goodPoints;
-    evaluation.feedback.improvementPoints = status === "pass" ? [] : (
-      payload.miniWorkId === "MW-P1-01"
-        ? [miniWorkRetryMessage(payload, assessment)]
-        : assessment.unmetCriteria.slice(0, 2)
-    );
-    evaluation.nextQuestion = status === "pass" ? "次へ進みましょう。" : miniWorkFollowupQuestion(assessment, payload);
-    evaluation.flags.needsSupport = supportRequested;
-    evaluation.flags.needsHumanReview = status === "review" && !supportRequested;
-    evaluation.flags.tooAbstract = assessment.abcGrade !== "A";
-    evaluation.flags.missingConcreteExample = assessment.abcGrade !== "A";
-    evaluation.flags.missingLessonConnection = false;
-    evaluation.flags.needsFollowup = evaluation.needsFollowup;
-    evaluation.meta.model = "mock-fixed-json";
-    return evaluation;
+    const basePassed = assessment.status === "pass";
+    const advanced = Boolean(payload.isModelAnswer);
+    return {
+      layerDecisions: {
+        L1: basePassed ? "Yes" : "No",
+        L2: basePassed ? "Yes" : "No",
+        L3: basePassed ? "Yes" : "No",
+        L4a: advanced ? "Yes" : "No",
+        L4b: advanced ? "Yes" : "No"
+      },
+      quotes: {},
+      goodMaterials: assessment.goodPoints || [],
+      missingMaterials: basePassed ? [] : assessment.unmetCriteria || [],
+      rewriteGuidance: basePassed ? [] : [miniWorkFollowupQuestion(assessment, payload)],
+      feedback: basePassed ? "必須の3層を満たしています。" : "不足材料を足して再提出してください。",
+      flags: { aiError: false, policyWarning: false }
+    };
   }
 
   const workAssessment = assessWorkRubric(payload);
@@ -781,6 +976,17 @@ function createHeuristicEvaluation(payload, evaluatedAt) {
 
 function createFallbackEvaluation(payload, errorType, evaluatedAt) {
   const source = payload || { workId: "" };
+  if (payload?.isMiniWork) {
+    const evaluation = normalizeMiniWorkV2Evaluation({
+      ...createEmptyMiniWorkAiResponse(getMiniWorkV2Rubric(payload.miniWorkId || payload.workId)),
+      rewriteGuidance: ["入力内容は保存されています。時間を置いて再提出してください。"],
+      feedback: "AI判定に一時的な問題が発生したため、安全側で再提出としました。",
+      flags: { aiError: true }
+    }, payload, evaluatedAt, DEFAULT_MODEL);
+    evaluation.errorType = errorType || "openai_error";
+    evaluation.errorMessageSafe = safeErrorMessage(errorType);
+    return evaluation;
+  }
   // V7.1採点是正: タイムアウト/失敗時は「0点」にせず、決定論フロアのスコアで安全側に判定する。
   //   良い回答（必須要素充足=A相当）はAI確認が失敗しても合格を保証し、偶発的な0点不合格を根治。
   const assessment = payload && payload.isMiniWork
@@ -1629,3 +1835,11 @@ function safeErrorMessage(errorType) {
   };
   return messages[errorType] || messages.openai_error;
 }
+
+exports._test = {
+  MINI_WORK_V2_RUBRICS,
+  buildMiniWorkUserPrompt,
+  calculateMiniWorkScore,
+  normalizeMiniWorkLayerDecisions,
+  normalizeMiniWorkV2Evaluation
+};

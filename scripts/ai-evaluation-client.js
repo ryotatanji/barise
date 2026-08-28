@@ -1,5 +1,5 @@
 export const AI_EVALUATION_SCHEMA_VERSION = "barise-work-evaluation-v1";
-export const MINI_WORK_EVALUATION_SCHEMA_VERSION = "barise-mini-work-evaluation-v1";
+export const MINI_WORK_EVALUATION_SCHEMA_VERSION = "barise-mini-work-evaluation-v2";
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_UNMET_REASON = "回答本文が短く、具体的な場面・数字・判断理由が不足しています";
@@ -147,6 +147,9 @@ export class AiEvaluationClient {
   }
 
   normalizeEvaluation(rawEvaluation = {}, payload = {}, rawModel = "") {
+    if (isMiniWorkV2Evaluation(rawEvaluation, payload)) {
+      return normalizeMiniWorkV2ClientResult(rawEvaluation, payload, rawModel);
+    }
     const standard = normalizeStandardEvaluation(rawEvaluation, payload, rawModel);
     const localMet = toStringArray(payload?.local_review?.met_criteria || payload?.context?.localReview?.met_criteria);
     let standardStatus = standard.status;
@@ -247,6 +250,68 @@ export class AiEvaluationClient {
       errorMessageSafe: "AI判定に一時的な問題が発生しました。"
     }, payload, "gateway-error");
   }
+}
+
+function isMiniWorkV2Evaluation(raw = {}, payload = {}) {
+  const isMiniWork = payload?.workType === "miniWork" || payload?.isMiniWork || payload?.contentType === "miniWork";
+  return Boolean(isMiniWork && (raw.layerDecisions || raw.layer_decisions || raw.layerResults || raw.layer_results));
+}
+
+function normalizeMiniWorkV2ClientResult(raw = {}, payload = {}, rawModel = "") {
+  const score = Number(raw.score);
+  const passed = score >= 80 && (raw.standard_status || raw.status) === "pass";
+  const standardStatus = passed ? "pass" : "retry";
+  const layerDecisions = raw.layerDecisions || raw.layer_decisions || {};
+  const layerResults = raw.layerResults || raw.layer_results || {};
+  const goodPoints = toStringArray(raw.feedback?.goodPoints || raw.good_points || raw.goodMaterials || raw.good_materials);
+  const improvementPoints = toStringArray(raw.feedback?.improvementPoints || raw.improvement_points || raw.rewriteGuidance || raw.rewrite_guidance);
+  const nextQuestion = String(raw.nextQuestion || raw.next_question || "").trim();
+  const flags = normalizeFlags(raw.flags);
+  flags.needsFollowup = !passed;
+
+  return {
+    schema_version: MINI_WORK_EVALUATION_SCHEMA_VERSION,
+    work_type: "miniWork",
+    mini_work_id: raw.miniWorkId || raw.mini_work_id || payload.miniWorkId || payload.mini_work_id || "",
+    parent_lesson_id: raw.parentLessonId || raw.parent_lesson_id || payload.parentLessonId || payload.parent_lesson_id || "",
+    work_id: String(raw.workId || raw.work_id || payload.workId || payload.work_id || ""),
+    status: passed ? "passed" : "revision_required",
+    standard_status: standardStatus,
+    abc_grade: "",
+    abcGrade: "",
+    score: Number.isFinite(score) ? score : 70,
+    passed,
+    label: passed ? "合格" : "再提出",
+    summary: String(raw.feedback?.summary || raw.summary || raw.reason || "").trim(),
+    reason: String(raw.reason || raw.feedback?.summary || "").trim(),
+    good_points: goodPoints.slice(0, 4),
+    improvement_points: improvementPoints.slice(0, 4),
+    unmet_criteria: passed ? [] : toStringArray(raw.unmet_criteria),
+    met_criteria: toStringArray(raw.met_criteria),
+    next_action: nextQuestion || (passed ? "次へ進みましょう。" : "不足材料を足して再提出してください。"),
+    next_question: nextQuestion,
+    followup_questions: passed ? [] : [nextQuestion].filter(Boolean),
+    needsFollowup: !passed,
+    needs_followup: !passed,
+    failed_layer: raw.failedLayer || raw.failed_layer || "なし",
+    failed_layer_label: raw.failedLayerLabel || raw.failed_layer_label || "なし",
+    layer_decisions: structuredClone(layerDecisions),
+    layer_results: structuredClone(layerResults),
+    rubric_title: raw.rubricTitle || raw.rubric_title || "",
+    required_quotes: structuredClone(raw.requiredQuotes || raw.required_quotes || []),
+    quotes: structuredClone(raw.quotes || {}),
+    good_materials: toStringArray(raw.goodMaterials || raw.good_materials),
+    missing_materials: toStringArray(raw.missingMaterials || raw.missing_materials),
+    rewrite_guidance: toStringArray(raw.rewriteGuidance || raw.rewrite_guidance),
+    staff_feedback: normalizeStaffFeedback(standardStatus, flags),
+    safety_notes: ["AIは受講者の経験や数値を捏造せず、入力内容に基づいて評価します"],
+    flags,
+    criteria: normalizeCriteria(raw.criteria),
+    raw_model: raw.meta?.model || raw.raw_model || rawModel || DEFAULT_MODEL,
+    evaluated_at: raw.meta?.evaluatedAt || raw.evaluated_at || new Date().toISOString(),
+    error_type: raw.errorType || raw.error_type || "",
+    error_message_safe: raw.errorMessageSafe || raw.error_message_safe || ""
+  };
 }
 
 function normalizeStandardEvaluation(rawEvaluation = {}, payload = {}, rawModel = "") {
