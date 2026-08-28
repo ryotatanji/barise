@@ -98,6 +98,31 @@ export class AiEvaluationClient {
     const completionRatio = criteriaCount ? localMet.length / criteriaCount : (requiredCriteriaMet ? 1 : 0.35);
     const submissionCount = Number(payload?.submissionCount || payload?.submission_count || 1);
 
+    if (isMiniWork) {
+      // 本番の点数計算はevaluate-work.jsに集約。ゲートウェイがないローカル環境では
+      // 採点を模倣せず、全層Noの安全側70点fixtureだけを返す。
+      const layerDecisions = { L1: "No", L2: "No", L3: "No", L4a: "No", L4b: "No" };
+      return normalizeMiniWorkV2ClientResult({
+        schema_version: MINI_WORK_EVALUATION_SCHEMA_VERSION,
+        status: "retry",
+        standard_status: "retry",
+        score: 70,
+        layer_decisions: layerDecisions,
+        layer_results: Object.fromEntries(Object.entries(layerDecisions).map(([key, decision]) => [key, { decision, label: key }])),
+        failed_layer: "L1",
+        failed_layer_label: "評価ゲートウェイでの確認が必要です",
+        reason: "70点・再提出です。評価ゲートウェイへ接続して再確認してください。",
+        feedback: {
+          summary: "70点・再提出です。入力内容は保持されています。",
+          goodPoints: [],
+          improvementPoints: ["評価ゲートウェイへ接続して再確認してください。"]
+        },
+        next_question: "評価ゲートウェイへ接続して再確認してください。",
+        flags: { aiError: true },
+        meta: { model: "local-safe-fixture", evaluatedAt: new Date().toISOString() }
+      }, payload, "local-safe-fixture");
+    }
+
     let score = requiredCriteriaMet
       ? Math.max(82, Math.min(94, Math.round(80 + completionRatio * 14)))
       : Math.max(42, Math.min(79, Math.round(48 + completionRatio * 26)));

@@ -60,6 +60,7 @@ const ACTIONS = new Set([
   "getLearningState",
   "restoreLearningState",
   "markVideoWatched",
+  "setVideoCompletion",
   "submitMiniWork",
   "submitWork",
   "submitAiWorkAnswer",
@@ -201,8 +202,8 @@ exports.handler = async function handler(event) {
     let result;
     if (action === "getLearningState" || action === "restoreLearningState") {
       result = await restoreLearningState(context);
-    } else if (action === "markVideoWatched") {
-      result = await syncVideoWatched(context);
+    } else if (action === "markVideoWatched" || action === "setVideoCompletion") {
+      result = await syncVideoCompletion(context);
     } else {
       result = await syncWorkSubmission(context);
     }
@@ -264,8 +265,11 @@ async function authenticateRegistration(emailKey, config) {
   throw httpError(404, "not_found", "登録情報が見つかりませんでした。");
 }
 
-async function syncVideoWatched(context) {
-  const { payload, config, warnings, now } = context;
+async function syncVideoCompletion(context) {
+  const { payload, config, warnings, now, action } = context;
+  const completed = action === "markVideoWatched"
+    ? true
+    : payload.completed === true || payload.videoStatus === "watched" || payload.video_status === "watched";
   const watchedAt = payload.watchedAt || payload.watched_at || now;
   const videoId = String(payload.videoId || payload.video_id || payload.lessonId || payload.lesson_id || "").trim();
   const lessonId = String(payload.lessonId || payload.lesson_id || videoId).trim();
@@ -297,13 +301,13 @@ async function syncVideoWatched(context) {
     lessonId,
     videoTitle: payload.videoTitle || payload.video_title || "",
     category: payload.category || "video",
-    status: "watched",
+    status: completed ? "watched" : "not_started",
     isLatest: "TRUE",
-    viewedAt: watchedAt,
-    completedAt: watchedAt,
+    viewedAt: completed ? watchedAt : "",
+    completedAt: completed ? watchedAt : "",
     source: "web",
     updatedAt: now,
-    memo: ""
+    memo: completed ? "" : "completion_revoked"
   };
   await appendRow(config.progressSpreadsheetId, videoLog, VIDEO_LOG_FIELDS, values);
 
@@ -318,10 +322,10 @@ async function syncVideoWatched(context) {
       email: context.emailKey,
       name: context.registration.displayName,
       staff: context.registration.staff,
-      overallStatus: lessonId === "P1-00" || videoId === "P1-00" ? "watched" : undefined,
+      overallStatus: lessonId === "P1-00" || videoId === "P1-00" ? (completed ? "watched" : "not_started") : undefined,
       currentVideoId: videoId,
       currentVideoName: payload.videoTitle || payload.video_title || "",
-      lastViewedAt: watchedAt,
+      lastViewedAt: completed ? watchedAt : now,
       updatedAt: now
     }
   });
@@ -501,13 +505,15 @@ function restoreVideoState(sheet, emailKey, now) {
     }
     const row = selected.rowRef.row;
     const status = String(statusIndex >= 0 ? row[statusIndex] || "" : "").trim().toLowerCase();
-    const watchedAt = firstValue(row, [completedIndex, viewedIndex, updatedIndex, createdIndex]);
-    const watched = status === "watched" || status === "視聴済み" || Boolean(watchedAt);
+    const completedAt = firstValue(row, [completedIndex, viewedIndex]);
+    const updatedAt = firstValue(row, [updatedIndex, createdIndex]);
+    const explicitlyNotWatched = ["not_started", "unwatched", "未視聴", "未完了"].includes(status);
+    const watched = !explicitlyNotWatched && (status === "watched" || status === "視聴済み" || Boolean(completedAt));
     progress.push({
       lesson_id: selected.lessonId,
       video_id: selected.videoId,
       video_status: watched ? "watched" : "not_started",
-      updated_at: watchedAt || now,
+      updated_at: completedAt || updatedAt || now,
       source: "sheets"
     });
   });

@@ -819,14 +819,11 @@ function renderVideoBlock(lesson) {
   return `
     <section id="section-video" data-section="video" tabindex="-1" aria-label="動画">
       <div class="video2">${videoMarkup}</div>
-      ${isWatched
-        ? `<p class="watch-note"><i>✓</i> 視聴済み ・ 目安 ${escapeHtml(duration)}</p>`
-        : `
-          <button class="primary-button watch-button" type="button" data-action="mark-video" data-lesson-id="${escapeHtml(lesson.lesson_id)}">
-            動画を見たら視聴完了にする
-          </button>
-          <p class="submission-note">目安 ${escapeHtml(duration)}</p>
-        `}
+      ${isWatched ? `<p class="watch-note"><i>✓</i> 視聴済み ・ 目安 ${escapeHtml(duration)}</p>` : ""}
+      <button class="primary-button watch-button" type="button" data-action="toggle-video-completion" data-lesson-id="${escapeHtml(lesson.lesson_id)}" data-completed="${isWatched ? "true" : "false"}" aria-pressed="${isWatched ? "true" : "false"}">
+        ${isWatched ? "視聴完了を取り消す" : "動画を見たら視聴完了にする"}
+      </button>
+      ${isWatched ? "" : `<p class="submission-note">目安 ${escapeHtml(duration)}</p>`}
     </section>
   `;
 }
@@ -2509,15 +2506,16 @@ async function handleSubmitAiWork(event) {
   }
 }
 
-async function handleMarkVideo(button) {
+async function handleToggleVideoCompletion(button) {
   const originalButtonText = button.textContent;
+  const completed = button.dataset.completed === "true";
   clearInlineActionError(button);
   button.disabled = true;
   button.classList.add("is-loading");
   button.setAttribute("aria-busy", "true");
-  button.textContent = "記録しています";
+  button.textContent = completed ? "取り消しています" : "記録しています";
   try {
-    await provider.markVideoWatched(state.email, button.dataset.lessonId);
+    await provider.setVideoCompletion(state.email, button.dataset.lessonId, !completed);
     await refreshLearningState();
     render();
   } catch (error) {
@@ -2584,9 +2582,9 @@ document.addEventListener("click", async (event) => {
     window.location.reload();
   }
 
-  if (action === "mark-video") {
+  if (action === "toggle-video-completion") {
     try {
-      await handleMarkVideo(actionTarget);
+      await handleToggleVideoCompletion(actionTarget);
     } catch (error) {
       renderError(error.message);
     }

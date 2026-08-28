@@ -176,6 +176,7 @@ export class LocalJsonLearningProvider {
     this.syncFallbackToLocal = true;
     this.restoreCache = new Map();
     this.lastRestoreError = null;
+    this.lastRestoredAiWorkIds = new Set();
     this.memoryState = null;
     this.storageAvailable = true;
   }
@@ -373,11 +374,9 @@ export class LocalJsonLearningProvider {
   _phase2GateState(db, email, currentPhaseOrder, aiSessionsByWork = new Map()) {
     const guide = "フェーズ1の本ワーク『目標・目的設定』に合格するとフェーズ2へ進めます。";
     const phase1Session = aiSessionsByWork.get("W-P1-05") || null;
-    const phase1SubmissionIds = new Set((db.submissions || [])
-      .filter((item) => item.email_normalized === email && item.target_type === "work" && item.target_id === "W-P1-05")
-      .map((item) => item.submission_id));
-    const phase1Passed = ["completed", "final_feedback_ready"].includes(phase1Session?.status) ||
-      (db.evaluationResults || []).some((item) => phase1SubmissionIds.has(item.submission_id) && item.result_status === "good");
+    const phase1Passed = this.lastRestoredAiWorkIds.has("W-P1-05") &&
+      phase1Session?.restored_from_sheets &&
+      ["completed", "final_feedback_ready"].includes(phase1Session.status);
     const hasPhase2Progress = (db.progress || []).some((item) =>
       item.email_normalized === email &&
       String(item.phase_id || "").startsWith("P2") &&
@@ -398,24 +397,34 @@ export class LocalJsonLearningProvider {
   }
 
   async markVideoWatched(email, lessonId) {
+    return this.setVideoCompletion(email, lessonId, true);
+  }
+
+  async setVideoCompletion(email, lessonId, completed) {
     const db = this._read();
     const emailNormalized = normalizeEmail(email);
     const lesson = db.lessons.find((item) => item.lesson_id === lessonId);
     if (!lesson) throw new Error("レッスンが見つかりません。");
     const now = this._now();
 
-    await this._syncLearningEvent("markVideoWatched", {
+    const syncResult = await this._syncLearningEvent("setVideoCompletion", {
       email: emailNormalized,
       lessonId: lesson.lesson_id,
       videoId: lesson.lesson_id,
       videoTitle: lesson.lesson_title || "",
       phaseId: lesson.phase_id,
+      completed: Boolean(completed),
+      videoStatus: completed ? "watched" : "not_started",
       watchedAt: now,
       clientEventId: this._createId("VID")
     });
+    if (syncResult?.ok === false) {
+      await this._restoreLearningState(emailNormalized, { force: true });
+      throw new Error(SAVE_FAILURE_MESSAGE);
+    }
 
     const progress = this._getOrCreateProgress(db, emailNormalized, lesson);
-    progress.video_status = "watched";
+    progress.video_status = completed ? "watched" : "not_started";
     progress.updated_at = now;
 
     this._touchUser(db, emailNormalized, lesson.phase_id, lesson.lesson_id);
@@ -2809,6 +2818,9 @@ export class LocalJsonLearningProvider {
     db.submissions = db.submissions || [];
     db.evaluationResults = db.evaluationResults || [];
     db.aiWorkSessions = db.aiWorkSessions || [];
+    this.lastRestoredAiWorkIds = new Set((restored.aiWorkSessions || [])
+      .map((session) => String(session.work_id || session.workId || "").trim())
+      .filter(Boolean));
 
     (restored.clearedTargets || []).forEach((target) => this._clearRestoredTarget(db, email, target));
 
@@ -3144,6 +3156,10 @@ export class SpreadsheetApiLearningProvider {
 
   async markVideoWatched(email, lessonId) {
     return this._request("markVideoWatched", { email, lessonId });
+  }
+
+  async setVideoCompletion(email, lessonId, completed) {
+    return this._request("setVideoCompletion", { email, lessonId, completed });
   }
 
   async submitMiniWork(email, miniWorkId, answerText) {
