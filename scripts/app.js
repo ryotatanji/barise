@@ -53,6 +53,18 @@ function padChapter(order) {
   return String(Number(order) || 0).padStart(2, "0");
 }
 
+function isFinalPhase(phase) {
+  return phase?.phase_id === "FINAL";
+}
+
+function phaseNumberLabel(phase) {
+  return isFinalPhase(phase) ? "" : padChapter(phase?.phase_order);
+}
+
+function phaseChapterLabel(phase) {
+  return isFinalPhase(phase) ? "" : kanjiChapter(phase?.phase_order);
+}
+
 /* ============================================================
    トゥイーンエンジン（デモのGSAP演出タイミングを移植・依存ゼロ）
    ============================================================ */
@@ -466,7 +478,8 @@ function renderLogin(errorMessage = "", emailValue = getLastEmail(), showSupport
 function renderHomeTop(learning) {
   const d = new Date();
   const currentPhase = learning.currentPhase;
-  const sub = `${d.getMonth() + 1}/${d.getDate()}${currentPhase ? ` ・ ${escapeHtml(kanjiChapter(currentPhase.phase_order))}` : ""}`;
+  const chapterLabel = phaseChapterLabel(currentPhase);
+  const sub = `${d.getMonth() + 1}/${d.getDate()}${chapterLabel ? ` ・ ${escapeHtml(chapterLabel)}` : ""}`;
   return `
     <div class="top">
       <a href="#/home" aria-label="Barise ホーム"><img class="brand-img" src="${config.brandLogo}" alt="Barise" width="108"></a>
@@ -626,7 +639,7 @@ function renderChapterRow(learning, phase) {
   const done = Number(phase.completedCount || 0);
   const total = Number(phase.lessonCount || 0);
   const pct = total ? Math.round((done / total) * 100) : 0;
-  const no = padChapter(phase.phase_order);
+  const no = phaseNumberLabel(phase);
 
   let stateMarkup = `<span class="ch-state">これから</span>`;
   if (stateName === "done") stateMarkup = `<span class="ch-state done">★ クリア</span>`;
@@ -634,7 +647,7 @@ function renderChapterRow(learning, phase) {
   if (stateName === "locked") stateMarkup = `<span class="ch-state lock">🔒 解放待ち</span>`;
 
   const inner = `
-    <b><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</b>
+    <b>${no ? `<span class="no">${no}</span>` : ""}${escapeHtml(phase.phase_title)}</b>
     ${stateMarkup}
     <div class="ch-mini"><div class="mbar"><span style="width:${pct}%"></span></div><em>${done}/${total}</em></div>
   `;
@@ -692,14 +705,14 @@ function renderPhaseGroup(learning, phase, index) {
   const stateName = chapterState(learning, phase);
   const done = Number(phase.completedCount || 0);
   const total = Number(phase.lessonCount || 0);
-  const no = padChapter(phase.phase_order);
+  const no = phaseNumberLabel(phase);
   const riseClass = index < 4 ? ` rise rise-${index}` : "";
 
   if (stateName === "locked") {
     return `
       <section class="phase-group${riseClass}" aria-label="${escapeAttribute(phase.phase_title)}（解放待ち）">
         <div class="phase-head">
-          <span class="ph-title"><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</span>
+          <span class="ph-title">${no ? `<span class="no">${no}</span>` : ""}${escapeHtml(phase.phase_title)}</span>
           <span class="ph-count">🔒 解放待ち</span>
         </div>
         <p class="phase-locked-note">${escapeHtml(phase.gateMessage || phase.phase_summary || "前の章を登りきると、この章の景色がひらけます。")}</p>
@@ -710,7 +723,7 @@ function renderPhaseGroup(learning, phase, index) {
   return `
     <section class="phase-group${riseClass}" aria-label="${escapeAttribute(phase.phase_title)}">
       <div class="phase-head">
-        <span class="ph-title"><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</span>
+        <span class="ph-title">${no ? `<span class="no">${no}</span>` : ""}${escapeHtml(phase.phase_title)}</span>
         <span class="ph-count${stateName === "done" ? " done" : ""}">${stateName === "done" ? "★ クリア " : ""}${done}/${total}</span>
       </div>
       ${phase.lessons.map((lesson) => renderLessonRow(learning, phase, lesson)).join("") || `<p class="phase-locked-note">この章の教材は順次ひらいていきます。</p>`}
@@ -788,10 +801,10 @@ function renderLesson(lessonId, section = "") {
 
   app.innerHTML = `
     <div class="stage" data-enter="${dir}">
-      ${renderBackTop("#/learning", "戻る", `${phase ? kanjiChapter(phase.phase_order) : ""} ・ ${lesson.lesson_id}`)}
+      ${renderBackTop("#/learning", "戻る", [phaseChapterLabel(phase), lesson.lesson_id].filter(Boolean).join(" ・ "))}
       <main>
         <div class="lesson-title">
-          <p class="lt-k">CHAPTER ${padChapter(phase?.phase_order)}</p>
+          <p class="lt-k">${isFinalPhase(phase) ? "最終まとめ" : `CHAPTER ${padChapter(phase?.phase_order)}`}</p>
           <h1>${escapeHtml(lesson.lesson_title)}</h1>
         </div>
 
