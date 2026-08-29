@@ -1008,7 +1008,6 @@ function renderEvaluationResultCard(evaluation, label) {
   const score = Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : null;
   const resultHelp = getEvaluationResultHelp(evaluation.result_status);
   const isPassed = evaluation.result_status === "good";
-  const nextTitle = isPassed ? "次に進む前に" : "次に意識すること";
   const resultKind = label === "ミニワーク" ? "mini-work" : "work";
   if (resultKind === "mini-work" && hasMiniWorkV2Feedback(evaluation)) {
     return renderMiniWorkScoreCard(evaluation, label);
@@ -1016,8 +1015,7 @@ function renderEvaluationResultCard(evaluation, label) {
   const resultId = resultKind === "mini-work" ? ` id="mini-work-evaluation-result"` : "";
   const goodPoints = uniqueLearnerItems(evaluation.good_points || []).slice(0, 3);
   const improvementPoints = isPassed ? [] : uniqueLearnerItems(evaluation.improvement_points || []).filter((item) => !goodPoints.includes(item)).slice(0, 3);
-  const nextActionText = evaluation.next_action_text || (isPassed ? "次へ進みましょう" : "もう一度具体化する");
-  const nextQuestion = !isPassed && evaluation.next_question && evaluation.next_question !== nextActionText
+  const nextQuestion = !isPassed && evaluation.next_question
     ? evaluation.next_question
     : "";
 
@@ -1041,12 +1039,24 @@ function renderEvaluationResultCard(evaluation, label) {
           </div>
         ` : ""}
       </div>
-      <div class="ev-next">
-        <span>${escapeHtml(nextTitle)}</span>
-        <strong>${escapeHtml(nextActionText)}</strong>
-        ${nextQuestion ? `<p>${escapeHtml(nextQuestion)}</p>` : ""}
-      </div>
+      ${nextQuestion ? `<div class="ev-next-question"><h4>追加質問</h4><p>${escapeHtml(nextQuestion)}</p></div>` : ""}
+      ${renderEvaluationNextAction(isPassed)}
     </section>
+  `;
+}
+
+function renderEvaluationNextAction(isPassed) {
+  const heading = isPassed ? "合格です。次のレッスンへ進めます" : "再提出でクリアを目指しましょう";
+  const body = isPassed
+    ? "点数とフィードバックを確認したら、次のレッスンへ進んでください。"
+    : "不足している材料・書き直し方・追加質問を確認し、回答に足して再提出してください。";
+  const cta = isPassed ? "次のレッスンへ" : "回答を書き直す";
+  return `
+    <div class="ev-next" data-evaluation-next-action="${isPassed ? "pass" : "retry"}">
+      <h4>${heading}</h4>
+      <p>${body}</p>
+      <button class="ghost-button" type="button" data-action="${isPassed ? "go-next-lesson" : "rewrite-mini-work"}">${cta}</button>
+    </div>
   `;
 }
 
@@ -1095,10 +1105,7 @@ function renderMiniWorkScoreCard(evaluation, label) {
         ${growthPoints.length ? `<div><h4>次の成長ポイント</h4><ul>${growthPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
         ${additionalQuestions.length ? `<div><h4>追加質問</h4><ol>${additionalQuestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol></div>` : ""}
       </div>
-      <div class="ev-next">
-        <span>${passed ? "判定" : "再提出について"}</span>
-        <strong>${passed ? "合格です。次へ進めます" : "回答は何度でも再提出できます"}</strong>
-      </div>
+      ${renderEvaluationNextAction(passed)}
     </section>
   `;
 }
@@ -2286,8 +2293,8 @@ async function handleSubmitWork(event) {
           feedback: buildJudgeFeedback(evaluation),
           scoreNote: "SCORE / 合格80",
           buttonLabel: passed
-            ? "次の一歩へ →"
-            : (evaluation.result_status === "support_needed" ? "内容を確認する" : "もう一度整理する"),
+            ? "次のレッスンへ"
+            : (evaluation.result_status === "support_needed" ? "内容を確認する" : "回答を書き直す"),
           onNext: () => {
             closeJudgeOverlay();
             if (passed && grew) {
@@ -2636,6 +2643,21 @@ document.addEventListener("click", async (event) => {
       render();
     } catch (error) {
       renderError(error.message);
+    }
+  }
+
+  if (action === "go-next-lesson") {
+    const route = parseRoute();
+    const lesson = route.name === "lesson" ? findLessonContext(state.learning, route.lessonId)?.lesson : null;
+    const nextLesson = lesson ? getNextLesson(state.learning, lesson) : null;
+    window.location.hash = nextLesson ? hashForLesson(nextLesson.lesson_id, "video") : "#/learning";
+  }
+
+  if (action === "rewrite-mini-work") {
+    const textarea = document.querySelector('.work-form[data-form="mini-work"] textarea[name="answer"]');
+    if (textarea) {
+      scrollToTarget(textarea);
+      textarea.focus({ preventScroll: true });
     }
   }
 });
