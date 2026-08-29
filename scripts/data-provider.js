@@ -354,6 +354,7 @@ export class LocalJsonLearningProvider {
     const allLessons = phases.flatMap((phase) => phase.lessons);
     const accessibleLessons = phases.filter((phase) => phase.isAccessible).flatMap((phase) => phase.lessons);
     const works = this._buildWorkList(db, emailNormalized, phases, progressByLesson, aiSessionsByWork);
+    const clearedWorks = this._buildClearedWorkList(db, emailNormalized, phases);
     const currentLesson =
       accessibleLessons.find((lesson) => !lesson.isComplete) ||
       accessibleLessons.find((lesson) => lesson.lesson_id === user.current_lesson_id) ||
@@ -366,6 +367,7 @@ export class LocalJsonLearningProvider {
       currentPhase: phases.find((phase) => phase.phase_id === currentPhaseId) || phases[0],
       currentLesson,
       works,
+      clearedWorks,
       aiWorkSessions: structuredClone(aiSessions),
       aiEvaluationLogs: structuredClone((db.aiEvaluationLogs || []).filter((log) => log.email_normalized === emailNormalized)),
       staffFeedbackQueue: structuredClone((db.staffFeedbackQueue || []).filter((item) => item.email_normalized === emailNormalized)),
@@ -855,6 +857,7 @@ export class LocalJsonLearningProvider {
       progress: structuredClone(data.progress || []),
       submissions: structuredClone(data.submissions || []),
       evaluationResults: structuredClone(data.evaluationResults || []),
+      clearedWorkResults: structuredClone(data.clearedWorkResults || []),
       aiWorkSessions: structuredClone(data.aiWorkSessions || []),
       aiEvaluationLogs: structuredClone(data.aiEvaluationLogs || []),
       staffFeedbackQueue: structuredClone(data.staffFeedbackQueue || []),
@@ -878,6 +881,7 @@ export class LocalJsonLearningProvider {
       progress: stored.progress || initial.progress,
       submissions: stored.submissions || initial.submissions,
       evaluationResults: stored.evaluationResults || initial.evaluationResults,
+      clearedWorkResults: stored.clearedWorkResults || initial.clearedWorkResults,
       aiWorkSessions: stored.aiWorkSessions || initial.aiWorkSessions,
       aiEvaluationLogs: stored.aiEvaluationLogs || initial.aiEvaluationLogs,
       staffFeedbackQueue: stored.staffFeedbackQueue || initial.staffFeedbackQueue,
@@ -1703,6 +1707,118 @@ export class LocalJsonLearningProvider {
       });
   }
 
+  _buildClearedWorkList(db, email, phases) {
+    const evaluationBySubmissionId = new Map(
+      (db.evaluationResults || [])
+        .filter((evaluation) => evaluation.submission_id)
+        .map((evaluation) => [evaluation.submission_id, evaluation])
+    );
+    const latestByTarget = new Map();
+    const addCandidate = (candidate) => {
+      const targetId = String(candidate.target_id || "").trim();
+      if (!targetId) return;
+      const current = latestByTarget.get(targetId);
+      const candidateTime = Date.parse(candidate.submitted_at || 0) || 0;
+      const currentTime = current ? (Date.parse(current.submitted_at || 0) || 0) : -1;
+      if (!current || candidateTime >= currentTime) latestByTarget.set(targetId, candidate);
+    };
+
+    // Sheets復元側ですでに「各workの最新合格／完了1件」に絞られた結果。
+    (db.clearedWorkResults || []).forEach((result) => addCandidate(structuredClone(result)));
+
+    // 提出直後はrestoreを待たず、ブラウザ内の確定済み評価を同じ一覧へ反映する。
+    (db.submissions || [])
+      .filter((submission) => submission.email_normalized === email)
+      .filter((submission) => ["good", "completed", "pass", "passed"].includes(String(submission.status || "").toLowerCase()))
+      .forEach((submission) => addCandidate({
+        submission_id: submission.submission_id,
+        target_type: submission.target_type,
+        target_id: submission.target_id,
+        work_id: submission.target_id,
+        mini_work_id: submission.target_type === "mini_work" ? submission.target_id : "",
+        answer_text: submission.answer_text || "",
+        result_status: "good",
+        score: submission.score,
+        submitted_at: submission.submitted_at,
+        evaluation: structuredClone(evaluationBySubmissionId.get(submission.submission_id) || {}),
+        restored_from_sheets: Boolean(submission.restored_from_sheets)
+      }));
+
+    // AI本ワークはセッションに回答と最終評価を保持するため、完了セッションも候補にする。
+    (db.aiWorkSessions || [])
+      .filter((session) => session.email_normalized === email)
+      .filter((session) => ["completed", "final_feedback_ready"].includes(session.status))
+      .forEach((session) => addCandidate({
+        submission_id: session.latest_submission_id || session.restored_submission_id || session.session_id,
+        target_type: "work",
+        target_id: session.work_id,
+        work_id: session.work_id,
+        lesson_id: session.lesson_id || "",
+        work_title: session.work_title || "",
+        answer_text: session.latest_revision_answer || session.initial_answer || "",
+        result_status: "good",
+        score: session.ai_score !== undefined && session.ai_score !== null && String(session.ai_score).trim() !== "" && Number.isFinite(Number(session.ai_score))
+          ? Number(session.ai_score)
+          : null,
+        submitted_at: session.completed_at || session.updated_at || session.created_at || "",
+        evaluation: structuredClone(session.ai_evaluation_result || {
+          result_status: "good",
+          score: session.ai_score,
+          reason: session.ai_final_feedback || session.ai_summary || "",
+          good_points: session.good_points || [],
+          improvement_points: session.improvement_points || []
+        }),
+        restored_from_sheets: Boolean(session.restored_from_sheets)
+      }));
+
+    const phaseOrderById = new Map(phases.map((phase) => [phase.phase_id, Number(phase.phase_order || 99)]));
+    const lessonOrderById = new Map((db.lessons || []).map((lesson) => [lesson.lesson_id, Number(lesson.lesson_order || 99)]));
+    return Array.from(latestByTarget.values()).map((result) => {
+      const isMiniWork = result.target_type === "mini_work" || String(result.target_id).startsWith("MW-");
+      const miniWork = isMiniWork ? (db.miniWorks || []).find((item) => item.mini_work_id === result.target_id) : null;
+      const work = !isMiniWork ? (db.works || []).find((item) => item.work_id === result.target_id) : null;
+      const phaseId = miniWork?.phase_id || work?.phase_id || String(result.target_id || "").split("-").slice(1, 2)[0] || "";
+      const relatedLessonId = miniWork?.lesson_id || result.lesson_id || this._relatedLessonIdsForWork(work || {})[0] || "";
+      const evaluation = result.evaluation && typeof result.evaluation === "object" ? result.evaluation : {};
+      const rawScore = result.score ?? evaluation.score;
+      const score = rawScore !== undefined && rawScore !== null && String(rawScore).trim() !== "" && Number.isFinite(Number(rawScore))
+        ? Number(rawScore)
+        : null;
+      return {
+        submission_id: result.submission_id || "",
+        target_type: isMiniWork ? "mini_work" : "work",
+        target_id: result.target_id,
+        phase_id: phaseId,
+        phase_order: phaseOrderById.get(phaseId) || 99,
+        lesson_id: relatedLessonId,
+        lesson_order: lessonOrderById.get(relatedLessonId) || 99,
+        work_order: Number(miniWork?.mini_work_order || work?.work_order || 99),
+        title: miniWork?.title || work?.title || result.work_title || result.target_id,
+        question: isMiniWork
+          ? (miniWork?.learner_prompt_full || miniWork?.prompt || "")
+          : (Array.isArray(work?.questions) ? work.questions.filter(Boolean) : []),
+        answer_text: String(result.answer_text || ""),
+        score,
+        result_status: "good",
+        submitted_at: result.submitted_at || "",
+        evaluation: {
+          ...structuredClone(evaluation),
+          submission_id: result.submission_id || evaluation.submission_id || "",
+          target_type: isMiniWork ? "mini_work" : "work",
+          target_id: result.target_id,
+          result_status: "good",
+          score
+        }
+      };
+    }).sort((a, b) =>
+      a.phase_order - b.phase_order ||
+      a.lesson_order - b.lesson_order ||
+      (a.target_type === b.target_type ? 0 : (a.target_type === "mini_work" ? -1 : 1)) ||
+      a.work_order - b.work_order ||
+      a.target_id.localeCompare(b.target_id)
+    );
+  }
+
   _getOrCreateAiWorkSession(db, email, work, user, now) {
     db.aiWorkSessions = db.aiWorkSessions || [];
     let session = db.aiWorkSessions.find((item) => item.email_normalized === email && item.work_id === work.work_id);
@@ -2142,6 +2258,7 @@ export class LocalJsonLearningProvider {
 
   _applyAiEvaluationMeta(session, evaluation, payload, now) {
     session.ai_evaluation_result = structuredClone(evaluation);
+    session.latest_submission_id = payload.submission_id || payload.submissionId || session.latest_submission_id || "";
     session.ai_score = evaluation.score;
     session.ai_label = evaluation.label;
     session.ai_prompt_text = payload.prompt_text;
@@ -2881,6 +2998,9 @@ export class LocalJsonLearningProvider {
     db.submissions = db.submissions || [];
     db.evaluationResults = db.evaluationResults || [];
     db.aiWorkSessions = db.aiWorkSessions || [];
+    db.clearedWorkResults = Array.isArray(restored.clearedWorkResults)
+      ? structuredClone(restored.clearedWorkResults)
+      : [];
     this.lastRestoredAiWorkIds = new Set((restored.aiWorkSessions || [])
       .map((session) => String(session.work_id || session.workId || "").trim())
       .filter(Boolean));

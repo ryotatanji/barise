@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-2-12-r3";
+} from "./data-provider.js?v=7-3-0-wave2a";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -579,6 +579,8 @@ function renderHome() {
           </section>
         `}
 
+        ${renderClearedWorksSection(learning.clearedWorks || [])}
+
         <section class="ch-list rise rise-2" aria-label="章の一覧">
           <p class="ch-h">CHAPTERS</p>
           ${learning.phases
@@ -615,6 +617,84 @@ function renderHome() {
       setHomeRing(percent);
     }
   });
+}
+
+function renderClearedWorksSection(clearedWorks = []) {
+  const cards = clearedWorks.map((work) => renderClearedWorkCard(work)).join("");
+  return `
+    <section class="cleared-works rise rise-2" aria-labelledby="cleared-works-title">
+      <div class="sec-h-row">
+        <h2 class="sec-h" id="cleared-works-title">クリア済みワーク</h2>
+        ${clearedWorks.length ? `<span class="sec-count">${clearedWorks.length}件</span>` : ""}
+      </div>
+      ${cards || `<p class="empty-note">クリア済みワークはまだありません</p>`}
+    </section>
+  `;
+}
+
+function renderClearedWorkCard(work = {}) {
+  const phaseLabel = work.phase_id === "FINAL" ? "最終まとめ" : `フェーズ${String(work.phase_id || "").replace(/^P/, "")}`;
+  const typeLabel = work.target_type === "mini_work" ? "ミニワーク" : "ワーク";
+  const hasScore = work.score !== null && work.score !== undefined && String(work.score).trim() !== "";
+  const score = hasScore && Number.isFinite(Number(work.score)) ? Number(work.score) : null;
+  const question = Array.isArray(work.question)
+    ? `<ol>${work.question.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`
+    : `<p class="cleared-work-text">${escapeHtml(work.question || "")}</p>`;
+  return `
+    <details class="cleared-work-card" data-cleared-work-id="${escapeAttribute(work.target_id || "")}">
+      <summary>
+        <span class="cleared-work-meta">${escapeHtml(phaseLabel)} ・ ${escapeHtml(typeLabel)}</span>
+        <strong>${escapeHtml(work.title || work.target_id || "ワーク")}</strong>
+        <span class="cleared-work-result">${score === null ? "完了" : `${score}点`} ・ ${work.target_type === "mini_work" ? "合格" : "完了"}</span>
+      </summary>
+      <div class="cleared-work-body">
+        ${work.question && (Array.isArray(work.question) ? work.question.length : String(work.question).trim()) ? `<section><h3>設問</h3>${question}</section>` : ""}
+        <section><h3>自分の回答</h3><p class="cleared-work-text">${escapeHtml(work.answer_text || "")}</p></section>
+        <dl class="cleared-work-judgement">
+          ${score === null ? "" : `<div><dt>点数</dt><dd>${score}点</dd></div>`}
+          <div><dt>判定</dt><dd>${work.target_type === "mini_work" ? "合格" : "完了"}</dd></div>
+          ${work.submitted_at ? `<div><dt>提出</dt><dd>${escapeHtml(formatDate(work.submitted_at))}</dd></div>` : ""}
+        </dl>
+        ${renderClearedWorkFeedback(work.evaluation || {}, work.target_type)}
+      </div>
+    </details>
+  `;
+}
+
+function renderClearedWorkFeedback(evaluation = {}, targetType = "") {
+  const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
+  const goodPoints = uniqueLearnerItems(evaluation.good_points || evaluation.goodPoints || feedback.goodPoints || evaluation.good_materials || []);
+  const missingPoints = uniqueLearnerItems(evaluation.missing_points || evaluation.missingPoints || feedback.missingPoints || []);
+  const rewritePoints = uniqueLearnerItems(evaluation.rewrite_points || evaluation.rewritePoints || feedback.rewritePoints || []);
+  const growthPoints = uniqueLearnerItems(evaluation.growth_points || evaluation.growthPoints || feedback.growthPoints || []);
+  const improvementPoints = uniqueLearnerItems(evaluation.improvement_points || evaluation.improvementPoints || feedback.improvementPoints || []);
+  const summary = String(feedback.summary || evaluation.reason || evaluation.summary || "").trim();
+  const isV2 = targetType === "mini_work" && hasMiniWorkV2Feedback(evaluation);
+  if (isV2) {
+    const sections = [
+      ["良かった材料", goodPoints],
+      ["改善余地", missingPoints],
+      ["改善のヒント", rewritePoints],
+      ["次の成長ポイント", growthPoints]
+    ].filter(([, items]) => items.length);
+    return `
+      <section class="cleared-work-feedback" aria-label="フィードバック">
+        <h3>フィードバック</h3>
+        ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
+        ${sections.map(([heading, items]) => `<div><h4>${heading}</h4><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`).join("")}
+      </section>
+    `;
+  }
+
+  const fallbackGoodPoints = goodPoints.length ? goodPoints : ["回答を出して、考える材料を言葉にできています。"];
+  return `
+    <section class="cleared-work-feedback" aria-label="フィードバック">
+      <h3>フィードバック</h3>
+      ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
+      <div><h4>良い点</h4><ul>${fallbackGoodPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+      ${improvementPoints.length ? `<div><h4>改善ポイント</h4><ul>${improvementPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+    </section>
+  `;
 }
 
 function chapterState(learning, phase) {
