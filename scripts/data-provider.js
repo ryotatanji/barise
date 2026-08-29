@@ -1,4 +1,4 @@
-import { AiEvaluationClient } from "./ai-evaluation-client.js?v=5-1-2";
+import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-2-12-r3";
 
 const DATA_URL = "./data/learning-data.json?v=5-1-2";
 const STORAGE_KEY = "barise-learning-local-state:v11";
@@ -175,7 +175,11 @@ export class LocalJsonLearningProvider {
     this.syncEndpointUrl = "";
     this.syncFallbackToLocal = true;
     this.restoreCache = new Map();
+    this.initialRestoreCompleted = new Set();
+    this.restoreRequestGeneration = new Map();
+    this.learningMutationGeneration = new Map();
     this.lastRestoreError = null;
+    this.lastRestoredAiWorkIds = new Set();
     this.memoryState = null;
     this.storageAvailable = true;
   }
@@ -239,7 +243,8 @@ export class LocalJsonLearningProvider {
     user.updated_at = this._now();
     this._write(db);
 
-    await this._restoreLearningState(emailNormalized, { force: true });
+    this._prepareInitialRestore(emailNormalized);
+    await this._restoreLearningState(emailNormalized, { initialLoad: true });
     const restoredDb = this._read();
     const restoredUser = restoredDb.users.find((item) => item.email_normalized === emailNormalized) || user;
 
@@ -282,7 +287,7 @@ export class LocalJsonLearningProvider {
 
   async getLearningState(email) {
     const emailNormalized = normalizeEmail(email);
-    await this._restoreLearningState(emailNormalized);
+    await this._restoreLearningState(emailNormalized, { initialLoad: true });
     const db = this._read();
     const user = db.users.find((item) => item.email_normalized === emailNormalized);
 
@@ -316,6 +321,7 @@ export class LocalJsonLearningProvider {
     const currentPhaseId = user.current_phase_id || db.phases[0]?.phase_id;
     const currentPhase = db.phases.find((phase) => phase.phase_id === currentPhaseId) || db.phases[0];
     const currentPhaseOrder = currentPhase?.phase_order || 1;
+    const phase2Gate = this._phase2GateState(db, emailNormalized, currentPhaseOrder, aiSessionsByWork);
 
     const phases = db.phases
       .slice()
@@ -328,23 +334,30 @@ export class LocalJsonLearningProvider {
 
         const completedCount = lessons.filter((lesson) => lesson.isComplete).length;
         const isCurrent = phase.phase_id === currentPhaseId;
+        const isPhase2 = Number(phase.phase_order) === 2;
+        const isAccessible = isPhase2
+          ? phase2Gate.unlocked
+          : (!phase.unlock_condition || phase.phase_order <= currentPhaseOrder);
 
         return {
           ...phase,
           lessons,
           isCurrent,
-          isAccessible: !phase.unlock_condition || phase.phase_order <= currentPhaseOrder,
+          isAccessible,
+          gateMessage: isPhase2 && !isAccessible ? phase2Gate.message : "",
+          gateReason: isPhase2 ? phase2Gate.reason : "",
           completedCount,
           lessonCount: lessons.length
         };
       });
 
     const allLessons = phases.flatMap((phase) => phase.lessons);
+    const accessibleLessons = phases.filter((phase) => phase.isAccessible).flatMap((phase) => phase.lessons);
     const works = this._buildWorkList(db, emailNormalized, phases, progressByLesson, aiSessionsByWork);
     const currentLesson =
-      allLessons.find((lesson) => !lesson.isComplete) ||
-      allLessons.find((lesson) => lesson.lesson_id === user.current_lesson_id) ||
-      allLessons[0] ||
+      accessibleLessons.find((lesson) => !lesson.isComplete) ||
+      accessibleLessons.find((lesson) => lesson.lesson_id === user.current_lesson_id) ||
+      accessibleLessons[0] ||
       null;
 
     return {
@@ -362,25 +375,59 @@ export class LocalJsonLearningProvider {
     };
   }
 
+  _phase2GateState(db, email, currentPhaseOrder, aiSessionsByWork = new Map()) {
+    const guide = "フェーズ1の本ワーク『目標・目的設定』に合格するとフェーズ2へ進めます。";
+    const phase1Session = aiSessionsByWork.get("W-P1-05") || null;
+    const phase1Passed = this.lastRestoredAiWorkIds.has("W-P1-05") &&
+      phase1Session?.restored_from_sheets &&
+      ["completed", "final_feedback_ready"].includes(phase1Session.status);
+    const hasPhase2Progress = (db.progress || []).some((item) =>
+      item.email_normalized === email &&
+      String(item.phase_id || "").startsWith("P2") &&
+      [item.video_status, item.mini_work_status, item.work_status].some((status) =>
+        ["watched", "good", "needs_more", "support_needed", "submitted", "reviewing", "unlocked"].includes(status)
+      )
+    );
+    const hasPhase2Submission = (db.submissions || []).some((item) =>
+      item.email_normalized === email && /(?:MW-|W-)?P2-/.test(String(item.target_id || ""))
+    );
+    const grandfathered = Number(currentPhaseOrder) >= 2 || hasPhase2Progress || hasPhase2Submission;
+    const restoreAvailable = !this.lastRestoreError;
+
+    if (grandfathered) return { unlocked: true, reason: "existing_phase2_progress", message: "" };
+    if (!restoreAvailable) return { unlocked: false, reason: "restore_unavailable", message: guide };
+    if (phase1Passed) return { unlocked: true, reason: "phase1_goal_work_passed", message: "" };
+    return { unlocked: false, reason: phase1Session ? "phase1_goal_work_not_passed" : "phase1_goal_work_missing", message: guide };
+  }
+
   async markVideoWatched(email, lessonId) {
+    return this.setVideoCompletion(email, lessonId, true);
+  }
+
+  async setVideoCompletion(email, lessonId, completed) {
     const db = this._read();
     const emailNormalized = normalizeEmail(email);
     const lesson = db.lessons.find((item) => item.lesson_id === lessonId);
     if (!lesson) throw new Error("レッスンが見つかりません。");
     const now = this._now();
 
-    await this._syncLearningEvent("markVideoWatched", {
+    const syncResult = await this._syncLearningEvent("setVideoCompletion", {
       email: emailNormalized,
       lessonId: lesson.lesson_id,
       videoId: lesson.lesson_id,
       videoTitle: lesson.lesson_title || "",
       phaseId: lesson.phase_id,
+      completed: Boolean(completed),
+      videoStatus: completed ? "watched" : "not_started",
       watchedAt: now,
       clientEventId: this._createId("VID")
     });
+    if (syncResult?.ok === false) {
+      throw new Error(SAVE_FAILURE_MESSAGE);
+    }
 
     const progress = this._getOrCreateProgress(db, emailNormalized, lesson);
-    progress.video_status = "watched";
+    progress.video_status = completed ? "watched" : "not_started";
     progress.updated_at = now;
 
     this._touchUser(db, emailNormalized, lesson.phase_id, lesson.lesson_id);
@@ -401,8 +448,11 @@ export class LocalJsonLearningProvider {
     db.aiEvaluationLogs = db.aiEvaluationLogs || [];
     db.staffFeedbackQueue = db.staffFeedbackQueue || [];
 
+    this._markLearningMutation(emailNormalized);
+    const aiLogId = this._createId("AI-MW-LOG");
     const submission = {
       submission_id: this._createId("SUB"),
+      ai_log_id: aiLogId,
       email_normalized: emailNormalized,
       target_type: "mini_work",
       target_id: miniWorkId,
@@ -429,6 +479,9 @@ export class LocalJsonLearningProvider {
       now
     );
     const aiEvaluation = await this.aiClient.evaluateWork(payload);
+    if (this.aiClient.mode === "gateway" && aiEvaluation.detail_persisted !== true) {
+      throw new Error(SAVE_FAILURE_MESSAGE);
+    }
     const evaluation = this._convertMiniAiEvaluationToResult(
       miniWork,
       lesson,
@@ -467,7 +520,8 @@ export class LocalJsonLearningProvider {
       submittedAt: now,
       retryCount: evaluation.retry_count,
       evaluation: this._syncEvaluationPayload(evaluation, effectiveResultStatus),
-      clientSubmissionId: submission.submission_id
+      clientSubmissionId: submission.submission_id,
+      aiLogId
     });
 
     progress.mini_work_status = effectiveResultStatus;
@@ -1251,6 +1305,8 @@ export class LocalJsonLearningProvider {
       requestId,
       submission_id: submission.submission_id,
       submissionId: submission.submission_id,
+      ai_log_id: submission.ai_log_id || "",
+      aiLogId: submission.ai_log_id || "",
       user_id: user?.user_id || "",
       user: {
         userId: user?.user_id || "",
@@ -1382,22 +1438,31 @@ export class LocalJsonLearningProvider {
   _convertMiniAiEvaluationToResult(miniWork, lesson, submission, criteria, localReview, aiEvaluation, retryCountBefore, now) {
     const standardStatus = aiEvaluation.standard_status || this._miniWorkStandardStatusFromInternal(aiEvaluation.status);
     const isAiError = aiEvaluation.status === "ai_error" || aiEvaluation.flags?.aiError;
-    const retryCount = retryCountBefore + (standardStatus === "retry" || isAiError ? 1 : 0);
-    const shouldReview = standardStatus === "review" || retryCount >= Number(miniWork.maxRetryBeforeReview || miniWork.max_retry_before_review || MINI_WORK_MAX_RETRY_BEFORE_REVIEW);
-    const resultStatus = isAiError
-      ? "failed"
-      : standardStatus === "pass"
-        ? "good"
-        : shouldReview
-          ? "support_needed"
-          : "needs_more";
-    const improvementPoints = resultStatus === "good"
-      ? []
-      : this._safeLearnerList(aiEvaluation.improvement_points || localReview.improvementPoints, ["実際の場面・数字・次に取る行動を1つ足してください。"]);
+    const score = Number.isFinite(Number(aiEvaluation.score)) ? Number(aiEvaluation.score) : 70;
+    const passed = standardStatus === "pass" && score >= MINI_WORK_PASS_THRESHOLD;
+    const retryCount = retryCountBefore + (passed ? 0 : 1);
+    // v2は70点なら回数制限なく再提出できる。旧ログのsupport_neededは読込時にそのまま保持する。
+    const resultStatus = passed ? "good" : "needs_more";
+    const improvementPoints = this._safeLearnerList(
+      aiEvaluation.improvement_points || aiEvaluation.feedback?.improvementPoints || localReview.improvementPoints,
+      resultStatus === "good" ? [] : ["不足している固有基準の材料を足して再提出してください。"]
+    );
+    const goodPoints = this._safeLearnerList(
+      aiEvaluation.good_points || aiEvaluation.feedback?.goodPoints || localReview.goodPoints,
+      ["回答を自分の言葉で整理できています。"]
+    );
+    const missingPoints = this._safeLearnerList(aiEvaluation.missing_points || aiEvaluation.feedback?.missingPoints, []);
+    const rewritePoints = this._safeLearnerList(aiEvaluation.rewrite_points || aiEvaluation.feedback?.rewritePoints, []);
+    const growthPoints = this._safeLearnerList(aiEvaluation.growth_points || aiEvaluation.growth_guidance || aiEvaluation.feedback?.growthPoints, []);
+    const layerDecisions = structuredClone(aiEvaluation.layer_decisions || aiEvaluation.layerDecisions || aiEvaluation.feedback?.layerDecisions || {});
+    const layerResults = structuredClone(aiEvaluation.layer_results || aiEvaluation.layerResults || aiEvaluation.feedback?.layerResults || {});
+    const failedLayer = aiEvaluation.failed_layer || aiEvaluation.failedLayer || aiEvaluation.feedback?.failedLayer || "なし";
+    const failedLayerLabel = aiEvaluation.failed_layer_label || aiEvaluation.failedLayerLabel || aiEvaluation.feedback?.failedLayerLabel || "なし";
 
     return {
       evaluation_id: this._createId("EV"),
       submission_id: submission.submission_id,
+      ai_log_id: submission.ai_log_id || aiEvaluation.ai_log_id || "",
       criteria_id: criteria?.criteria_id || miniWork.evaluation_criteria_id || null,
       target_type: "mini_work",
       target_id: miniWork.mini_work_id,
@@ -1408,13 +1473,27 @@ export class LocalJsonLearningProvider {
       work_title: miniWork.workTitle || `${lesson.lesson_id} ミニワーク：${miniWork.title}`,
       work_purpose: miniWork.workPurpose || miniWork.goal || "",
       result_status: resultStatus,
-      standard_status: isAiError ? "retry" : (shouldReview && standardStatus !== "pass" ? "review" : standardStatus),
-      abc_grade: aiEvaluation.abc_grade || aiEvaluation.abcGrade || "",
+      standard_status: passed ? "pass" : "retry",
+      abc_grade: "",
       needs_followup: Boolean(aiEvaluation.needsFollowup || aiEvaluation.needs_followup),
       followup_reason: aiEvaluation.followup_reason || aiEvaluation.followupReason || "",
-      score: Number.isFinite(Number(aiEvaluation.score)) ? Number(aiEvaluation.score) : null,
+      score,
+      passed,
+      failed_layer: failedLayer,
+      failed_layer_label: failedLayerLabel,
+      layer_decisions: layerDecisions,
+      layer_results: layerResults,
+      rubric_title: aiEvaluation.rubric_title || aiEvaluation.rubricTitle || "",
+      required_quotes: structuredClone(aiEvaluation.required_quotes || aiEvaluation.requiredQuotes || []),
+      quotes: structuredClone(aiEvaluation.quotes || {}),
+      good_materials: this._safeLearnerList(aiEvaluation.good_materials || aiEvaluation.goodMaterials, []),
+      missing_materials: this._safeLearnerList(aiEvaluation.missing_materials || aiEvaluation.missingMaterials, []),
+      rewrite_guidance: this._safeLearnerList(aiEvaluation.rewrite_guidance || aiEvaluation.rewriteGuidance, []),
+      missing_points: missingPoints,
+      rewrite_points: rewritePoints,
+      growth_points: growthPoints,
       reason: aiEvaluation.reason || aiEvaluation.summary || localReview.summary,
-      good_points: this._safeLearnerList(aiEvaluation.good_points || localReview.goodPoints, ["回答を自分の言葉で整理できています。"]),
+      good_points: goodPoints,
       improvement_points: improvementPoints,
       unmet_criteria: resultStatus === "good" ? [] : this._safeLearnerList(aiEvaluation.unmet_criteria || localReview.unmetCriteria, ["具体的な場面・数字・行動を1つ足してください。"]),
       next_question: aiEvaluation.next_question || aiEvaluation.next_action || localReview.followupQuestions?.[0] || this._miniWorkNextQuestion(miniWork, localReview.unmetCriteria),
@@ -1423,18 +1502,37 @@ export class LocalJsonLearningProvider {
       submission_count: retryCountBefore + 1,
       passed_at: resultStatus === "good" ? now : "",
       evaluated_at: aiEvaluation.evaluated_at || now,
+      feedback: {
+        summary: aiEvaluation.summary || aiEvaluation.feedback?.summary || localReview.summary || "",
+        goodPoints,
+        improvementPoints,
+        missingPoints,
+        rewritePoints,
+        growthPoints,
+        layerDecisions,
+        layerResults,
+        failedLayer,
+        failedLayerLabel
+      },
       feedback_json: JSON.stringify({
         summary: aiEvaluation.summary || localReview.summary || "",
-        goodPoints: aiEvaluation.good_points || localReview.goodPoints || [],
+        goodPoints,
         improvementPoints,
-        abcGrade: aiEvaluation.abc_grade || aiEvaluation.abcGrade || "",
+        missingPoints,
+        rewritePoints,
+        growthPoints,
+        layerDecisions,
+        layerResults,
+        failedLayer,
+        failedLayerLabel,
+        quotes: aiEvaluation.quotes || {},
         needsFollowup: Boolean(aiEvaluation.needsFollowup || aiEvaluation.needs_followup),
         followupReason: aiEvaluation.followup_reason || aiEvaluation.followupReason || ""
       }),
       criteria_json: JSON.stringify(this._miniWorkCriteriaBundle(miniWork, criteria)),
       flags_json: JSON.stringify(aiEvaluation.flags || {}),
       normalized_response_json: JSON.stringify(aiEvaluation),
-      error_type: aiEvaluation.error_type || "",
+      error_type: isAiError ? (aiEvaluation.error_type || "ai_error") : (aiEvaluation.error_type || ""),
       error_message_safe: aiEvaluation.error_message_safe || ""
     };
   }
@@ -1471,7 +1569,7 @@ export class LocalJsonLearningProvider {
   _storeMiniWorkEvaluationLog(db, email, miniWork, lesson, submission, payload, aiEvaluation, evaluation, now) {
     db.aiEvaluationLogs = db.aiEvaluationLogs || [];
     db.aiEvaluationLogs.push({
-      log_id: this._createId("AI-MW-LOG"),
+      log_id: submission.ai_log_id || payload.ai_log_id || payload.aiLogId || this._createId("AI-MW-LOG"),
       submission_id: submission.submission_id,
       request_id: payload.request_id,
       user_id: payload.user_id || "",
@@ -2719,15 +2817,31 @@ export class LocalJsonLearningProvider {
     }
   }
 
+  _prepareInitialRestore(email) {
+    const emailNormalized = normalizeEmail(email);
+    this.initialRestoreCompleted.delete(emailNormalized);
+    this.restoreCache.delete(emailNormalized);
+    this.restoreRequestGeneration.set(emailNormalized, (this.restoreRequestGeneration.get(emailNormalized) || 0) + 1);
+  }
+
+  _markLearningMutation(email) {
+    const emailNormalized = normalizeEmail(email);
+    this.learningMutationGeneration.set(emailNormalized, (this.learningMutationGeneration.get(emailNormalized) || 0) + 1);
+    // 提出開始後は、先に開始していたrestoreも後続のgetLearningStateも適用させない。
+    this.initialRestoreCompleted.add(emailNormalized);
+  }
+
   async _restoreLearningState(email, options = {}) {
     const emailNormalized = normalizeEmail(email);
     if (!this.syncEndpointUrl || !emailNormalized || !isValidEmailFormat(emailNormalized)) return { ok: true, skipped: true };
-
-    const now = Date.now();
-    const lastRestoreAt = this.restoreCache.get(emailNormalized) || 0;
-    if (!options.force && now - lastRestoreAt < 30000) {
-      return { ok: true, skipped: true, reason: "restore_throttled" };
+    if (!options.initialLoad) return { ok: true, skipped: true, reason: "restore_initial_load_only" };
+    if (this.initialRestoreCompleted.has(emailNormalized)) {
+      return { ok: true, skipped: true, reason: "initial_restore_complete" };
     }
+
+    const mutationGeneration = this.learningMutationGeneration.get(emailNormalized) || 0;
+    const requestGeneration = (this.restoreRequestGeneration.get(emailNormalized) || 0) + 1;
+    this.restoreRequestGeneration.set(emailNormalized, requestGeneration);
 
     try {
       const response = await fetch(this.syncEndpointUrl, {
@@ -2739,8 +2853,14 @@ export class LocalJsonLearningProvider {
       if (!response.ok || body.ok === false) {
         throw new Error(body.message || "Sheetsから進捗を復元できませんでした。");
       }
+      const superseded = this.restoreRequestGeneration.get(emailNormalized) !== requestGeneration;
+      const mutated = (this.learningMutationGeneration.get(emailNormalized) || 0) !== mutationGeneration;
+      if (superseded || mutated || this.initialRestoreCompleted.has(emailNormalized)) {
+        return { ok: true, skipped: true, reason: "stale_restore_ignored" };
+      }
       this._applyRestoredLearningState(emailNormalized, body.restored || {});
-      this.restoreCache.set(emailNormalized, now);
+      this.initialRestoreCompleted.add(emailNormalized);
+      this.restoreCache.set(emailNormalized, Date.now());
       this.lastRestoreError = null;
       return body;
     } catch (error) {
@@ -2761,6 +2881,9 @@ export class LocalJsonLearningProvider {
     db.submissions = db.submissions || [];
     db.evaluationResults = db.evaluationResults || [];
     db.aiWorkSessions = db.aiWorkSessions || [];
+    this.lastRestoredAiWorkIds = new Set((restored.aiWorkSessions || [])
+      .map((session) => String(session.work_id || session.workId || "").trim())
+      .filter(Boolean));
 
     (restored.clearedTargets || []).forEach((target) => this._clearRestoredTarget(db, email, target));
 
@@ -2828,6 +2951,16 @@ export class LocalJsonLearningProvider {
   _normalizeRestoredEvaluation(evaluation = {}) {
     const targetType = this._normalizeRestoredTargetType(evaluation.target_type || evaluation.work_type || "");
     const resultStatus = this._normalizeRestoredUiStatus(evaluation.result_status || evaluation.status || "");
+    const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
+    const goodPoints = this._safeLearnerList(evaluation.good_points || evaluation.goodPoints || feedback.goodPoints, []);
+    const improvementPoints = this._safeLearnerList(evaluation.improvement_points || evaluation.improvementPoints || feedback.improvementPoints, []);
+    const missingPoints = this._safeLearnerList(evaluation.missing_points || evaluation.missingPoints || feedback.missingPoints, []);
+    const rewritePoints = this._safeLearnerList(evaluation.rewrite_points || evaluation.rewritePoints || feedback.rewritePoints, []);
+    const growthPoints = this._safeLearnerList(evaluation.growth_points || evaluation.growthPoints || feedback.growthPoints, []);
+    const layerDecisions = structuredClone(evaluation.layer_decisions || evaluation.layerDecisions || feedback.layerDecisions || {});
+    const layerResults = structuredClone(evaluation.layer_results || evaluation.layerResults || feedback.layerResults || {});
+    const failedLayer = evaluation.failed_layer || evaluation.failedLayer || feedback.failedLayer || "";
+    const failedLayerLabel = evaluation.failed_layer_label || evaluation.failedLayerLabel || feedback.failedLayerLabel || "";
     return {
       ...structuredClone(evaluation),
       evaluation_id: evaluation.evaluation_id || this._createId("RESTORE-EV"),
@@ -2837,8 +2970,27 @@ export class LocalJsonLearningProvider {
       result_status: resultStatus,
       status: resultStatus,
       score: Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : null,
-      good_points: this._safeLearnerList(evaluation.good_points || evaluation.goodPoints, []),
-      improvement_points: resultStatus === "good" ? [] : this._safeLearnerList(evaluation.improvement_points || evaluation.improvementPoints, []),
+      good_points: goodPoints,
+      improvement_points: resultStatus === "good" ? [] : improvementPoints,
+      missing_points: missingPoints,
+      rewrite_points: rewritePoints,
+      growth_points: growthPoints,
+      layer_decisions: layerDecisions,
+      layer_results: layerResults,
+      failed_layer: failedLayer,
+      failed_layer_label: failedLayerLabel,
+      feedback: {
+        ...structuredClone(feedback),
+        goodPoints,
+        improvementPoints,
+        missingPoints,
+        rewritePoints,
+        growthPoints,
+        layerDecisions,
+        layerResults,
+        failedLayer,
+        failedLayerLabel
+      },
       unmet_criteria: resultStatus === "good" ? [] : this._safeLearnerList(evaluation.unmet_criteria || evaluation.unmetCriteria, []),
       restored_from_sheets: true
     };
@@ -3004,6 +3156,7 @@ export class LocalJsonLearningProvider {
 
   _syncEvaluationPayload(evaluation, overrideStatus = "") {
     const status = overrideStatus || evaluation.standard_status || evaluation.status || evaluation.result_status || "";
+    const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
     return {
       ...structuredClone(evaluation || {}),
       status,
@@ -3016,9 +3169,17 @@ export class LocalJsonLearningProvider {
       needs_followup: Boolean(evaluation.needs_followup || evaluation.needsFollowup),
       reason: evaluation.reason || evaluation.summary || "",
       feedback: {
-        summary: evaluation.summary || evaluation.reason || "",
-        goodPoints: evaluation.good_points || evaluation.goodPoints || [],
-        improvementPoints: evaluation.improvement_points || evaluation.improvementPoints || []
+        ...structuredClone(feedback),
+        summary: feedback.summary || evaluation.summary || evaluation.reason || "",
+        goodPoints: evaluation.good_points || evaluation.goodPoints || feedback.goodPoints || [],
+        improvementPoints: evaluation.improvement_points || evaluation.improvementPoints || feedback.improvementPoints || [],
+        missingPoints: evaluation.missing_points || evaluation.missingPoints || feedback.missingPoints || [],
+        rewritePoints: evaluation.rewrite_points || evaluation.rewritePoints || feedback.rewritePoints || [],
+        growthPoints: evaluation.growth_points || evaluation.growthPoints || feedback.growthPoints || [],
+        layerDecisions: evaluation.layer_decisions || evaluation.layerDecisions || feedback.layerDecisions || {},
+        layerResults: evaluation.layer_results || evaluation.layerResults || feedback.layerResults || {},
+        failedLayer: evaluation.failed_layer || evaluation.failedLayer || feedback.failedLayer || "",
+        failedLayerLabel: evaluation.failed_layer_label || evaluation.failedLayerLabel || feedback.failedLayerLabel || ""
       },
       flags: evaluation.flags || {}
     };
@@ -3096,6 +3257,10 @@ export class SpreadsheetApiLearningProvider {
 
   async markVideoWatched(email, lessonId) {
     return this._request("markVideoWatched", { email, lessonId });
+  }
+
+  async setVideoCompletion(email, lessonId, completed) {
+    return this._request("setVideoCompletion", { email, lessonId, completed });
   }
 
   async submitMiniWork(email, miniWorkId, answerText) {

@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-2-10";
+} from "./data-provider.js?v=7-2-12-r3";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -640,7 +640,12 @@ function renderChapterRow(learning, phase) {
   `;
 
   if (stateName === "locked") {
-    return `<div class="ch-row is-locked" aria-label="${escapeAttribute(phase.phase_title)}（解放待ち）">${inner}</div>`;
+    return `
+      <div>
+        <button class="ch-row is-locked" type="button" disabled aria-disabled="true" aria-label="${escapeAttribute(phase.phase_title)}（解放待ち）">${inner}</button>
+        ${phase.gateMessage ? `<p class="phase-locked-note">${escapeHtml(phase.gateMessage)}</p>` : ""}
+      </div>
+    `;
   }
 
   const target = chapterTargetLesson(learning, phase);
@@ -697,7 +702,7 @@ function renderPhaseGroup(learning, phase, index) {
           <span class="ph-title"><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</span>
           <span class="ph-count">🔒 解放待ち</span>
         </div>
-        <p class="phase-locked-note">${escapeHtml(phase.phase_summary || "前の章を登りきると、この章の景色がひらけます。")}</p>
+        <p class="phase-locked-note">${escapeHtml(phase.gateMessage || phase.phase_summary || "前の章を登りきると、この章の景色がひらけます。")}</p>
       </section>
     `;
   }
@@ -814,14 +819,11 @@ function renderVideoBlock(lesson) {
   return `
     <section id="section-video" data-section="video" tabindex="-1" aria-label="動画">
       <div class="video2">${videoMarkup}</div>
-      ${isWatched
-        ? `<p class="watch-note"><i>✓</i> 視聴済み ・ 目安 ${escapeHtml(duration)}</p>`
-        : `
-          <button class="primary-button watch-button" type="button" data-action="mark-video" data-lesson-id="${escapeHtml(lesson.lesson_id)}">
-            動画を見たら視聴完了にする
-          </button>
-          <p class="submission-note">目安 ${escapeHtml(duration)}</p>
-        `}
+      ${isWatched ? `<p class="watch-note"><i>✓</i> 視聴済み ・ 目安 ${escapeHtml(duration)}</p>` : ""}
+      <button class="primary-button watch-button" type="button" data-action="toggle-video-completion" data-lesson-id="${escapeHtml(lesson.lesson_id)}" data-completed="${isWatched ? "true" : "false"}" aria-pressed="${isWatched ? "true" : "false"}">
+        ${isWatched ? "視聴完了を取り消す" : "動画を見たら視聴完了にする"}
+      </button>
+      ${isWatched ? "" : `<p class="submission-note">目安 ${escapeHtml(duration)}</p>`}
     </section>
   `;
 }
@@ -1008,6 +1010,9 @@ function renderEvaluationResultCard(evaluation, label) {
   const isPassed = evaluation.result_status === "good";
   const nextTitle = isPassed ? "次に進む前に" : "次に意識すること";
   const resultKind = label === "ミニワーク" ? "mini-work" : "work";
+  if (resultKind === "mini-work" && hasMiniWorkV2Feedback(evaluation)) {
+    return renderMiniWorkScoreCard(evaluation, label);
+  }
   const resultId = resultKind === "mini-work" ? ` id="mini-work-evaluation-result"` : "";
   const goodPoints = uniqueLearnerItems(evaluation.good_points || []).slice(0, 3);
   const improvementPoints = isPassed ? [] : uniqueLearnerItems(evaluation.improvement_points || []).filter((item) => !goodPoints.includes(item)).slice(0, 3);
@@ -1043,6 +1048,79 @@ function renderEvaluationResultCard(evaluation, label) {
       </div>
     </section>
   `;
+}
+
+function renderMiniWorkScoreCard(evaluation, label) {
+  const score = Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : 70;
+  const passed = score >= 80 && evaluation.result_status === "good";
+  const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
+  const layerResults = evaluation.layer_results || evaluation.layerResults || feedback.layerResults || {};
+  const layerDecisions = evaluation.layer_decisions || evaluation.layerDecisions || feedback.layerDecisions || {};
+  const layerKeys = ["L1", "L2", "L3", "L4a", "L4b"];
+  const rows = layerKeys.filter((key) => layerResults[key] || layerDecisions[key]).map((key) => {
+    const item = layerResults[key] || {};
+    const decision = item.decision || layerDecisions[key] || "No";
+    const labelText = item.label || key;
+    return `<li><strong>${escapeHtml(labelText)}</strong><span>${decision === "Yes" ? "満たしています" : "次の伸びしろです"}</span></li>`;
+  });
+  const goodPoints = uniqueLearnerItems(evaluation.good_points || evaluation.goodPoints || feedback.goodPoints || evaluation.good_materials || []).slice(0, 4);
+  const missingPoints = uniqueLearnerItems(evaluation.missing_points || evaluation.missingPoints || feedback.missingPoints || []).slice(0, 4);
+  const rewritePoints = uniqueLearnerItems(evaluation.rewrite_points || evaluation.rewritePoints || feedback.rewritePoints || []).slice(0, 4);
+  const growthPoints = uniqueLearnerItems(evaluation.growth_points || evaluation.growthPoints || feedback.growthPoints || []).slice(0, 4);
+  const failedLayer = evaluation.failed_layer_label || evaluation.failedLayerLabel || feedback.failedLayerLabel || evaluation.failed_layer || evaluation.failedLayer || feedback.failedLayer || "";
+  const additionalQuestions = passed
+    ? []
+    : uniqueLearnerItems([
+      ...(Array.isArray(evaluation.followup_questions) ? evaluation.followup_questions : []),
+      evaluation.next_question || evaluation.nextQuestion || ""
+    ]).slice(0, 4);
+
+  return `
+    <section id="mini-work-evaluation-result" class="evaluation-card" data-result="${escapeAttribute(evaluation.result_status)}" data-evaluation-result="mini-work" aria-label="${escapeAttribute(label)}の評価結果">
+      <p class="ev-k">FEEDBACK <span class="status-badge" data-tone="${passed ? "positive" : "attention"}">${passed ? "合格" : "再提出"}</span></p>
+      <div class="ev-score">
+        <strong>${score}</strong>
+        <small>SCORE / 合格80</small>
+      </div>
+      <p class="ev-help">${escapeHtml(evaluation.reason || `${score}点・${passed ? "合格" : "再提出"}です。`)}</p>
+      ${!passed && failedLayer && failedLayer !== "なし" ? `<p class="ev-help"><strong>最初に見直す層:</strong> ${escapeHtml(failedLayer)}</p>` : ""}
+      <div class="ev-cols">
+        ${rows.length ? `<div>
+          <h4>点数の根拠</h4>
+          <ul class="ev-layer-list">${rows.join("")}</ul>
+        </div>` : ""}
+        ${goodPoints.length ? `<div><h4>良かった材料</h4><ul>${goodPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+        ${missingPoints.length ? `<div><h4>${passed ? "改善余地" : "不足している材料"}</h4><ul>${missingPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+        ${rewritePoints.length ? `<div><h4>${passed ? "改善のヒント" : "書き直し方"}</h4><ul>${rewritePoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+        ${growthPoints.length ? `<div><h4>次の成長ポイント</h4><ul>${growthPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+        ${additionalQuestions.length ? `<div><h4>追加質問</h4><ol>${additionalQuestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol></div>` : ""}
+      </div>
+      <div class="ev-next">
+        <span>${passed ? "判定" : "再提出について"}</span>
+        <strong>${passed ? "合格です。次へ進めます" : "回答は何度でも再提出できます"}</strong>
+      </div>
+    </section>
+  `;
+}
+
+function hasMiniWorkV2Feedback(evaluation = {}) {
+  const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
+  const schemaVersion = String(evaluation.schema_version || evaluation.schemaVersion || "");
+  const layerDecisions = evaluation.layer_decisions || evaluation.layerDecisions || feedback.layerDecisions || {};
+  const detailGroups = [
+    evaluation.missing_points,
+    evaluation.missingPoints,
+    feedback.missingPoints,
+    evaluation.rewrite_points,
+    evaluation.rewritePoints,
+    feedback.rewritePoints,
+    evaluation.growth_points,
+    evaluation.growthPoints,
+    feedback.growthPoints
+  ];
+  return schemaVersion === "barise-mini-work-evaluation-v2" ||
+    Object.keys(layerDecisions).length > 0 ||
+    detailGroups.some((items) => Array.isArray(items) && items.some((item) => String(item || "").trim()));
 }
 
 function uniqueLearnerItems(items = []) {
@@ -1346,15 +1424,17 @@ function renderAiIntakeFollowupForm(work, session) {
 }
 
 function renderAiFollowupForm(work, session) {
+  const isGoalSettingWork = work.work_id === "W-P1-05";
+  const followupQuestions = getAiFollowupQuestions(session);
   return `
     ${renderAiGeneratedPrompt(session)}
     ${renderAiCriteriaProgress(session)}
     ${renderAiEvaluationSummary(session)}
     <div class="ai-block ai-block--focus">
-      <span>今回答える質問</span>
+      <span>${isGoalSettingWork ? "フィードバック" : "今回答える質問"}</span>
       <p>${escapeHtml(session.ai_summary || "追加質問に回答してください。")}</p>
     </div>
-    ${renderFollowupQuestionPanel(getAiFollowupQuestions(session))}
+    ${isGoalSettingWork ? renderAdditionalQuestions(followupQuestions) : renderFollowupQuestionPanel(followupQuestions)}
     ${renderMissingPoints(session.unmet_criteria, "追記すべき観点")}
     ${renderFollowupHistory(session.followup_history)}
     <form class="ai-work-form" data-form="ai-followup" data-work-id="${escapeAttribute(work.work_id)}">
@@ -1365,6 +1445,7 @@ function renderAiFollowupForm(work, session) {
 }
 
 function renderAiRevisionForm(work, session) {
+  const followupQuestions = getAiFollowupQuestions(session);
   return `
     ${renderAiGeneratedPrompt(session)}
     <div class="ai-block ai-block--focus">
@@ -1373,7 +1454,7 @@ function renderAiRevisionForm(work, session) {
     </div>
     ${renderMissingPoints(session.unmet_criteria, "追記すべき観点")}
     ${renderStaffFeedbackNotice(session)}
-    ${renderFollowupQuestionPanel(getAiFollowupQuestions(session), "今回答える質問")}
+    ${work.work_id === "W-P1-05" ? renderAdditionalQuestions(followupQuestions) : renderFollowupQuestionPanel(followupQuestions, "今回答える質問")}
     ${renderAiEvaluationSummary(session, { compact: true })}
     ${renderRevisionHistory(session.revision_history, { collapsed: true })}
     <form class="ai-work-form" data-form="ai-revision" data-work-id="${escapeAttribute(work.work_id)}">
@@ -1748,6 +1829,18 @@ function renderFollowupQuestionPanel(questions = [], title = "今回答える質
   `;
 }
 
+function renderAdditionalQuestions(questions = []) {
+  const items = uniqueLearnerItems(questions);
+  if (!items.length) return "";
+  return `
+    <section class="ai-block ai-block--focus" aria-labelledby="additional-questions-heading">
+      <span id="additional-questions-heading">追加質問</span>
+      <p>以下の質問に答えて再提出してください。</p>
+      <ol>${items.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}</ol>
+    </section>
+  `;
+}
+
 function getAiIntakeFields(work) {
   if (Array.isArray(work.intake_fields) && work.intake_fields.length) return work.intake_fields;
   return [
@@ -1933,10 +2026,10 @@ function getLessonCta(lesson) {
 
   if (lesson.miniWork && lesson.progress.mini_work_status === "support_needed") {
     return {
-      label: "サポートに相談する",
-      href: config.supportLineUrl,
-      shortNote: "公式LINEで相談",
-      summary: `「${lesson.lesson_title}」について、公式LINEで一緒に整理しましょう。`
+      label: "ミニワークを確認する",
+      href: hashForLesson(lesson.lesson_id, "mini-work"),
+      shortNote: "提出内容を確認",
+      summary: `「${lesson.lesson_title}」の提出内容を確認し、続きから取り組みましょう。`
     };
   }
 
@@ -2441,15 +2534,16 @@ async function handleSubmitAiWork(event) {
   }
 }
 
-async function handleMarkVideo(button) {
+async function handleToggleVideoCompletion(button) {
   const originalButtonText = button.textContent;
+  const completed = button.dataset.completed === "true";
   clearInlineActionError(button);
   button.disabled = true;
   button.classList.add("is-loading");
   button.setAttribute("aria-busy", "true");
-  button.textContent = "記録しています";
+  button.textContent = completed ? "取り消しています" : "記録しています";
   try {
-    await provider.markVideoWatched(state.email, button.dataset.lessonId);
+    await provider.setVideoCompletion(state.email, button.dataset.lessonId, !completed);
     await refreshLearningState();
     render();
   } catch (error) {
@@ -2516,9 +2610,9 @@ document.addEventListener("click", async (event) => {
     window.location.reload();
   }
 
-  if (action === "mark-video") {
+  if (action === "toggle-video-completion") {
     try {
-      await handleMarkVideo(actionTarget);
+      await handleToggleVideoCompletion(actionTarget);
     } catch (error) {
       renderError(error.message);
     }

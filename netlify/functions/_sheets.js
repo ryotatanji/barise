@@ -232,6 +232,57 @@ async function createSheet(spreadsheetId, sheetName) {
   });
 }
 
+// 追記専用タブを「存在しない場合だけ」作成し、作成したリクエストだけが
+// ヘッダーを書き込む。既存タブのヘッダーは空でも不一致でも上書きしない。
+// 並行作成でaddSheetが重複エラーになった場合は、タブの存在を再確認して
+// 先行リクエストが設定したヘッダーを読み直す。
+async function ensureAppendOnlySheet(spreadsheetId, sheetName, headers, operations = {}) {
+  const ops = {
+    getSpreadsheetMetadata: operations.getSpreadsheetMetadata || getSpreadsheetMetadata,
+    createSheet: operations.createSheet || createSheet,
+    updateValues: operations.updateValues || updateValues,
+    getValues: operations.getValues || getValues
+  };
+  const exactHeaders = headers.map((header) => String(header || ""));
+  const existsIn = (metadata) => (metadata.sheets || []).some((sheet) => sheet.properties?.title === sheetName);
+  const metadata = await ops.getSpreadsheetMetadata(spreadsheetId);
+  let created = false;
+
+  if (!existsIn(metadata)) {
+    try {
+      await ops.createSheet(spreadsheetId, sheetName);
+      created = true;
+    } catch (error) {
+      const confirmed = await ops.getSpreadsheetMetadata(spreadsheetId);
+      if (!existsIn(confirmed)) throw error;
+      // 他リクエストが先に作成した場合は、そのリクエストのヘッダー設定を待つ。
+    }
+  }
+
+  if (created) {
+    await ops.updateValues(spreadsheetId, `${quoteSheetName(sheetName)}!A1`, [exactHeaders]);
+    return { sheetName, headers: exactHeaders.slice(), created: true };
+  }
+
+  let existingHeaders = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const values = await ops.getValues(spreadsheetId, `${quoteSheetName(sheetName)}!A1:${columnName(exactHeaders.length - 1)}1`);
+    existingHeaders = (values[0] || []).map((header) => String(header || ""));
+    if (existingHeaders.length) break;
+    await Promise.resolve();
+  }
+
+  const matches = existingHeaders.length === exactHeaders.length &&
+    exactHeaders.every((header, index) => existingHeaders[index] === header);
+  if (!matches) {
+    const error = new Error(`${sheetName} header does not match the append-only schema.`);
+    error.code = existingHeaders.length ? "append_only_sheet_header_mismatch" : "append_only_sheet_header_missing";
+    throw error;
+  }
+
+  return { sheetName, headers: existingHeaders, created: false };
+}
+
 // タブ名 → 数値sheetId の対応（行削除に必要）。
 async function getSheetProperties(spreadsheetId) {
   const data = await spreadsheetRequest({
@@ -264,6 +315,7 @@ module.exports = {
   columnName,
   createSheet,
   deleteRowsByNumbers,
+  ensureAppendOnlySheet,
   findHeaderIndex,
   getSheetProperties,
   getSpreadsheetMetadata,
