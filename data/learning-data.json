@@ -1727,7 +1727,7 @@
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
         "learner_prompt_full": "今日の動画で学んだ行動から、明日から実践することを1つ選んで回答してください。①選んだ行動はどれですか？②なぜその行動を選びましたか？③具体的にいつ・どんな場面で試しますか？",
-        "answer_placeholder": "例: 挨拶を選びます。明日の朝、出社時に同じチームの3人へ自分から挨拶します。最近こちらから声をかける回数が少なかったので、会話の入口を作るためです。"
+        "answer_placeholder": "① 報連相を「着手・中間・完了」の3点で行います。\n② 完了時だけの報告では上司に確認の手間を増やすため、進捗を先に共有したいからです。\n③ 明日10時に月次レポートへ着手するとき、上司へチャットで開始を伝え、16時に中間報告、提出時に完了報告をします。"
       },
       {
         "mini_work_id": "MW-P1-02",
@@ -1763,7 +1763,7 @@
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
         "learner_prompt_full": "今日の動画で学んだ5つの方法から、今日から試すことを1つ選んで回答してください。①選んだ方法はどれですか？②なぜその方法を選びましたか？③具体的にどんな場面・状況で試しますか？",
-        "answer_placeholder": "例: 朝の着手時に「今日は提案資料の初稿を作ります」、昼に「半分まで進みました」、完了時に「提出しました」と上司へ報告します。"
+        "answer_placeholder": "① SNSアプリの通知をオフにします。\n② 今は通知のたびにスマートフォンへ手が伸びるため、我慢ではなく通知が鳴らない環境を作りたいからです。\n③ 今日20時、自宅で資料作成を始める前に通知を切り、端末を引き出しへ入れて22時まで取り出しません。"
       },
       {
         "mini_work_id": "MW-P1-03",
@@ -1799,7 +1799,7 @@
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
         "learner_prompt_full": "今日の動画で学んだ方法から、今日試すことを1つ選んで回答してください。①選んだ方法はどれですか？②なぜその方法を選びましたか？③具体的にどのタスク・場面で試しますか？",
-        "answer_placeholder": "例: 会議で相手の発言を最後まで聞き、要点を一度復唱してから自分の意見を伝えます。相手の意図を取り違えないためです。"
+        "answer_placeholder": "① 今週、成果につながらない資料修正の依頼を1件断ります。\n② 毎週金曜の午後が修正作業で埋まり、来月の新規提案へ使う時間が減っているからです。\n③ 金曜に依頼を受けたら来週以降を提案し、空いた2時間を新規提案の準備へ回します。今後の修正はテンプレート化します。"
       },
       {
         "mini_work_id": "MW-P1-04",
@@ -1835,7 +1835,7 @@
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
         "learner_prompt_full": "今日やるべきことを全部書き出し、その中から一番重要なものを1つ選んでください。①書き出したタスク一覧②一番に選んだタスク③なぜそれが一番だと判断しましたか？",
-        "answer_placeholder": "例: 今日のタスクはA/B/Cです。一番はAです。理由は、今日中にAが終わらないと明日の提案準備が遅れるためです。"
+        "answer_placeholder": "① 今日のタスクは、提案書の初稿、請求書50件の確認、定例議事録、経費精算です。\n② 一番に提案書の初稿へ着手します。\n③ 今週中という上司の依頼と、来週使うという顧客の予定が重なるためです。請求書は明日午前、議事録は同席者へ依頼し、残りは提案書の後に回します。"
       },
       {
         "mini_work_id": "MW-P1-05",
@@ -1871,7 +1871,7 @@
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
         "learner_prompt_full": "両極端ワークを行ってください。①制限がなければ何をしたいか②今日が最後の1日なら何をするか③Step1・2を踏まえ、本当に叶えたいことを1つと期限を書いてください。",
-        "answer_placeholder": "例: 制限がなければ◯◯をしたいです。今日が最後なら◯◯をします。そこから、本当に叶えたいことは◯◯で、期限は◯月末です。"
+        "answer_placeholder": "① 制限がなければ、家族と1か月海外で暮らし、毎朝市場で買い物をしたいです。\n② 今日が最後なら、家族と集まり、これまで伝えられなかった感謝を一人ずつ伝えます。\n③ 本当に叶えたいことは家族との長期滞在です。2028年3月までに実現します。"
       },
       {
         "mini_work_id": "MW-P1-06",
@@ -1907,7 +1907,7 @@
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
         "learner_prompt_full": "最近うまくいかなかった出来事を1つ思い浮かべ、①出来事②自分にできること③構造・環境など他の要因、の3点で回答してください。",
-        "answer_placeholder": "例: 直近の出来事は◯◯です。自分にできることは◯◯です。一方で、手順/環境/構造として◯◯も要因だと思います。"
+        "answer_placeholder": "① 先月の月次報告で、共有する数字の提出が1週間遅れました。\n② 自分にできることは、集計へ着手した日に共有予定日を伝え、遅れが見えた時点で連絡することです。\n③ 構造面では、データ締め日が会議資料の作成日より後で、担当と期限を決めるルールがないことも要因です。"
       },
       {
         "mini_work_id": "MW-P1-07",
@@ -1943,7 +1943,7 @@
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
         "learner_prompt_full": "今週、具体化と抽象化の練習をしてください。①今週の課題を部署・時間帯・工程のどれかで絞る②今日目に入った2つのものの共通点を1つ探す。",
-        "answer_placeholder": "例: うまくいった場面は◯◯です。再現できそうな行動は◯◯で、次は◯曜日の◯◯の場面で試します。"
+        "answer_placeholder": "① 具体化：新規顧客への初回訪問アポ取りを、工程で絞り「初回架電で不在だった相手へのかけ直し」だけ見ます。\n② 抽象化：ペットボトルと封筒の共通点は、どちらも中身を守り、安全に運ぶための外殻という役割です。"
       },
       {
         "mini_work_id": "MW-P1-08",
@@ -1979,7 +1979,7 @@
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
         "learner_prompt_full": "3つの練習のうち1つを選んで回答してください。A:何のためかを聞く B:自分の意見に問いかける C:相手はどう感じるか考える。①選んだ練習②理由③試す場面。",
-        "answer_placeholder": "例: フェーズ1で残す習慣は◯◯です。やめる行動は◯◯です。次の1週間は◯曜日に◯◯を確認します。"
+        "answer_placeholder": "① 練習Aを選びます。\n② 今は依頼の目的を確かめず、使われない資料部分にも時間をかけているため、何の判断に使う仕事かを問い直したいからです。\n③ 明日の朝会で資料作成を頼まれたとき、着手前に「これは誰のどんな判断に使いますか」と1回確認します。"
       },
       {
         "mini_work_id": "MW-P2-01",
@@ -2014,7 +2014,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "自分の仕事に数値化の鬼の考え方を当てはめてください。①取り組んでいる仕事・タスク②行動量を数値で表すと何をどれくらいやるか③その数値をいつ・どう振り返るか。"
+        "learner_prompt_full": "自分の仕事に数値化の鬼の考え方を当てはめてください。①取り組んでいる仕事・タスク②行動量を数値で表すと何をどれくらいやるか③その数値をいつ・どう振り返るか。",
+        "answer_placeholder": "① 新規見込み客への架電に取り組んでいます。\n② 1日20件です。1件6分で、架電へ使える2時間から計算しました。\n③ 毎日終業前にスプレッドシートへ記録し、金曜の週次会議で合計を確認します。週100件未満なら翌週の朝枠を30分増やします。"
       },
       {
         "mini_work_id": "MW-P2-02",
@@ -2049,7 +2050,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "今の取り組みを1つ選び、目的・戦略・戦術の3層で整理してください。戦略は方向性、戦術は具体的な打ち手として分けてください。"
+        "learner_prompt_full": "今の取り組みを1つ選び、目的・戦略・戦術の3層で整理してください。戦略は方向性、戦術は具体的な打ち手として分けてください。",
+        "answer_placeholder": "① 目的：既存顧客30社が今期末の更新時に迷わず継続を判断できる状態を作ります。\n② 戦略：新規開拓は追わず更新が近い30社に絞り、値引きではなく運用実績で選ばれます。\n③ 戦術：更新2か月前に6か月分の運用レポートを出し、利用率下位5社へ月1回30分の相談枠を設けます。"
       },
       {
         "mini_work_id": "MW-P2-03",
@@ -2084,7 +2086,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "自分のKPIを1つ点検してください。①具体的なKPI②KGIとのつながり③追跡できているか・できていない理由④確認頻度や責任者。"
+        "learner_prompt_full": "自分のKPIを1つ点検してください。①具体的なKPI②KGIとのつながり③追跡できているか・できていない理由④確認頻度や責任者。",
+        "answer_placeholder": "① KPIは週20件の新規アポイントです。\n② KGIは月10件の受注です。アポ80件→提案40件（50%）→受注10件（25%）の経路なので、4週で割って週20件です。\n③ 毎朝9時に営業管理画面で前日分を確認し、金曜17時に週合計を記録します。"
       },
       {
         "mini_work_id": "MW-P2-04",
@@ -2119,7 +2122,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "チームや自分のKPIを見直してください。①今あるKPIを複数書き出す②KGIへの直結度で整理する③最優先のKPIを1つに絞り、その理由を書く。"
+        "learner_prompt_full": "チームや自分のKPIを見直してください。①今あるKPIを複数書き出す②KGIへの直結度で整理する③最優先のKPIを1つに絞り、その理由を書く。",
+        "answer_placeholder": "① KPIは、週20件の新規アポイント、月8本の記事、解約率3%以下です。\n② KGIの月10件の新規受注へ今月中に直結するのは、アポイント数です。\n③ 週20件のアポイントに絞ります。アポ→提案→受注とつながるためです。記事は月末確認、解約率は四半期確認にします。"
       },
       {
         "mini_work_id": "MW-P2-05",
@@ -2154,7 +2158,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "課題を1つ選び、イシューとして問いの形に変換してください。①課題②「〇〇ではないか？」の問い③サブイシュー④優先順位。"
+        "learner_prompt_full": "課題を1つ選び、イシューとして問いの形に変換してください。①課題②「〇〇ではないか？」の問い③サブイシュー④優先順位。",
+        "answer_placeholder": "① 直近3か月、Web問い合わせの初回返信に平均2日かかり、約半数が返信前に離脱しています。\n② 遅れは担当者の忙しさではなく、振り分けルールがないことが原因ではないでしょうか。\n③ サブイシューは「遅れた案件は特定担当へ偏るか」「担当が決まる既存問い合わせは早いか」の2つです。"
       },
       {
         "mini_work_id": "MW-P2-06",
@@ -2189,7 +2194,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "課題を1つ選び、仮説を立ててください。①課題②原因やメカニズムの仮説「〜ではないか？」③それを検証する方法。"
+        "learner_prompt_full": "課題を1つ選び、仮説を立ててください。①課題②原因やメカニズムの仮説「〜ではないか？」③それを検証する方法。",
+        "answer_placeholder": "① 新規提案が最終選考まで進むのに、直近3か月で8件連続失注しています。\n② 初回訪問で予算を聞けず、提案価格が想定からずれて比較対象から外れるのではないでしょうか。\n③ 失注8件の商談記録で予算確認の件数を数えます。5件以上で確認済みなら、この仮説は否定します。"
       },
       {
         "mini_work_id": "MW-P2-07",
@@ -2224,7 +2230,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "繰り返し起きている問題を1つ選び、なぜを5回目安で深掘りしてください。①具体的な事象②なぜの連鎖③真因④対策⑤仕組み化。"
+        "learner_prompt_full": "繰り返し起きている問題を1つ選び、なぜを5回目安で深掘りしてください。①具体的な事象②なぜの連鎖③真因④対策⑤仕組み化。",
+        "answer_placeholder": "① 先週水曜の定例資料を当日朝まで着手できず、開始15分前に未完成で共有しました。\n② なぜ未着手→他対応を優先→締切がない→着手日を登録する運用がない→議題が前日まで未確定→議題提出期限がない。\n③ 真因は、議題提出と資料着手の期限がチームの運用ルールにないことです。"
       },
       {
         "mini_work_id": "MW-P2-08",
@@ -2259,7 +2266,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "KPTで発散し、YWTMで深掘りしてください。①Keep②Problem③Try④やったこと⑤わかったこと⑥次にやること⑦期待する効果。"
+        "learner_prompt_full": "KPTで発散し、YWTMで深掘りしてください。①Keep②Problem③Try④やったこと⑤わかったこと⑥次にやること⑦期待する効果。",
+        "answer_placeholder": "① K：火曜の商談で想定質問を3つ用意し、詰まらず回答できました。\n② P：木曜の見積提出が半日遅れました。\n③ T：商談前日に30分の準備枠を固定します。\n④ YWTM：質問を準備して、詰まりは知識より準備の有無だと分かりました。次回も前日に準備し、持ち帰りを1往復減らします。"
       },
       {
         "mini_work_id": "MW-P2-09",
@@ -2294,7 +2302,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "自分のテーマでピラミッドストラクチャーを作ってください。①テーマ②根拠3点③根拠から導いたSo What?の1文。"
+        "learner_prompt_full": "自分のテーマでピラミッドストラクチャーを作ってください。①テーマ②根拠3点③根拠から導いたSo What?の1文。",
+        "answer_placeholder": "① 来週の定例で、部門責任者へ問い合わせ一次受付の自動化を提案します。\n② 根拠は、定型質問が直近1,200件の62%、3名で1日4時間を使用、導入事例では応答が平均18分から即時になったことです。\n③ 定型が6割を占めるため一次受付は自動化し、空いた工数を個別対応へ回すべきです。"
       },
       {
         "mini_work_id": "MW-P2-10",
@@ -2329,7 +2338,8 @@
         "retry_threshold": 60,
         "max_retry_before_review": 3,
         "ai_response_schema": "barise-mini-work-evaluation-v1",
-        "learner_prompt_full": "ロジックツリーで今の課題を分解してください。①解決したい課題②WhyまたはHowツリーで2〜3段階分解③最初に手をつけるポイントと理由。"
+        "learner_prompt_full": "ロジックツリーで今の課題を分解してください。①解決したい課題②WhyまたはHowツリーで2〜3段階分解③最初に手をつけるポイントと理由。",
+        "answer_placeholder": "① 新規商談の受注率が半年で35%から22%へ下がったことが課題です。\n② Whyツリー：返信が遅い（転記に半日／担当決定が翌朝）、提案がずれる（予算未確認／資料流用）、価格条件が合わない（分割なし／承認に3日）。\n③ 失注48件中29件に関わり、自チームで今週着手できるため、返信の遅さから直します。"
       }
     ],
     "works": [
