@@ -793,7 +793,6 @@ function renderLesson(lessonId, section = "") {
         <div class="lesson-title">
           <p class="lt-k">CHAPTER ${padChapter(phase?.phase_order)}</p>
           <h1>${escapeHtml(lesson.lesson_title)}</h1>
-          <p class="lt-sub">${escapeHtml(lesson.lesson_summary || lesson.purpose_watch || "この教材の目的を確認します。")}</p>
         </div>
 
         ${renderVideoBlock(lesson)}
@@ -903,7 +902,24 @@ function renderLockedWorkNote(lesson) {
 }
 
 function renderLearningDetailBlock(lesson) {
-  const points = Array.isArray(lesson.material_points) ? lesson.material_points.filter(Boolean) : [];
+  const normalizeText = (value) => String(value || "").replace(/[\s　]+/g, "").replace(/[。．.!！?？]/g, "");
+  const learningPurpose = String(lesson.hook || lesson.lesson_summary || lesson.purpose_watch || "").trim();
+  const learningOutcome = String(lesson.learning_outcome || lesson.category_or_work || lesson.purpose_write || "").trim();
+  const reservedTexts = new Set([learningPurpose, learningOutcome].map(normalizeText).filter(Boolean));
+  const seenPoints = new Set();
+  const points = (Array.isArray(lesson.material_points) ? lesson.material_points : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const normalized = normalizeText(item);
+      if (!normalized || reservedTexts.has(normalized) || seenPoints.has(normalized)) return false;
+      seenPoints.add(normalized);
+      return true;
+    });
+  const thinkText = String(lesson.purpose_think || "").trim();
+  const showThink = Boolean(thinkText) && !reservedTexts.has(normalizeText(thinkText)) && !seenPoints.has(normalizeText(thinkText));
+  const writeText = String(lesson.purpose_write || "").trim();
+  const showWrite = Boolean(writeText) && !reservedTexts.has(normalizeText(writeText)) && !seenPoints.has(normalizeText(writeText)) && (!showThink || normalizeText(writeText) !== normalizeText(thinkText));
 
   return `
     <section id="section-purpose" data-section="purpose" tabindex="-1" aria-labelledby="purpose-title">
@@ -914,23 +930,22 @@ function renderLearningDetailBlock(lesson) {
           <small class="open-label">閉じる</small>
         </summary>
         <div class="ld-body">
-          <div class="ld-item">
+          ${learningPurpose ? `<div class="ld-item">
             <span>学習目的</span>
-            <p>${escapeHtml(lesson.lesson_summary || lesson.purpose_watch || "この教材の目的を確認します。")}</p>
-          </div>
+            <p>${escapeHtml(learningPurpose)}</p>
+          </div>` : ""}
           ${points.length ? `
             <div class="ld-item">
               <span>主な内容</span>
               <ul>${points.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
             </div>
           ` : ""}
-          <div class="ld-item">
+          ${learningOutcome ? `<div class="ld-item">
             <span>視聴後にできるようになること</span>
-            <p>${escapeHtml(lesson.learning_outcome || lesson.category_or_work || lesson.purpose_write || "現場で使える視点を整理できます。")}</p>
-          </div>
-          ${lesson.purpose_watch ? `<div class="ld-item"><span>見る</span><p>${escapeHtml(lesson.purpose_watch)}</p></div>` : ""}
-          ${lesson.purpose_think ? `<div class="ld-item"><span>考える</span><p>${escapeHtml(lesson.purpose_think)}</p></div>` : ""}
-          ${lesson.purpose_write ? `<div class="ld-item"><span>書く</span><p>${escapeHtml(lesson.purpose_write)}</p></div>` : ""}
+            <p>${escapeHtml(learningOutcome)}</p>
+          </div>` : ""}
+          ${showThink ? `<div class="ld-item"><span>考えるポイント</span><p>${escapeHtml(thinkText)}</p></div>` : ""}
+          ${showWrite ? `<div class="ld-item"><span>書く</span><p>${escapeHtml(writeText)}</p></div>` : ""}
         </div>
       </details>
     </section>
