@@ -734,15 +734,21 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
     const lessonId = firstValue(row, [lessonIndex]);
     const submittedAt = firstValue(row, [submittedIndex, updatedIndex]) || now;
     const rawStatus = firstValue(row, [statusIndex]);
-    const uiStatus = workType === "mini_work"
-      ? normalizeMiniWorkStatus(rawStatus)
-      : normalizeWorkStatus(rawStatus);
     const submissionId = firstValue(row, [submissionIndex]) || createId("RESTORE-SUB");
     const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, targetId);
     const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
     const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
     const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
     const feedback = detail ? detail.feedback : answerFeedback;
+    const effectiveStatus = resolveEffectiveWorkStatus({
+      rawStatus,
+      score,
+      workType,
+      evaluationJson,
+      feedback,
+      detail
+    });
+    const uiStatus = effectiveStatus.uiStatus;
     const goodPoints = toStringArray(feedback.goodPoints || feedback.good_points || evaluationJson.good_points || evaluationJson.feedback?.goodPoints);
     const improvementPoints = toStringArray(feedback.improvementPoints || feedback.improvement_points || evaluationJson.improvement_points || evaluationJson.feedback?.improvementPoints);
     const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
@@ -767,9 +773,11 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       work_id: targetId,
       submission_id: submissionId,
       ai_log_id: firstValue(row, [aiLogIndex]),
-      status: evaluationJson.status || normalizeStandardStatus(rawStatus),
-      standard_status: evaluationJson.standard_status || normalizeStandardStatus(rawStatus),
-      result_status: evaluationJson.result_status || uiStatus,
+      status: effectiveStatus.standardStatus,
+      standard_status: effectiveStatus.standardStatus,
+      result_status: uiStatus,
+      raw_status: rawStatus,
+      legacy_normalized: effectiveStatus.legacyNormalized,
       score,
       summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || firstValue(row, [summaryIndex]) || "",
       reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
@@ -808,6 +816,8 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       target_id: targetId,
       answer_text: firstValue(row, [answerIndex]),
       status: uiStatus,
+      raw_status: rawStatus,
+      legacy_normalized: effectiveStatus.legacyNormalized,
       score,
       submitted_at: submittedAt,
       ai_log_id: firstValue(row, [aiLogIndex]),
@@ -826,7 +836,9 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       work_title: firstValue(row, [titleIndex]),
       schema_version: restoredEvaluationJson.schema_version,
       result_status: uiStatus,
-      standard_status: normalizeStandardStatus(rawStatus),
+      standard_status: effectiveStatus.standardStatus,
+      raw_status: rawStatus,
+      legacy_normalized: effectiveStatus.legacyNormalized,
       abc_grade: firstValue(row, [abcIndex]) || evaluationJson.abc_grade || evaluationJson.abcGrade || "",
       score,
       reason: restoredEvaluationJson.reason,
@@ -940,12 +952,38 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
     const targetId = explicitMiniId || workId;
     if (!targetId) return;
     const workType = normalizeRestoredWorkType(firstValue(row, [typeIndex]), targetId);
-    const uiStatus = workType === "mini_work"
-      ? normalizeMiniWorkStatus(firstValue(row, [statusIndex]))
-      : normalizeWorkStatus(firstValue(row, [statusIndex]));
+    const submissionId = firstValue(row, [submissionIndex]) || createId("RESTORE-SUB");
+    const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, targetId);
+    const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
+    const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
+    const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
+    const feedback = detail ? detail.feedback : answerFeedback;
+    const effectiveStatus = resolveEffectiveWorkStatus({
+      rawStatus: firstValue(row, [statusIndex]),
+      score,
+      workType,
+      evaluationJson,
+      feedback,
+      detail
+    });
+    const uiStatus = effectiveStatus.uiStatus;
     if (uiStatus !== "good") return;
     const submittedAt = firstValue(row, [submittedIndex, updatedIndex]) || now;
-    const candidate = { rowRef, workType, workId: workId || targetId, miniWorkId: explicitMiniId, targetId, submittedAt };
+    const candidate = {
+      rowRef,
+      workType,
+      workId: workId || targetId,
+      miniWorkId: explicitMiniId,
+      targetId,
+      submittedAt,
+      submissionId,
+      detail,
+      score,
+      answerFeedback,
+      evaluationJson,
+      feedback,
+      effectiveStatus
+    };
     const current = latestByTarget.get(targetId);
     const candidateTime = Date.parse(submittedAt) || 0;
     const currentTime = current ? (Date.parse(current.submittedAt) || 0) : -1;
@@ -957,12 +995,11 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
   return Array.from(latestByTarget.values()).map((selected) => {
     const row = selected.rowRef.row;
     const targetId = selected.targetId;
-    const submissionId = firstValue(row, [submissionIndex]) || createId("RESTORE-SUB");
-    const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, targetId);
-    const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
-    const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
-    const feedback = detail ? detail.feedback : answerFeedback;
-    const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
+    const submissionId = selected.submissionId;
+    const detail = selected.detail;
+    const evaluationJson = selected.evaluationJson;
+    const feedback = selected.feedback;
+    const score = selected.score;
     const goodPoints = toStringArray(feedback.goodPoints || feedback.good_points || evaluationJson.good_points || evaluationJson.feedback?.goodPoints);
     const improvementPoints = toStringArray(feedback.improvementPoints || feedback.improvement_points || evaluationJson.improvement_points || evaluationJson.feedback?.improvementPoints);
     const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
@@ -982,6 +1019,8 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
       work_title: firstValue(row, [titleIndex]),
       answer_text: firstValue(row, [answerIndex]),
       result_status: "good",
+      raw_status: firstValue(row, [statusIndex]),
+      legacy_normalized: selected.effectiveStatus.legacyNormalized,
       score,
       submitted_at: selected.submittedAt,
       ai_log_id: firstValue(row, [aiLogIndex]),
@@ -992,6 +1031,8 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
         schema_version: feedback.schemaVersion || evaluationJson.schema_version || evaluationJson.schemaVersion || "",
         result_status: "good",
         standard_status: "pass",
+        raw_status: firstValue(row, [statusIndex]),
+        legacy_normalized: selected.effectiveStatus.legacyNormalized,
         abc_grade: firstValue(row, [abcIndex]) || evaluationJson.abc_grade || evaluationJson.abcGrade || "",
         score,
         reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
@@ -1143,6 +1184,61 @@ function normalizeWorkStatus(value) {
   if (standard === "review") return "support_needed";
   if (/failed|error|ai_error/i.test(String(value || ""))) return "failed";
   return "needs_more";
+}
+
+// 第1弾前の旧判定には、80点以上でも review / サポート相談として保存された行がある。
+// Sheetsのraw値は変更せず、v2の明示的な失敗根拠がない旧行だけを読取時にpassへ救済する。
+// 現行v2のretryを点数だけで誤昇格させないため、schemaとlayer判定も同時に確認する。
+function resolveEffectiveWorkStatus({ rawStatus, score, workType, evaluationJson = {}, feedback = {}, detail = null } = {}) {
+  const rawStandardStatus = normalizeStandardStatus(rawStatus);
+  const detailFeedback = detail?.feedback && typeof detail.feedback === "object" ? detail.feedback : {};
+  const evaluationFeedback = evaluationJson.feedback && typeof evaluationJson.feedback === "object"
+    ? evaluationJson.feedback
+    : {};
+  const schemaVersion = String(
+    evaluationJson.schema_version || evaluationJson.schemaVersion ||
+    feedback.schemaVersion || feedback.schema_version ||
+    evaluationFeedback.schemaVersion || evaluationFeedback.schema_version ||
+    detailFeedback.schemaVersion || detailFeedback.schema_version || ""
+  ).trim();
+  const explicitStatuses = [
+    evaluationJson.standard_status,
+    evaluationJson.status,
+    evaluationJson.result_status,
+    detail?.status
+  ].map((value) => String(value || "").trim().toLowerCase());
+  const failedLayer = String(
+    detail?.failedLayer || evaluationJson.failed_layer || evaluationJson.failedLayer ||
+    feedback.failedLayer || evaluationFeedback.failedLayer || detailFeedback.failedLayer || ""
+  ).trim();
+  const layerDecisions = detail?.layerDecisions || evaluationJson.layer_decisions ||
+    evaluationJson.layerDecisions || feedback.layerDecisions || evaluationFeedback.layerDecisions ||
+    detailFeedback.layerDecisions || {};
+  const hasExplicitFailure = explicitStatuses.some((status) =>
+    ["retry", "needs_more", "revision_required", "failed", "ai_error", "error"].includes(status)
+  ) || Boolean(failedLayer) || decisionContainsFailure(layerDecisions);
+  const numericScore = Number(score);
+  const legacyNormalized = Number.isFinite(numericScore) && numericScore >= 80 &&
+    rawStandardStatus === "review" && !/v2/i.test(schemaVersion) && !hasExplicitFailure;
+  const standardStatus = legacyNormalized ? "pass" : rawStandardStatus;
+  const uiStatus = standardStatus === "pass"
+    ? "good"
+    : workType === "mini_work"
+      ? normalizeMiniWorkStatus(rawStatus)
+      : normalizeWorkStatus(rawStatus);
+
+  return { rawStatus: String(rawStatus || ""), standardStatus, uiStatus, legacyNormalized };
+}
+
+function decisionContainsFailure(value) {
+  if (value === false) return true;
+  if (Array.isArray(value)) return value.some(decisionContainsFailure);
+  if (value && typeof value === "object") {
+    if (Object.prototype.hasOwnProperty.call(value, "decision")) return decisionContainsFailure(value.decision);
+    if (Object.prototype.hasOwnProperty.call(value, "passed")) return decisionContainsFailure(value.passed);
+    return Object.values(value).some(decisionContainsFailure);
+  }
+  return ["no", "false", "fail", "failed", "0"].includes(String(value ?? "").trim().toLowerCase());
 }
 
 function normalizeAiSessionStatus(value, uiStatus) {
@@ -1547,6 +1643,7 @@ exports._test = {
   indexEvaluationDetails,
   normalizeEvaluation,
   normalizeWorkType,
+  resolveEffectiveWorkStatus,
   restoreVideoState,
   restoreQuizAttempts,
   restoreWorkState,
