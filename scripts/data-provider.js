@@ -444,6 +444,10 @@ export class LocalJsonLearningProvider {
 
     const lesson = db.lessons.find((item) => item.lesson_id === miniWork.lesson_id);
     const progress = this._getOrCreateProgress(db, emailNormalized, lesson);
+    const quizState = this._quizStateForLesson(db, emailNormalized, lesson, progress);
+    if (quizState.required && !quizState.passed) {
+      throw new Error("先に動画後の○×テストで4問以上正解してください。");
+    }
     const now = this._now();
     const wasMiniWorkPassed = progress.mini_work_status === "good";
     db.evaluationResults = db.evaluationResults || [];
@@ -562,6 +566,72 @@ export class LocalJsonLearningProvider {
 
     this._touchUser(db, emailNormalized, lesson.phase_id, lesson.lesson_id);
     this._write(db);
+  }
+
+  async submitQuizAttempt(email, quizId, answers = {}) {
+    const db = this._read();
+    const emailNormalized = normalizeEmail(email);
+    const quiz = (db.quizzes || []).find((item) => item.quiz_id === quizId);
+    if (!quiz) throw new Error("○×テストが見つかりません。");
+    const lesson = db.lessons.find((item) => item.lesson_id === quiz.lesson_id);
+    if (!lesson) throw new Error("対象レッスンが見つかりません。");
+    const progress = this._getOrCreateProgress(db, emailNormalized, lesson);
+    if (progress.video_status !== "watched") {
+      throw new Error("動画を視聴完了にしてから○×テストへ進んでください。");
+    }
+
+    const answerRows = (quiz.questions || []).map((question) => {
+      const answer = String(answers[question.question_id] || "").trim();
+      if (!['circle', 'cross'].includes(answer)) {
+        throw new Error("5問すべてに回答してください。");
+      }
+      return {
+        question_id: question.question_id,
+        answer,
+        is_correct: answer === question.correct_answer
+      };
+    });
+    if (answerRows.length !== 5) throw new Error("○×テストは5問で構成されています。");
+
+    const now = this._now();
+    const attempt = {
+      attempt_id: this._createId("QZA"),
+      email_normalized: emailNormalized,
+      quiz_id: quiz.quiz_id,
+      lesson_id: quiz.lesson_id,
+      phase_id: quiz.phase_id,
+      submitted_at: now,
+      correct_count: answerRows.filter((item) => item.is_correct).length,
+      total_count: answerRows.length,
+      passed: answerRows.filter((item) => item.is_correct).length >= Number(quiz.passing_correct_count || 4),
+      answers: answerRows,
+      quiz_version: quiz.quiz_version || ""
+    };
+
+    this._markLearningMutation(emailNormalized);
+    const syncResult = await this._syncLearningEvent("submitQuizAttempt", {
+      email: emailNormalized,
+      attemptId: attempt.attempt_id,
+      quizId: attempt.quiz_id,
+      lessonId: attempt.lesson_id,
+      phaseId: attempt.phase_id,
+      submittedAt: attempt.submitted_at,
+      correctCount: attempt.correct_count,
+      totalCount: attempt.total_count,
+      passed: attempt.passed,
+      answers: attempt.answers,
+      quizVersion: attempt.quiz_version
+    });
+    // クイズはSheets保存を正本とし、保存失敗時にローカルだけ合格扱いにしない。
+    if (syncResult?.ok === false) throw new Error(SAVE_FAILURE_MESSAGE);
+
+    db.quizAttempts = db.quizAttempts || [];
+    if (!db.quizAttempts.some((item) => item.attempt_id === attempt.attempt_id)) {
+      db.quizAttempts.push(attempt);
+    }
+    this._touchUser(db, emailNormalized, lesson.phase_id, lesson.lesson_id);
+    this._write(db);
+    return structuredClone(attempt);
   }
 
   async submitWork(email, workId, answerText, lessonId = "") {
@@ -852,11 +922,13 @@ export class LocalJsonLearningProvider {
       users: structuredClone(data.users || []),
       phases: structuredClone(data.phases || []),
       lessons: structuredClone(data.lessons || []),
+      quizzes: structuredClone(data.quizzes || []),
       miniWorks: structuredClone(data.miniWorks || []),
       works: structuredClone(data.works || []),
       progress: structuredClone(data.progress || []),
       submissions: structuredClone(data.submissions || []),
       evaluationResults: structuredClone(data.evaluationResults || []),
+      quizAttempts: structuredClone(data.quizAttempts || []),
       clearedWorkResults: structuredClone(data.clearedWorkResults || []),
       aiWorkSessions: structuredClone(data.aiWorkSessions || []),
       aiEvaluationLogs: structuredClone(data.aiEvaluationLogs || []),
@@ -879,11 +951,13 @@ export class LocalJsonLearningProvider {
       // 受講者固有の状態は下段のprogress等へ分離して保持する。
       phases: initial.phases,
       lessons: initial.lessons, // V5.1.1 fix: content lessons always from source JSON (prevents stale localStorage from wiping video_url)
+      quizzes: initial.quizzes, // B-022: クイズ本文・正解・解説は配信JSONを正本にする
       miniWorks: initial.miniWorks,
       works: initial.works, // V7.2.9: 本ワーク定義（intake_fields等のコンテンツ）は常にsource JSONから。stored localStorage優先だと古いintake定義が残り続ける（lessonsと同じ方針）。ユーザー状態はprogress/aiWorkSessions側に保持
       progress: stored.progress || initial.progress,
       submissions: stored.submissions || initial.submissions,
       evaluationResults: stored.evaluationResults || initial.evaluationResults,
+      quizAttempts: stored.quizAttempts || initial.quizAttempts,
       clearedWorkResults: stored.clearedWorkResults || initial.clearedWorkResults,
       aiWorkSessions: stored.aiWorkSessions || initial.aiWorkSessions,
       aiEvaluationLogs: stored.aiEvaluationLogs || initial.aiEvaluationLogs,
@@ -905,6 +979,8 @@ export class LocalJsonLearningProvider {
 
   _enrichLesson(db, lesson, email, progressByLesson, latestSubmissionByTarget, evaluationBySubmissionId, aiSessionsByWork = new Map()) {
     const progress = progressByLesson.get(lesson.lesson_id) || this._createDefaultProgress(email, lesson);
+    const quiz = (db.quizzes || []).find((item) => item.lesson_id === lesson.lesson_id) || null;
+    const quizState = this._quizStateForLesson(db, email, lesson, progress);
     const miniWork = db.miniWorks.find((item) => item.lesson_id === lesson.lesson_id) || null;
     const work = this._visibleWorksForLesson(db, lesson.lesson_id)[0] || null;
     const miniSubmission = miniWork ? latestSubmissionByTarget[`mini_work:${miniWork.mini_work_id}`] || null : null;
@@ -932,6 +1008,8 @@ export class LocalJsonLearningProvider {
     return {
       ...lesson,
       progress: progressForView,
+      quiz: quiz ? structuredClone(quiz) : null,
+      quizState: structuredClone(quizState),
       miniWork: miniWork ? structuredClone(miniWork) : null,
       work: work ? structuredClone(work) : null,
       latestMiniSubmission: miniSubmission ? structuredClone(miniSubmission) : null,
@@ -944,8 +1022,51 @@ export class LocalJsonLearningProvider {
       workUnlockRemainingLessonIds: remainingLessonIds,
       nextUnlockLessonId,
       canSubmitWork,
-      isComplete: progress.video_status === "watched" && (!lesson.mini_work_required || miniPassed) && workPassed
+      isComplete: progress.video_status === "watched" && (!quizState.required || quizState.passed) && (!lesson.mini_work_required || miniPassed) && workPassed
     };
+  }
+
+  _quizStateForLesson(db, email, lesson, progress = null) {
+    const quiz = (db.quizzes || []).find((item) => item.lesson_id === lesson.lesson_id) || null;
+    if (!quiz) {
+      return { required: false, unlocked: true, passed: true, legacyExempt: false, latestAttempt: null, attemptCount: 0 };
+    }
+    const attempts = (db.quizAttempts || [])
+      .filter((item) => item.email_normalized === email && item.quiz_id === quiz.quiz_id)
+      .sort((a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0));
+    const lessonProgress = progress || this._getOrCreateProgress(db, email, lesson);
+    const passedAttempt = attempts.find((item) => item.passed === true) || null;
+    const legacyExempt = attempts.length === 0 && (
+      lessonProgress.mini_work_status === "good" ||
+      lessonProgress.work_status === "good" ||
+      this._hasDownstreamLearningProgress(db, email, lesson)
+    );
+    return {
+      required: true,
+      unlocked: lessonProgress.video_status === "watched",
+      passed: Boolean(passedAttempt) || legacyExempt,
+      legacyExempt,
+      latestAttempt: attempts[0] ? structuredClone(attempts[0]) : null,
+      passedAttempt: passedAttempt ? structuredClone(passedAttempt) : null,
+      attemptCount: attempts.length
+    };
+  }
+
+  _hasDownstreamLearningProgress(db, email, lesson) {
+    const phaseOrderById = new Map((db.phases || []).map((phase) => [phase.phase_id, Number(phase.phase_order || 0)]));
+    const currentPhaseOrder = phaseOrderById.get(lesson.phase_id) || 0;
+    const currentLessonOrder = Number(lesson.lesson_order || 0);
+    const downstreamIds = new Set((db.lessons || [])
+      .filter((candidate) => {
+        const phaseOrder = phaseOrderById.get(candidate.phase_id) || 0;
+        return phaseOrder > currentPhaseOrder || (phaseOrder === currentPhaseOrder && Number(candidate.lesson_order || 0) > currentLessonOrder);
+      })
+      .map((candidate) => candidate.lesson_id));
+    return (db.progress || []).some((item) =>
+      item.email_normalized === email && downstreamIds.has(item.lesson_id) &&
+      [item.video_status, item.mini_work_status, item.work_status]
+        .some((status) => ["watched", "good", "needs_more", "support_needed", "submitted", "reviewing", "unlocked"].includes(status))
+    );
   }
 
   _buildProgressSummary(lessons, works = []) {
@@ -3000,10 +3121,34 @@ export class LocalJsonLearningProvider {
     db.progress = db.progress || [];
     db.submissions = db.submissions || [];
     db.evaluationResults = db.evaluationResults || [];
+    db.quizAttempts = db.quizAttempts || [];
     db.aiWorkSessions = db.aiWorkSessions || [];
     db.clearedWorkResults = Array.isArray(restored.clearedWorkResults)
       ? structuredClone(restored.clearedWorkResults)
       : [];
+    if (Array.isArray(restored.quizAttempts)) {
+      db.quizAttempts = db.quizAttempts.filter((item) => item.email_normalized !== email);
+      restored.quizAttempts.forEach((attempt) => {
+        const attemptId = String(attempt.attempt_id || attempt.attemptId || "").trim();
+        const quizId = String(attempt.quiz_id || attempt.quizId || "").trim();
+        if (!attemptId || !quizId) return;
+        db.quizAttempts.push({
+          ...structuredClone(attempt),
+          attempt_id: attemptId,
+          email_normalized: email,
+          quiz_id: quizId,
+          lesson_id: String(attempt.lesson_id || attempt.lessonId || "").trim(),
+          phase_id: String(attempt.phase_id || attempt.phaseId || "").trim(),
+          correct_count: Number(attempt.correct_count ?? attempt.correctCount ?? 0),
+          total_count: Number(attempt.total_count ?? attempt.totalCount ?? 5),
+          passed: attempt.passed === true || String(attempt.passed || "").toLowerCase() === "true",
+          answers: Array.isArray(attempt.answers) ? structuredClone(attempt.answers) : [],
+          quiz_version: String(attempt.quiz_version || attempt.quizVersion || ""),
+          submitted_at: attempt.submitted_at || attempt.submittedAt || this._now(),
+          restored_from_sheets: true
+        });
+      });
+    }
     this.lastRestoredAiWorkIds = new Set((restored.aiWorkSessions || [])
       .map((session) => String(session.work_id || session.workId || "").trim())
       .filter(Boolean));
@@ -3388,6 +3533,10 @@ export class SpreadsheetApiLearningProvider {
 
   async submitMiniWork(email, miniWorkId, answerText) {
     return this._request("submitMiniWork", { email, miniWorkId, answerText });
+  }
+
+  async submitQuizAttempt(email, quizId, answers) {
+    return this._request("submitQuizAttempt", { email, quizId, answers });
   }
 
   async submitWork(email, workId, answerText, lessonId = "") {

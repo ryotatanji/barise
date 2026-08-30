@@ -2,6 +2,7 @@ const {
   appendValues,
   columnName,
   createSheet,
+  ensureAppendOnlySheet,
   findHeaderIndex,
   getSpreadsheetMetadata,
   getValues,
@@ -67,6 +68,18 @@ const AI_EVALUATION_DETAIL_FIELDS = {
   evaluatedAt: ["evaluated_at"]
 };
 
+const QUIZ_LOG_SHEET_NAME = "_○×テスト回答ログ_all";
+const QUIZ_LOG_HEADERS = [
+  "attempt_id", "email_key", "quiz_id", "lesson_id", "phase_id", "submitted_at",
+  "correct_count", "total_count", "passed", "answers_json", "quiz_version"
+];
+const QUIZ_LOG_FIELDS = {
+  attemptId: ["attempt_id"], emailKey: ["email_key"], quizId: ["quiz_id"],
+  lessonId: ["lesson_id"], phaseId: ["phase_id"], submittedAt: ["submitted_at"],
+  correctCount: ["correct_count"], totalCount: ["total_count"], passed: ["passed"],
+  answersJson: ["answers_json"], quizVersion: ["quiz_version"]
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
@@ -78,6 +91,7 @@ const ACTIONS = new Set([
   "restoreLearningState",
   "markVideoWatched",
   "setVideoCompletion",
+  "submitQuizAttempt",
   "submitMiniWork",
   "submitWork",
   "submitAiWorkAnswer",
@@ -200,7 +214,7 @@ exports.handler = async function handler(event) {
         email_key: emailKey,
         mock: true,
         warnings: [],
-        restored: { progress: [], submissions: [], evaluationResults: [], aiWorkSessions: [], clearedTargets: [] }
+        restored: { progress: [], submissions: [], evaluationResults: [], aiWorkSessions: [], quizAttempts: [], clearedTargets: [] }
       });
     }
 
@@ -221,6 +235,8 @@ exports.handler = async function handler(event) {
       result = await restoreLearningState(context);
     } else if (action === "markVideoWatched" || action === "setVideoCompletion") {
       result = await syncVideoCompletion(context);
+    } else if (action === "submitQuizAttempt") {
+      result = await syncQuizAttempt(context);
     } else {
       result = await syncWorkSubmission(context);
     }
@@ -248,6 +264,7 @@ function syncConfig() {
     progressSpreadsheetId: process.env.BARISE_PROGRESS_SPREADSHEET_ID || process.env.SPREADSHEET_ID || "",
     progressSummarySheetName: process.env.BARISE_PROGRESS_SUMMARY_SHEET_NAME || "_進捗サマリー",
     videoLogSheetName: process.env.BARISE_VIDEO_LOG_SHEET_NAME || "_視聴ログ_all",
+    quizLogSheetName: process.env.BARISE_QUIZ_LOG_SHEET_NAME || QUIZ_LOG_SHEET_NAME,
     workSpreadsheetId: process.env.BARISE_WORK_SPREADSHEET_ID || process.env.SPREADSHEET_ID || "",
     workSummarySheetName: process.env.BARISE_WORK_SUMMARY_SHEET_NAME || "_ワークサマリー",
     workLogSheetName: process.env.BARISE_WORK_LOG_SHEET_NAME || "_回答ログ_all",
@@ -364,6 +381,54 @@ async function syncVideoCompletion(context) {
   };
 }
 
+async function syncQuizAttempt(context, operations = {}) {
+  const { payload, config, now } = context;
+  const attemptId = String(payload.attemptId || payload.attempt_id || "").trim();
+  const quizId = String(payload.quizId || payload.quiz_id || "").trim();
+  const lessonId = String(payload.lessonId || payload.lesson_id || "").trim();
+  const phaseId = String(payload.phaseId || payload.phase_id || "").trim();
+  const submittedAt = payload.submittedAt || payload.submitted_at || now;
+  const answers = Array.isArray(payload.answers) ? payload.answers : [];
+  const totalCount = Number(payload.totalCount ?? payload.total_count ?? answers.length);
+  const correctCount = Number(payload.correctCount ?? payload.correct_count ?? answers.filter((item) => item?.is_correct === true).length);
+  if (!attemptId || !quizId || !lessonId || !phaseId) {
+    throw httpError(400, "quiz_identity_missing", "○×テストの保存情報が不足しています。");
+  }
+  if (answers.length !== 5 || totalCount !== 5 || !Number.isInteger(correctCount) || correctCount < 0 || correctCount > 5) {
+    throw httpError(400, "quiz_answers_invalid", "○×テスト5問すべての回答を確認してください。");
+  }
+
+  const ensureSheet = operations.ensureAppendOnlySheet || ensureAppendOnlySheet;
+  const readValues = operations.getValues || getValues;
+  const appendRows = operations.appendValues || appendValues;
+  const sheetName = config.quizLogSheetName || QUIZ_LOG_SHEET_NAME;
+  const ensured = await ensureSheet(config.workSpreadsheetId, sheetName, QUIZ_LOG_HEADERS, operations.sheetOperations || {});
+  const existingIds = await readValues(config.workSpreadsheetId, `${quoteSheetName(sheetName)}!A2:A`);
+  if (existingIds.some((row) => String(row[0] || "").trim() === attemptId)) {
+    return { idempotent: true, affected: [], sheetName };
+  }
+
+  const row = [
+    attemptId,
+    context.emailKey,
+    quizId,
+    lessonId,
+    phaseId,
+    submittedAt,
+    correctCount,
+    totalCount,
+    correctCount >= 4 ? "TRUE" : "FALSE",
+    safeJson(answers),
+    String(payload.quizVersion || payload.quiz_version || "")
+  ];
+  await appendRows(config.workSpreadsheetId, `${quoteSheetName(sheetName)}!A:K`, [row]);
+  return {
+    idempotent: false,
+    affected: [{ sheetName, action: "append" }],
+    createdSheet: Boolean(ensured.created)
+  };
+}
+
 async function syncWorkSubmission(context) {
   const { payload, config, warnings, now, action } = context;
   const submittedAt = payload.submittedAt || payload.submitted_at || now;
@@ -464,8 +529,10 @@ async function restoreLearningState(context) {
   const answerLog = await readSheet(config.workSpreadsheetId, config.workLogSheetName);
   const workSummary = await readSheet(config.workSpreadsheetId, config.workSummarySheetName);
   const evaluationDetail = await readOptionalSheet(config.workSpreadsheetId, config.aiEvaluationDetailSheetName);
+  const quizLog = await readOptionalSheet(config.workSpreadsheetId, config.quizLogSheetName);
   const videoState = restoreVideoState(videoLog, emailKey, now);
   const workState = restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetail);
+  const quizAttempts = restoreQuizAttempts(quizLog, emailKey);
 
   warnings.push(...videoState.warnings, ...workState.warnings);
 
@@ -474,7 +541,8 @@ async function restoreLearningState(context) {
       { sheetName: config.videoLogSheetName, action: "read" },
       { sheetName: config.workLogSheetName, action: "read" },
       { sheetName: config.workSummarySheetName, action: "read" },
-      ...(evaluationDetail.exists ? [{ sheetName: config.aiEvaluationDetailSheetName, action: "read" }] : [])
+      ...(evaluationDetail.exists ? [{ sheetName: config.aiEvaluationDetailSheetName, action: "read" }] : []),
+      ...(quizLog.exists ? [{ sheetName: config.quizLogSheetName, action: "read" }] : [])
     ],
     restored: {
       progress: [...videoState.progress, ...workState.progress],
@@ -482,10 +550,62 @@ async function restoreLearningState(context) {
       evaluationResults: workState.evaluationResults,
       clearedWorkResults: workState.clearedWorkResults,
       aiWorkSessions: workState.aiWorkSessions,
+      quizAttempts,
       clearedTargets: [...videoState.clearedTargets, ...workState.clearedTargets],
       restoredAt: now
     }
   };
+}
+
+// クライアントへ全履歴を返さず、各quiz_idの最新試行と最新合格試行（異なる場合のみ）に絞る。
+// これでリロード後の最新結果と、一度合格した状態の単調性を両立する。
+function restoreQuizAttempts(sheet, emailKey) {
+  if (!sheet?.exists) return [];
+  const attemptIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.attemptId);
+  const emailIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.emailKey);
+  const quizIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.quizId);
+  const lessonIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.lessonId);
+  const phaseIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.phaseId);
+  const submittedIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.submittedAt);
+  const correctIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.correctCount);
+  const totalIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.totalCount);
+  const passedIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.passed);
+  const answersIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.answersJson);
+  const versionIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.quizVersion);
+  if ([attemptIndex, emailIndex, quizIndex, submittedIndex, passedIndex].some((index) => index < 0)) return [];
+
+  const groups = new Map();
+  (sheet.rowRefs || []).forEach((rowRef) => {
+    if (normalizeEmailKey(rowRef.row[emailIndex]) !== emailKey) return;
+    const quizId = String(rowRef.row[quizIndex] || "").trim();
+    const attemptId = String(rowRef.row[attemptIndex] || "").trim();
+    if (!quizId || !attemptId) return;
+    const rawPassed = String(rowRef.row[passedIndex] || "").trim().toLowerCase();
+    const item = {
+      attempt_id: attemptId,
+      email_normalized: emailKey,
+      quiz_id: quizId,
+      lesson_id: lessonIndex >= 0 ? String(rowRef.row[lessonIndex] || "").trim() : "",
+      phase_id: phaseIndex >= 0 ? String(rowRef.row[phaseIndex] || "").trim() : "",
+      submitted_at: String(rowRef.row[submittedIndex] || "").trim(),
+      correct_count: correctIndex >= 0 ? Number(rowRef.row[correctIndex] || 0) : 0,
+      total_count: totalIndex >= 0 ? Number(rowRef.row[totalIndex] || 5) : 5,
+      passed: ["true", "1", "yes", "合格"].includes(rawPassed),
+      answers: answersIndex >= 0 ? parseJsonCell(rowRef.row[answersIndex]) : [],
+      quiz_version: versionIndex >= 0 ? String(rowRef.row[versionIndex] || "").trim() : "",
+      restored_from_sheets: true
+    };
+    if (!Array.isArray(item.answers)) item.answers = [];
+    if (!groups.has(quizId)) groups.set(quizId, []);
+    groups.get(quizId).push(item);
+  });
+
+  return Array.from(groups.values()).flatMap((items) => {
+    items.sort((a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0));
+    const latest = items[0];
+    const latestPass = items.find((item) => item.passed) || null;
+    return latestPass && latestPass.attempt_id !== latest.attempt_id ? [latest, latestPass] : [latest];
+  });
 }
 
 function restoreVideoState(sheet, emailKey, now) {
@@ -1356,6 +1476,8 @@ exports._test = {
   AI_EVALUATION_DETAIL_HEADERS,
   ANSWER_LOG_FIELDS,
   PROGRESS_SUMMARY_FIELDS,
+  QUIZ_LOG_FIELDS,
+  QUIZ_LOG_HEADERS,
   VIDEO_LOG_FIELDS,
   WORK_SUMMARY_FIELDS,
   buildClearedWorkResults,
@@ -1364,8 +1486,10 @@ exports._test = {
   normalizeEvaluation,
   normalizeWorkType,
   restoreVideoState,
+  restoreQuizAttempts,
   restoreWorkState,
   selectEvaluationDetail,
   selectLatestRow,
-  syncConfig
+  syncConfig,
+  syncQuizAttempt
 };
