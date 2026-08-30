@@ -157,6 +157,7 @@ let judgeDom = null;
 let toastDom = null;
 let toastTimer = 0;
 let judgeOnNext = null;
+let judgeResultGeneration = 0;
 
 function ensureOverlayDom() {
   if (judgeDom) return;
@@ -240,12 +241,13 @@ function openJudgeOverlay(message = "AIが回答を確認しています") {
 
 function closeJudgeOverlay() {
   if (!judgeDom) return;
+  judgeResultGeneration += 1;
   judgeDom.classList.remove("on");
   document.body.style.overflow = "";
   resetJudgeOverlay();
 }
 
-async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel, onNext }) {
+async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel, onNext, generation = judgeResultGeneration }) {
   ensureOverlayDom();
   const ringWrap = document.getElementById("judgeRingWrap");
   const ring = document.getElementById("judgeRing");
@@ -261,7 +263,10 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
   next.textContent = buttonLabel || "次の一歩へ →";
   judgeOnNext = onNext || null;
 
-  const target = Math.max(0, Math.min(100, Number(score) || 0));
+  const numericScore = Number(score);
+  if (!Number.isFinite(numericScore)) throw new Error("評価点を確認できませんでした。");
+  const target = Math.max(0, Math.min(100, numericScore));
+  const isCurrent = () => generation === judgeResultGeneration && judgeDom?.classList.contains("on");
 
   /* リング立ち上がり（back.out(1.6) / .45s） */
   await tween({
@@ -271,6 +276,7 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
       ringWrap.style.transform = `scale(${.85 + .15 * v})`;
     }
   });
+  if (!isCurrent()) return;
 
   /* スコアは必ず0から実スコアへ満ちる（1.2s） */
   await tween({
@@ -280,6 +286,10 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
       ring.style.strokeDashoffset = ringOffset(JUDGE_RING_C, v);
     }
   });
+  if (!isCurrent()) return;
+  // requestAnimationFrameの最終丸めに依存せず、確定値を必ずDOMへ残す。
+  scoreEl.textContent = String(Math.round(target));
+  ring.style.strokeDashoffset = ringOffset(JUDGE_RING_C, target);
 
   /* 金のクリアスタンプ（back.out(2.2)）＋粒子22個は good のときだけ */
   if (passed) {
@@ -292,12 +302,14 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
         stamp.style.transform = `scale(${.8 + .2 * v})`;
       }
     });
+    if (!isCurrent()) return;
   }
 
   await tween({
     from: 0, to: 1, duration: 500,
     onUpdate: (v) => { fb.style.opacity = String(Math.max(0, Math.min(1, v))); }
   });
+  if (!isCurrent()) return;
 
   await tween({
     from: 0, to: 1, duration: 450,
@@ -306,6 +318,7 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
       next.style.transform = `translateY(${10 * (1 - v)}px)`;
     }
   });
+  if (!isCurrent()) return;
   next.style.pointerEvents = "auto";
 }
 
@@ -2740,27 +2753,29 @@ async function handleSubmitAiWork(event) {
   submitButton.textContent = "AIが確認しています";
 
   const evaluationForms = ["ai-answer", "ai-followup", "ai-revision"];
+  const overlayGeneration = ++judgeResultGeneration;
   openJudgeOverlay(AI_FORM_WAIT_MESSAGE[formKind] || "AIが確認しています");
 
   try {
+    let submittedSession = null;
     if (formKind === "ai-theme") {
-      await provider.startAiWork(state.email, workId, formDataToObject(formData));
+      submittedSession = await provider.startAiWork(state.email, workId, formDataToObject(formData));
     }
 
     if (formKind === "ai-answer") {
-      await provider.submitAiWorkAnswer(state.email, workId, formData.get("answer"));
+      submittedSession = await provider.submitAiWorkAnswer(state.email, workId, formData.get("answer"));
     }
 
     if (formKind === "ai-intake-followup") {
-      await provider.submitAiWorkIntakeFollowup(state.email, workId, formData.get("intake_followup_answer"));
+      submittedSession = await provider.submitAiWorkIntakeFollowup(state.email, workId, formData.get("intake_followup_answer"));
     }
 
     if (formKind === "ai-followup") {
-      await provider.submitAiWorkFollowup(state.email, workId, formData.get("followup_answer"));
+      submittedSession = await provider.submitAiWorkFollowup(state.email, workId, formData.get("followup_answer"));
     }
 
     if (formKind === "ai-revision") {
-      await provider.submitAiWorkRevision(state.email, workId, formData.get("revision_answer"));
+      submittedSession = await provider.submitAiWorkRevision(state.email, workId, formData.get("revision_answer"));
     }
 
     await refreshLearningState();
@@ -2768,13 +2783,20 @@ async function handleSubmitAiWork(event) {
     render();
 
     const work = (state.learning?.works || []).find((item) => item.work_id === workId);
-    const session = work?.aiSession || null;
+    const refreshedSession = work?.aiSession || null;
+    // submit APIの確定結果を捨ててrefresh後の再構成sessionだけを見ると、
+    // 復元・再描画のタイミング次第でリングが初期値0のままになる。
+    // 今回のsubmission IDを持つ返却sessionを優先し、後着の古い状態を表示しない。
+    const session = submittedSession?.work_id === workId && submittedSession?.ai_evaluation_result
+      ? submittedSession
+      : refreshedSession;
     const evaluation = session?.ai_evaluation_result || null;
-    const hasScore = Number.isFinite(Number(evaluation?.score)) && Number(evaluation?.score) > 0;
+    const hasScore = evaluation?.score !== undefined && evaluation?.score !== null &&
+      String(evaluation.score).trim() !== "" && Number.isFinite(Number(evaluation.score));
 
     if (evaluationForms.includes(formKind) && evaluation && hasScore) {
       const passed = ["completed", "final_feedback_ready"].includes(session.status);
-      showJudgeResult({
+      await showJudgeResult({
         score: Number(evaluation.score),
         passed,
         feedback: evaluation.summary || "",
@@ -2785,7 +2807,8 @@ async function handleSubmitAiWork(event) {
         onNext: () => {
           closeJudgeOverlay();
           scrollToPageTop();
-        }
+        },
+        generation: overlayGeneration
       });
     } else {
       closeJudgeOverlay();
