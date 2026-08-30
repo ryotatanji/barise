@@ -1608,7 +1608,7 @@ function isProfileIntakeField(key) {
 
 function renderAiAnswerForm(work, session) {
   return `
-    ${renderAiGeneratedPrompt(session)}
+    ${renderAiGeneratedPrompt(work, session)}
     ${renderAiCriteriaGuide(work)}
     <form class="ai-work-form" data-form="ai-answer" data-work-id="${escapeAttribute(work.work_id)}">
       ${renderTextAreaField("answer", "回答", session.initial_answer || "", work.answer_placeholder || "場面、数字、判断理由、次の行動を具体的に書いてください", 8)}
@@ -1644,7 +1644,7 @@ function renderAiFollowupForm(work, session) {
     ${renderAiWorkAchievementNotice(work)}
     ${renderAiWorkLatestResult(work)}
     ${renderAiWorkAttemptHistory(work)}
-    ${renderAiGeneratedPrompt(session)}
+    ${renderAiGeneratedPrompt(work, session)}
     ${renderAiCriteriaProgress(session)}
     ${renderAiEvaluationSummary(session)}
     <div class="ai-block ai-block--focus">
@@ -1667,7 +1667,7 @@ function renderAiRevisionForm(work, session) {
     ${renderAiWorkAchievementNotice(work)}
     ${renderAiWorkLatestResult(work)}
     ${renderAiWorkAttemptHistory(work)}
-    ${renderAiGeneratedPrompt(session)}
+    ${renderAiGeneratedPrompt(work, session)}
     <div class="ai-block ai-block--focus">
       <span>もう一度、いっしょに整理しましょう</span>
       <p class="multiline-text">${escapeHtml(session.ai_feedback || session.ai_summary || "回答の観点を整えて、もう一度送ってください。")}</p>
@@ -1825,8 +1825,13 @@ function renderLearnerGuidance(work) {
    AIプロンプト表示・整形（V5ロジック準拠）
    ============================================================ */
 
-function renderAiGeneratedPrompt(session) {
+function renderAiGeneratedPrompt(work, session) {
   const parts = normalizeAiPromptParts(session);
+  // Sheets復元セッションには生成済み問題文が保存されていないため、
+  // 再挑戦中は現行教材の問いを表示フォールバックにして空欄を防ぐ。
+  if (!parts.questionItems.length && Array.isArray(work?.questions)) {
+    parts.questionItems = sanitizePromptList(work.questions);
+  }
   if (!parts.title && !parts.questionItems.length && !parts.inputRows.length) return "";
 
   return `
