@@ -480,6 +480,7 @@ async function restoreLearningState(context) {
       progress: [...videoState.progress, ...workState.progress],
       submissions: workState.submissions,
       evaluationResults: workState.evaluationResults,
+      clearedWorkResults: workState.clearedWorkResults,
       aiWorkSessions: workState.aiWorkSessions,
       clearedTargets: [...videoState.clearedTargets, ...workState.clearedTargets],
       restoredAt: now
@@ -565,7 +566,7 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
 
   if (emailIndex < 0 || (workIndex < 0 && miniIndex < 0)) {
     warnings.push({ sheetName: answerLog.sheetName, warning: "restore_answer_columns_missing" });
-    return { progress: [], submissions: [], evaluationResults: [], aiWorkSessions: [], clearedTargets: [], warnings };
+    return { progress: [], submissions: [], evaluationResults: [], clearedWorkResults: [], aiWorkSessions: [], clearedTargets: [], warnings };
   }
 
   const groups = new Map();
@@ -728,8 +729,124 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
   });
 
   applyWorkSummaryClears(workSummary, emailKey).forEach((item) => clearedTargets.push(item));
+  const clearedWorkResults = buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission);
 
-  return { progress, submissions, evaluationResults, aiWorkSessions, clearedTargets, warnings };
+  return { progress, submissions, evaluationResults, clearedWorkResults, aiWorkSessions, clearedTargets, warnings };
+}
+
+// マイページ用には全回答履歴を返さず、work IDごとの最新合格／完了結果だけを返す。
+// 詳細評価はsubmission_idに加えてemail_key・work_idも一致した行だけを採用する。
+function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission = new Map()) {
+  const emailIndex = findHeaderIndex(answerLog.headers, EMAIL_HEADERS);
+  const workIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.workId);
+  const miniIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.miniWorkId);
+  const lessonIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.lessonId);
+  const typeIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.workType);
+  const statusIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.status);
+  const scoreIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.score);
+  const abcIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.abcGrade);
+  const answerIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.answerText);
+  const submittedIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.submittedAt);
+  const updatedIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.updatedAt);
+  const submissionIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.submissionId);
+  const titleIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.workTitle);
+  const summaryIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.summary);
+  const feedbackIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.feedbackJson);
+  const evaluationIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.evaluationJson);
+  const aiLogIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.aiLogId);
+  if (emailIndex < 0 || statusIndex < 0 || (workIndex < 0 && miniIndex < 0)) return [];
+
+  const latestByTarget = new Map();
+  (answerLog.rowRefs || []).forEach((rowRef) => {
+    const row = rowRef.row;
+    if (normalizeEmailKey(row[emailIndex]) !== normalizeEmailKey(emailKey)) return;
+    const explicitMiniId = String(miniIndex >= 0 ? row[miniIndex] || "" : "").trim();
+    const workId = String(workIndex >= 0 ? row[workIndex] || "" : explicitMiniId).trim();
+    const targetId = explicitMiniId || workId;
+    if (!targetId) return;
+    const workType = normalizeRestoredWorkType(firstValue(row, [typeIndex]), targetId);
+    const uiStatus = workType === "mini_work"
+      ? normalizeMiniWorkStatus(firstValue(row, [statusIndex]))
+      : normalizeWorkStatus(firstValue(row, [statusIndex]));
+    if (uiStatus !== "good") return;
+    const submittedAt = firstValue(row, [submittedIndex, updatedIndex]) || now;
+    const candidate = { rowRef, workType, workId: workId || targetId, miniWorkId: explicitMiniId, targetId, submittedAt };
+    const current = latestByTarget.get(targetId);
+    const candidateTime = Date.parse(submittedAt) || 0;
+    const currentTime = current ? (Date.parse(current.submittedAt) || 0) : -1;
+    if (!current || candidateTime > currentTime || (candidateTime === currentTime && rowRef.rowNumber > current.rowRef.rowNumber)) {
+      latestByTarget.set(targetId, candidate);
+    }
+  });
+
+  return Array.from(latestByTarget.values()).map((selected) => {
+    const row = selected.rowRef.row;
+    const targetId = selected.targetId;
+    const submissionId = firstValue(row, [submissionIndex]) || createId("RESTORE-SUB");
+    const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, targetId);
+    const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
+    const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
+    const feedback = detail ? detail.feedback : answerFeedback;
+    const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
+    const goodPoints = toStringArray(feedback.goodPoints || feedback.good_points || evaluationJson.good_points || evaluationJson.feedback?.goodPoints);
+    const improvementPoints = toStringArray(feedback.improvementPoints || feedback.improvement_points || evaluationJson.improvement_points || evaluationJson.feedback?.improvementPoints);
+    const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
+    const rewritePoints = toStringArray(feedback.rewritePoints || feedback.rewrite_points || evaluationJson.rewrite_points || evaluationJson.feedback?.rewritePoints);
+    const growthPoints = toStringArray(feedback.growthPoints || feedback.growth_points || evaluationJson.growth_points || evaluationJson.growth_guidance || evaluationJson.feedback?.growthPoints);
+    const layerDecisions = detail?.layerDecisions || evaluationJson.layer_decisions || evaluationJson.layerDecisions || feedback.layerDecisions || {};
+    const layerResults = feedback.layerResults || evaluationJson.layer_results || evaluationJson.layerResults || {};
+    const failedLayer = detail?.failedLayer || evaluationJson.failed_layer || evaluationJson.failedLayer || feedback.failedLayer || "";
+    const failedLayerLabel = feedback.failedLayerLabel || evaluationJson.failed_layer_label || evaluationJson.failedLayerLabel || "";
+    return {
+      submission_id: submissionId,
+      target_type: selected.workType,
+      target_id: targetId,
+      work_id: selected.workId || targetId,
+      mini_work_id: selected.miniWorkId || (selected.workType === "mini_work" ? targetId : ""),
+      lesson_id: firstValue(row, [lessonIndex]),
+      work_title: firstValue(row, [titleIndex]),
+      answer_text: firstValue(row, [answerIndex]),
+      result_status: "good",
+      score,
+      submitted_at: selected.submittedAt,
+      ai_log_id: firstValue(row, [aiLogIndex]),
+      evaluation: {
+        submission_id: submissionId,
+        target_type: selected.workType,
+        target_id: targetId,
+        schema_version: feedback.schemaVersion || evaluationJson.schema_version || evaluationJson.schemaVersion || "",
+        result_status: "good",
+        standard_status: "pass",
+        abc_grade: firstValue(row, [abcIndex]) || evaluationJson.abc_grade || evaluationJson.abcGrade || "",
+        score,
+        reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
+        good_points: goodPoints,
+        improvement_points: improvementPoints,
+        layer_decisions: layerDecisions,
+        layer_results: layerResults,
+        failed_layer: failedLayer,
+        failed_layer_label: failedLayerLabel,
+        missing_points: missingPoints,
+        rewrite_points: rewritePoints,
+        growth_points: growthPoints,
+        next_question: feedback.nextQuestion || evaluationJson.next_question || evaluationJson.nextQuestion || "",
+        feedback: {
+          ...feedback,
+          summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || "",
+          goodPoints,
+          improvementPoints,
+          missingPoints,
+          rewritePoints,
+          growthPoints,
+          layerDecisions,
+          layerResults,
+          failedLayer,
+          failedLayerLabel
+        }
+      },
+      restored_from_sheets: true
+    };
+  });
 }
 
 function buildRestoredAiWorkSession({ emailKey, workId, lessonId, workTitle, answerText, status, uiStatus, score, evaluationJson, submittedAt, submissionId }) {
@@ -858,6 +975,7 @@ function normalizeAiSessionStatus(value, uiStatus) {
 }
 
 function parseScore(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return null;
   const score = Number(value);
   return Number.isFinite(score) ? score : null;
 }
@@ -1240,6 +1358,7 @@ exports._test = {
   PROGRESS_SUMMARY_FIELDS,
   VIDEO_LOG_FIELDS,
   WORK_SUMMARY_FIELDS,
+  buildClearedWorkResults,
   fieldForHeader,
   indexEvaluationDetails,
   normalizeEvaluation,

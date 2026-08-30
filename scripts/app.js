@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-2-12-r3";
+} from "./data-provider.js?v=7-3-2-wave2a-r2";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -51,6 +51,18 @@ function kanjiChapter(order) {
 
 function padChapter(order) {
   return String(Number(order) || 0).padStart(2, "0");
+}
+
+function isFinalPhase(phase) {
+  return phase?.phase_id === "FINAL";
+}
+
+function phaseNumberLabel(phase) {
+  return isFinalPhase(phase) ? "" : padChapter(phase?.phase_order);
+}
+
+function phaseChapterLabel(phase) {
+  return isFinalPhase(phase) ? "" : kanjiChapter(phase?.phase_order);
 }
 
 /* ============================================================
@@ -466,7 +478,8 @@ function renderLogin(errorMessage = "", emailValue = getLastEmail(), showSupport
 function renderHomeTop(learning) {
   const d = new Date();
   const currentPhase = learning.currentPhase;
-  const sub = `${d.getMonth() + 1}/${d.getDate()}${currentPhase ? ` ・ ${escapeHtml(kanjiChapter(currentPhase.phase_order))}` : ""}`;
+  const chapterLabel = phaseChapterLabel(currentPhase);
+  const sub = `${d.getMonth() + 1}/${d.getDate()}${chapterLabel ? ` ・ ${escapeHtml(chapterLabel)}` : ""}`;
   return `
     <div class="top">
       <a href="#/home" aria-label="Barise ホーム"><img class="brand-img" src="${config.brandLogo}" alt="Barise" width="108"></a>
@@ -566,6 +579,8 @@ function renderHome() {
           </section>
         `}
 
+        ${renderClearedWorksSection(learning.clearedWorks || [])}
+
         <section class="ch-list rise rise-2" aria-label="章の一覧">
           <p class="ch-h">CHAPTERS</p>
           ${learning.phases
@@ -604,6 +619,84 @@ function renderHome() {
   });
 }
 
+function renderClearedWorksSection(clearedWorks = []) {
+  const cards = clearedWorks.map((work) => renderClearedWorkCard(work)).join("");
+  return `
+    <section class="cleared-works rise rise-2" aria-labelledby="cleared-works-title">
+      <div class="sec-h-row">
+        <h2 class="sec-h" id="cleared-works-title">クリア済みワーク</h2>
+        ${clearedWorks.length ? `<span class="sec-count">${clearedWorks.length}件</span>` : ""}
+      </div>
+      ${cards || `<p class="empty-note">クリア済みワークはまだありません</p>`}
+    </section>
+  `;
+}
+
+function renderClearedWorkCard(work = {}) {
+  const phaseLabel = work.phase_id === "FINAL" ? "最終まとめ" : `フェーズ${String(work.phase_id || "").replace(/^P/, "")}`;
+  const typeLabel = work.target_type === "mini_work" ? "ミニワーク" : "ワーク";
+  const hasScore = work.score !== null && work.score !== undefined && String(work.score).trim() !== "";
+  const score = hasScore && Number.isFinite(Number(work.score)) ? Number(work.score) : null;
+  const question = Array.isArray(work.question)
+    ? `<ol>${work.question.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`
+    : `<p class="cleared-work-text">${escapeHtml(work.question || "")}</p>`;
+  return `
+    <details class="cleared-work-card" data-cleared-work-id="${escapeAttribute(work.target_id || "")}">
+      <summary>
+        <span class="cleared-work-meta">${escapeHtml(phaseLabel)} ・ ${escapeHtml(typeLabel)}</span>
+        <strong>${escapeHtml(work.title || work.target_id || "ワーク")}</strong>
+        <span class="cleared-work-result">${score === null ? "完了" : `${score}点`} ・ ${work.target_type === "mini_work" ? "合格" : "完了"}</span>
+      </summary>
+      <div class="cleared-work-body">
+        ${work.question && (Array.isArray(work.question) ? work.question.length : String(work.question).trim()) ? `<section><h3>設問</h3>${question}</section>` : ""}
+        <section><h3>自分の回答</h3><p class="cleared-work-text">${escapeHtml(work.answer_text || "")}</p></section>
+        <dl class="cleared-work-judgement">
+          ${score === null ? "" : `<div><dt>点数</dt><dd>${score}点</dd></div>`}
+          <div><dt>判定</dt><dd>${work.target_type === "mini_work" ? "合格" : "完了"}</dd></div>
+          ${work.submitted_at ? `<div><dt>提出</dt><dd>${escapeHtml(formatDate(work.submitted_at))}</dd></div>` : ""}
+        </dl>
+        ${renderClearedWorkFeedback(work.evaluation || {}, work.target_type)}
+      </div>
+    </details>
+  `;
+}
+
+function renderClearedWorkFeedback(evaluation = {}, targetType = "") {
+  const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
+  const goodPoints = uniqueLearnerItems(evaluation.good_points || evaluation.goodPoints || feedback.goodPoints || evaluation.good_materials || []);
+  const missingPoints = uniqueLearnerItems(evaluation.missing_points || evaluation.missingPoints || feedback.missingPoints || []);
+  const rewritePoints = uniqueLearnerItems(evaluation.rewrite_points || evaluation.rewritePoints || feedback.rewritePoints || []);
+  const growthPoints = uniqueLearnerItems(evaluation.growth_points || evaluation.growthPoints || feedback.growthPoints || []);
+  const improvementPoints = uniqueLearnerItems(evaluation.improvement_points || evaluation.improvementPoints || feedback.improvementPoints || []);
+  const summary = String(feedback.summary || evaluation.reason || evaluation.summary || "").trim();
+  const isV2 = targetType === "mini_work" && hasMiniWorkV2Feedback(evaluation);
+  if (isV2) {
+    const sections = [
+      ["良かった材料", goodPoints],
+      ["改善余地", missingPoints],
+      ["改善のヒント", rewritePoints],
+      ["次の成長ポイント", growthPoints]
+    ].filter(([, items]) => items.length);
+    return `
+      <section class="cleared-work-feedback" aria-label="フィードバック">
+        <h3>フィードバック</h3>
+        ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
+        ${sections.map(([heading, items]) => `<div><h4>${heading}</h4><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`).join("")}
+      </section>
+    `;
+  }
+
+  const fallbackGoodPoints = goodPoints.length ? goodPoints : ["回答を出して、考える材料を言葉にできています。"];
+  return `
+    <section class="cleared-work-feedback" aria-label="フィードバック">
+      <h3>フィードバック</h3>
+      ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
+      <div><h4>良い点</h4><ul>${fallbackGoodPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+      ${improvementPoints.length ? `<div><h4>改善ポイント</h4><ul>${improvementPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+    </section>
+  `;
+}
+
 function chapterState(learning, phase) {
   if (!phase.isAccessible) return "locked";
   const done = Number(phase.completedCount || 0);
@@ -626,7 +719,7 @@ function renderChapterRow(learning, phase) {
   const done = Number(phase.completedCount || 0);
   const total = Number(phase.lessonCount || 0);
   const pct = total ? Math.round((done / total) * 100) : 0;
-  const no = padChapter(phase.phase_order);
+  const no = phaseNumberLabel(phase);
 
   let stateMarkup = `<span class="ch-state">これから</span>`;
   if (stateName === "done") stateMarkup = `<span class="ch-state done">★ クリア</span>`;
@@ -634,7 +727,7 @@ function renderChapterRow(learning, phase) {
   if (stateName === "locked") stateMarkup = `<span class="ch-state lock">🔒 解放待ち</span>`;
 
   const inner = `
-    <b><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</b>
+    <b>${no ? `<span class="no">${no}</span>` : ""}${escapeHtml(phase.phase_title)}</b>
     ${stateMarkup}
     <div class="ch-mini"><div class="mbar"><span style="width:${pct}%"></span></div><em>${done}/${total}</em></div>
   `;
@@ -692,14 +785,14 @@ function renderPhaseGroup(learning, phase, index) {
   const stateName = chapterState(learning, phase);
   const done = Number(phase.completedCount || 0);
   const total = Number(phase.lessonCount || 0);
-  const no = padChapter(phase.phase_order);
+  const no = phaseNumberLabel(phase);
   const riseClass = index < 4 ? ` rise rise-${index}` : "";
 
   if (stateName === "locked") {
     return `
       <section class="phase-group${riseClass}" aria-label="${escapeAttribute(phase.phase_title)}（解放待ち）">
         <div class="phase-head">
-          <span class="ph-title"><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</span>
+          <span class="ph-title">${no ? `<span class="no">${no}</span>` : ""}${escapeHtml(phase.phase_title)}</span>
           <span class="ph-count">🔒 解放待ち</span>
         </div>
         <p class="phase-locked-note">${escapeHtml(phase.gateMessage || phase.phase_summary || "前の章を登りきると、この章の景色がひらけます。")}</p>
@@ -710,7 +803,7 @@ function renderPhaseGroup(learning, phase, index) {
   return `
     <section class="phase-group${riseClass}" aria-label="${escapeAttribute(phase.phase_title)}">
       <div class="phase-head">
-        <span class="ph-title"><span class="no">${no}</span>${escapeHtml(phase.phase_title)}</span>
+        <span class="ph-title">${no ? `<span class="no">${no}</span>` : ""}${escapeHtml(phase.phase_title)}</span>
         <span class="ph-count${stateName === "done" ? " done" : ""}">${stateName === "done" ? "★ クリア " : ""}${done}/${total}</span>
       </div>
       ${phase.lessons.map((lesson) => renderLessonRow(learning, phase, lesson)).join("") || `<p class="phase-locked-note">この章の教材は順次ひらいていきます。</p>`}
@@ -788,12 +881,11 @@ function renderLesson(lessonId, section = "") {
 
   app.innerHTML = `
     <div class="stage" data-enter="${dir}">
-      ${renderBackTop("#/learning", "戻る", `${phase ? kanjiChapter(phase.phase_order) : ""} ・ ${lesson.lesson_id}`)}
+      ${renderBackTop("#/learning", "戻る", [phaseChapterLabel(phase), lesson.lesson_id].filter(Boolean).join(" ・ "))}
       <main>
         <div class="lesson-title">
-          <p class="lt-k">CHAPTER ${padChapter(phase?.phase_order)}</p>
+          <p class="lt-k">${isFinalPhase(phase) ? "最終まとめ" : `CHAPTER ${padChapter(phase?.phase_order)}`}</p>
           <h1>${escapeHtml(lesson.lesson_title)}</h1>
-          <p class="lt-sub">${escapeHtml(lesson.lesson_summary || lesson.purpose_watch || "この教材の目的を確認します。")}</p>
         </div>
 
         ${renderVideoBlock(lesson)}
@@ -840,12 +932,6 @@ function renderMiniWorkBlock(lesson) {
       <p class="mp-k">MINI WORK ${renderStatusBadge(lesson.progress.mini_work_status)}</p>
       <h3 id="mini-work-title">${escapeHtml(lesson.miniWork.title)}</h3>
       <p class="mp-hint">${escapeHtml(lesson.miniWork.prompt)}</p>
-      ${lesson.practice_part ? `
-        <div class="mp-callout">
-          <span>実践の問い</span>
-          ${escapeHtml(lesson.practice_part)}
-        </div>
-      ` : ""}
       <p class="mp-hint">${escapeHtml(lesson.miniWork.helper_text || "いつ・どこで・何をするかを、1つに絞って書くと評価されやすくなります。")}</p>
       <form class="work-form" data-form="mini-work" data-target-id="${escapeHtml(lesson.miniWork.mini_work_id)}">
         <label class="field-label" for="mini-${escapeAttribute(lesson.miniWork.mini_work_id)}">回答</label>
@@ -903,7 +989,24 @@ function renderLockedWorkNote(lesson) {
 }
 
 function renderLearningDetailBlock(lesson) {
-  const points = Array.isArray(lesson.material_points) ? lesson.material_points.filter(Boolean) : [];
+  const normalizeText = (value) => String(value || "").replace(/[\s　]+/g, "").replace(/[。．.!！?？]/g, "");
+  const learningPurpose = String(lesson.hook || lesson.lesson_summary || lesson.purpose_watch || "").trim();
+  const learningOutcome = String(lesson.learning_outcome || lesson.category_or_work || lesson.purpose_write || "").trim();
+  const reservedTexts = new Set([learningPurpose, learningOutcome].map(normalizeText).filter(Boolean));
+  const seenPoints = new Set();
+  const points = (Array.isArray(lesson.material_points) ? lesson.material_points : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const normalized = normalizeText(item);
+      if (!normalized || reservedTexts.has(normalized) || seenPoints.has(normalized)) return false;
+      seenPoints.add(normalized);
+      return true;
+    });
+  const thinkText = String(lesson.purpose_think || "").trim();
+  const showThink = Boolean(thinkText) && !reservedTexts.has(normalizeText(thinkText)) && !seenPoints.has(normalizeText(thinkText));
+  const writeText = String(lesson.purpose_write || "").trim();
+  const showWrite = Boolean(writeText) && !reservedTexts.has(normalizeText(writeText)) && !seenPoints.has(normalizeText(writeText)) && (!showThink || normalizeText(writeText) !== normalizeText(thinkText));
 
   return `
     <section id="section-purpose" data-section="purpose" tabindex="-1" aria-labelledby="purpose-title">
@@ -914,23 +1017,22 @@ function renderLearningDetailBlock(lesson) {
           <small class="open-label">閉じる</small>
         </summary>
         <div class="ld-body">
-          <div class="ld-item">
+          ${learningPurpose ? `<div class="ld-item">
             <span>学習目的</span>
-            <p>${escapeHtml(lesson.lesson_summary || lesson.purpose_watch || "この教材の目的を確認します。")}</p>
-          </div>
+            <p>${escapeHtml(learningPurpose)}</p>
+          </div>` : ""}
           ${points.length ? `
             <div class="ld-item">
               <span>主な内容</span>
               <ul>${points.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
             </div>
           ` : ""}
-          <div class="ld-item">
+          ${learningOutcome ? `<div class="ld-item">
             <span>視聴後にできるようになること</span>
-            <p>${escapeHtml(lesson.learning_outcome || lesson.category_or_work || lesson.purpose_write || "現場で使える視点を整理できます。")}</p>
-          </div>
-          ${lesson.purpose_watch ? `<div class="ld-item"><span>見る</span><p>${escapeHtml(lesson.purpose_watch)}</p></div>` : ""}
-          ${lesson.purpose_think ? `<div class="ld-item"><span>考える</span><p>${escapeHtml(lesson.purpose_think)}</p></div>` : ""}
-          ${lesson.purpose_write ? `<div class="ld-item"><span>書く</span><p>${escapeHtml(lesson.purpose_write)}</p></div>` : ""}
+            <p>${escapeHtml(learningOutcome)}</p>
+          </div>` : ""}
+          ${showThink ? `<div class="ld-item"><span>考えるポイント</span><p>${escapeHtml(thinkText)}</p></div>` : ""}
+          ${showWrite ? `<div class="ld-item"><span>書く</span><p>${escapeHtml(writeText)}</p></div>` : ""}
         </div>
       </details>
     </section>
@@ -1008,7 +1110,6 @@ function renderEvaluationResultCard(evaluation, label) {
   const score = Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : null;
   const resultHelp = getEvaluationResultHelp(evaluation.result_status);
   const isPassed = evaluation.result_status === "good";
-  const nextTitle = isPassed ? "次に進む前に" : "次に意識すること";
   const resultKind = label === "ミニワーク" ? "mini-work" : "work";
   if (resultKind === "mini-work" && hasMiniWorkV2Feedback(evaluation)) {
     return renderMiniWorkScoreCard(evaluation, label);
@@ -1016,8 +1117,7 @@ function renderEvaluationResultCard(evaluation, label) {
   const resultId = resultKind === "mini-work" ? ` id="mini-work-evaluation-result"` : "";
   const goodPoints = uniqueLearnerItems(evaluation.good_points || []).slice(0, 3);
   const improvementPoints = isPassed ? [] : uniqueLearnerItems(evaluation.improvement_points || []).filter((item) => !goodPoints.includes(item)).slice(0, 3);
-  const nextActionText = evaluation.next_action_text || (isPassed ? "次へ進みましょう" : "もう一度具体化する");
-  const nextQuestion = !isPassed && evaluation.next_question && evaluation.next_question !== nextActionText
+  const nextQuestion = !isPassed && evaluation.next_question
     ? evaluation.next_question
     : "";
 
@@ -1041,12 +1141,24 @@ function renderEvaluationResultCard(evaluation, label) {
           </div>
         ` : ""}
       </div>
-      <div class="ev-next">
-        <span>${escapeHtml(nextTitle)}</span>
-        <strong>${escapeHtml(nextActionText)}</strong>
-        ${nextQuestion ? `<p>${escapeHtml(nextQuestion)}</p>` : ""}
-      </div>
+      ${nextQuestion ? `<div class="ev-next-question"><h4>追加質問</h4><p>${escapeHtml(nextQuestion)}</p></div>` : ""}
+      ${renderEvaluationNextAction(isPassed)}
     </section>
+  `;
+}
+
+function renderEvaluationNextAction(isPassed) {
+  const heading = isPassed ? "合格です。次のレッスンへ進めます" : "再提出でクリアを目指しましょう";
+  const body = isPassed
+    ? "点数とフィードバックを確認したら、次のレッスンへ進んでください。"
+    : "不足している材料・書き直し方・追加質問を確認し、回答に足して再提出してください。";
+  const cta = isPassed ? "次のレッスンへ" : "回答を書き直す";
+  return `
+    <div class="ev-next" data-evaluation-next-action="${isPassed ? "pass" : "retry"}">
+      <h4>${heading}</h4>
+      <p>${body}</p>
+      <button class="ghost-button" type="button" data-action="${isPassed ? "go-next-lesson" : "rewrite-mini-work"}">${cta}</button>
+    </div>
   `;
 }
 
@@ -1095,10 +1207,7 @@ function renderMiniWorkScoreCard(evaluation, label) {
         ${growthPoints.length ? `<div><h4>次の成長ポイント</h4><ul>${growthPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
         ${additionalQuestions.length ? `<div><h4>追加質問</h4><ol>${additionalQuestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol></div>` : ""}
       </div>
-      <div class="ev-next">
-        <span>${passed ? "判定" : "再提出について"}</span>
-        <strong>${passed ? "合格です。次へ進めます" : "回答は何度でも再提出できます"}</strong>
-      </div>
+      ${renderEvaluationNextAction(passed)}
     </section>
   `;
 }
@@ -2286,8 +2395,8 @@ async function handleSubmitWork(event) {
           feedback: buildJudgeFeedback(evaluation),
           scoreNote: "SCORE / 合格80",
           buttonLabel: passed
-            ? "次の一歩へ →"
-            : (evaluation.result_status === "support_needed" ? "内容を確認する" : "もう一度整理する"),
+            ? "次のレッスンへ"
+            : (evaluation.result_status === "support_needed" ? "内容を確認する" : "回答を書き直す"),
           onNext: () => {
             closeJudgeOverlay();
             if (passed && grew) {
@@ -2636,6 +2745,21 @@ document.addEventListener("click", async (event) => {
       render();
     } catch (error) {
       renderError(error.message);
+    }
+  }
+
+  if (action === "go-next-lesson") {
+    const route = parseRoute();
+    const lesson = route.name === "lesson" ? findLessonContext(state.learning, route.lessonId)?.lesson : null;
+    const nextLesson = lesson ? getNextLesson(state.learning, lesson) : null;
+    window.location.hash = nextLesson ? hashForLesson(nextLesson.lesson_id, "video") : "#/learning";
+  }
+
+  if (action === "rewrite-mini-work") {
+    const textarea = document.querySelector('.work-form[data-form="mini-work"] textarea[name="answer"]');
+    if (textarea) {
+      scrollToTarget(textarea);
+      textarea.focus({ preventScroll: true });
     }
   }
 });
