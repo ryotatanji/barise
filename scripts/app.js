@@ -932,12 +932,6 @@ function renderMiniWorkBlock(lesson) {
       <p class="mp-k">MINI WORK ${renderStatusBadge(lesson.progress.mini_work_status)}</p>
       <h3 id="mini-work-title">${escapeHtml(lesson.miniWork.title)}</h3>
       <p class="mp-hint">${escapeHtml(lesson.miniWork.prompt)}</p>
-      ${lesson.practice_part ? `
-        <div class="mp-callout">
-          <span>実践の問い</span>
-          ${escapeHtml(lesson.practice_part)}
-        </div>
-      ` : ""}
       <p class="mp-hint">${escapeHtml(lesson.miniWork.helper_text || "いつ・どこで・何をするかを、1つに絞って書くと評価されやすくなります。")}</p>
       <form class="work-form" data-form="mini-work" data-target-id="${escapeHtml(lesson.miniWork.mini_work_id)}">
         <label class="field-label" for="mini-${escapeAttribute(lesson.miniWork.mini_work_id)}">回答</label>
