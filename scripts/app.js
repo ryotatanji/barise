@@ -8,7 +8,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-5-0-wave3";
+} from "./data-provider.js?v=7-5-1-wave3fix";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -656,6 +656,7 @@ function renderClearedWorkCard(work = {}) {
   const question = Array.isArray(work.question)
     ? `<ol>${work.question.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`
     : `<p class="cleared-work-text">${escapeHtml(work.question || "")}</p>`;
+  const href = getClearedWorkHref(work);
   return `
     <details class="cleared-work-card" data-cleared-work-id="${escapeAttribute(work.target_id || "")}">
       <summary>
@@ -672,9 +673,19 @@ function renderClearedWorkCard(work = {}) {
           ${work.submitted_at ? `<div><dt>提出</dt><dd>${escapeHtml(formatDate(work.submitted_at))}</dd></div>` : ""}
         </dl>
         ${renderClearedWorkFeedback(work.evaluation || {}, work.target_type)}
+        <a class="cleared-work-link" data-cleared-work-link href="${escapeAttribute(href)}">このワークを開く <span aria-hidden="true">→</span></a>
       </div>
     </details>
   `;
+}
+
+function getClearedWorkHref(work = {}) {
+  if (work.target_type === "mini_work") {
+    const fallbackLessonId = String(work.target_id || "").replace(/^MW-/, "");
+    const lessonId = String(work.lesson_id || fallbackLessonId).trim();
+    return hashForLesson(lessonId, "mini-work");
+  }
+  return hashForWork(work.target_id || work.work_id || "");
 }
 
 function renderClearedWorkFeedback(evaluation = {}, targetType = "") {
