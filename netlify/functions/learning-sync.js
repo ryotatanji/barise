@@ -442,9 +442,10 @@ async function syncWorkSubmission(context) {
     return { idempotent: true, affected: [] };
   }
 
-  // W-P1-07は既存行を一切更新しないappend-only要件。複数行がis_latest=trueでも
-  // restore側はsubmitted_atで最新行を選べるため、過去行のlatest flagを落とさない。
-  if (workId !== "W-P1-07") {
+  // 本ワークの再挑戦は完全append-onlyとする。複数行がis_latest=trueでも
+  // restore側がsubmitted_at、同時刻なら行番号で最新行を決定するため、過去行は更新しない。
+  // ミニワークは既存契約を維持し、従来どおりlatest flagを整理する。
+  if (workType === "mini_work") {
     await clearLatestFlag({
       spreadsheetId: config.workSpreadsheetId,
       sheet: answerLog,
@@ -554,6 +555,8 @@ async function restoreLearningState(context) {
       evaluationResults: workState.evaluationResults,
       clearedWorkResults: workState.clearedWorkResults,
       aiWorkSessions: workState.aiWorkSessions,
+      aiWorkAttemptHistories: workState.aiWorkAttemptHistories,
+      aiWorkAchievementSummaries: workState.aiWorkAchievementSummaries,
       quizAttempts,
       clearedTargets: [...videoState.clearedTargets, ...workState.clearedTargets],
       restoredAt: now
@@ -690,7 +693,10 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
 
   if (emailIndex < 0 || (workIndex < 0 && miniIndex < 0)) {
     warnings.push({ sheetName: answerLog.sheetName, warning: "restore_answer_columns_missing" });
-    return { progress: [], submissions: [], evaluationResults: [], clearedWorkResults: [], aiWorkSessions: [], clearedTargets: [], warnings };
+    return {
+      progress: [], submissions: [], evaluationResults: [], clearedWorkResults: [], aiWorkSessions: [],
+      aiWorkAttemptHistories: [], aiWorkAchievementSummaries: [], clearedTargets: [], warnings
+    };
   }
 
   const groups = new Map();
@@ -917,8 +923,25 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
 
   applyWorkSummaryClears(workSummary, emailKey).forEach((item) => clearedTargets.push(item));
   const clearedWorkResults = buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission);
+  const { aiWorkAttemptHistories, aiWorkAchievementSummaries } = buildAiWorkAttemptState(
+    answerLog,
+    emailKey,
+    now,
+    detailsBySubmission
+  );
 
-  return { progress, submissions, evaluationResults, clearedWorkResults, aiWorkSessions, clearedTargets, warnings };
+  // 最新挑戦がretryでも、一度の合格実績は進行・ゲートに対して単調に維持する。
+  const passedWorkIds = new Set(aiWorkAchievementSummaries.filter((item) => item.has_passed).map((item) => item.work_id));
+  progress.forEach((item) => {
+    if (!item.work_id || !passedWorkIds.has(item.work_id)) return;
+    item.work_status = "good";
+    item.has_passed = true;
+  });
+
+  return {
+    progress, submissions, evaluationResults, clearedWorkResults, aiWorkSessions,
+    aiWorkAttemptHistories, aiWorkAchievementSummaries, clearedTargets, warnings
+  };
 }
 
 // マイページ用には全回答履歴を返さず、work IDごとの最新合格／完了結果だけを返す。
@@ -1065,6 +1088,120 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
   });
 }
 
+// 本ワーク履歴は回答ログ全行から合格実績・最高点を集計する一方、
+// 回答本文と詳細FBは新しい順の直近3件だけを返す。
+// 詳細FBは既存契約どおり submission_id + email_key + work_id の厳密一致のみ採用する。
+function buildAiWorkAttemptState(answerLog, emailKey, now, detailsBySubmission = new Map(), limit = 3) {
+  const emailIndex = findHeaderIndex(answerLog.headers, EMAIL_HEADERS);
+  const workIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.workId);
+  const miniIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.miniWorkId);
+  const typeIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.workType);
+  const statusIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.status);
+  const scoreIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.score);
+  const answerIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.answerText);
+  const submittedIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.submittedAt);
+  const updatedIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.updatedAt);
+  const submissionIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.submissionId);
+  const summaryIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.summary);
+  const feedbackIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.feedbackJson);
+  const evaluationIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.evaluationJson);
+  if (emailIndex < 0 || workIndex < 0 || statusIndex < 0) {
+    return { aiWorkAttemptHistories: [], aiWorkAchievementSummaries: [] };
+  }
+
+  const byWork = new Map();
+  (answerLog.rowRefs || []).forEach((rowRef) => {
+    const row = rowRef.row;
+    if (normalizeEmailKey(row[emailIndex]) !== normalizeEmailKey(emailKey)) return;
+    const workId = firstValue(row, [workIndex]);
+    const miniWorkId = firstValue(row, [miniIndex]);
+    const workType = normalizeRestoredWorkType(firstValue(row, [typeIndex]), miniWorkId || workId);
+    if (!workId || miniWorkId || workType === "mini_work") return;
+
+    const submissionId = firstValue(row, [submissionIndex]);
+    if (!submissionId) return;
+    const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, workId);
+    const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
+    // intakeや途中保存は提出履歴ではない。実スコアが確定した評価行だけを対象にする。
+    if (score === null) return;
+    const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
+    const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
+    const feedback = detail ? detail.feedback : answerFeedback;
+    const rawStatus = firstValue(row, [statusIndex]);
+    const effectiveStatus = resolveEffectiveWorkStatus({
+      rawStatus, score, workType, evaluationJson, feedback, detail
+    });
+    const goodPoints = toStringArray(feedback.goodPoints || feedback.good_points || evaluationJson.good_points || evaluationJson.feedback?.goodPoints);
+    const improvementPoints = toStringArray(feedback.improvementPoints || feedback.improvement_points || evaluationJson.improvement_points || evaluationJson.feedback?.improvementPoints);
+    const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
+    const rewritePoints = toStringArray(feedback.rewritePoints || feedback.rewrite_points || evaluationJson.rewrite_points || evaluationJson.feedback?.rewritePoints);
+    const growthPoints = toStringArray(feedback.growthPoints || feedback.growth_points || evaluationJson.growth_points || evaluationJson.feedback?.growthPoints);
+    const additionalQuestions = toStringArray(feedback.additionalQuestions || feedback.additional_questions || evaluationJson.additional_questions || evaluationJson.feedback?.additionalQuestions);
+    const submittedAt = firstValue(row, [submittedIndex, updatedIndex]) || now;
+    const attempt = {
+      submission_id: submissionId,
+      work_id: workId,
+      submitted_at: submittedAt,
+      answer_text: firstValue(row, [answerIndex]),
+      score,
+      result_status: effectiveStatus.uiStatus,
+      standard_status: effectiveStatus.standardStatus,
+      raw_status: rawStatus,
+      legacy_normalized: effectiveStatus.legacyNormalized,
+      evaluation: {
+        submission_id: submissionId,
+        work_id: workId,
+        score,
+        result_status: effectiveStatus.uiStatus,
+        standard_status: effectiveStatus.standardStatus,
+        reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
+        good_points: goodPoints,
+        improvement_points: improvementPoints,
+        missing_points: missingPoints,
+        rewrite_points: rewritePoints,
+        growth_points: growthPoints,
+        additional_questions: additionalQuestions,
+        feedback: {
+          ...feedback,
+          goodPoints, improvementPoints, missingPoints, rewritePoints, growthPoints, additionalQuestions
+        }
+      },
+      row_number: Number(rowRef.rowNumber || 0)
+    };
+    if (!byWork.has(workId)) byWork.set(workId, []);
+    byWork.get(workId).push(attempt);
+  });
+
+  const aiWorkAttemptHistories = [];
+  const aiWorkAchievementSummaries = [];
+  byWork.forEach((attempts, workId) => {
+    attempts.sort((a, b) => {
+      const timeDiff = (Date.parse(b.submitted_at) || 0) - (Date.parse(a.submitted_at) || 0);
+      return timeDiff || b.row_number - a.row_number;
+    });
+    const scored = attempts.map((item) => item.score).filter((score) => Number.isFinite(score));
+    const latest = attempts[0] || null;
+    aiWorkAttemptHistories.push({
+      work_id: workId,
+      attempts: attempts.slice(0, Math.max(0, Number(limit) || 3)).map(({ row_number, ...attempt }) => attempt)
+    });
+    aiWorkAchievementSummaries.push({
+      work_id: workId,
+      has_passed: attempts.some((item) => item.result_status === "good"),
+      best_score: scored.length ? Math.max(...scored) : null,
+      latest_result: latest ? {
+        submission_id: latest.submission_id,
+        submitted_at: latest.submitted_at,
+        score: latest.score,
+        result_status: latest.result_status,
+        standard_status: latest.standard_status,
+        legacy_normalized: latest.legacy_normalized
+      } : null
+    });
+  });
+  return { aiWorkAttemptHistories, aiWorkAchievementSummaries };
+}
+
 function buildRestoredAiWorkSession({ emailKey, workId, lessonId, workTitle, answerText, status, uiStatus, score, evaluationJson, submittedAt, submissionId, aiLogId }) {
   const sessionStatus = normalizeAiSessionStatus(status, uiStatus);
   return {
@@ -1120,16 +1257,20 @@ function applyWorkSummaryClears(sheet, emailKey) {
 }
 
 function selectLatestRow(rows, headers, latestIndex, dateIndexes = []) {
+  const byNewest = (a, b) => {
+    const dateDiff = rowDateValue(b.rowRef.row, dateIndexes) - rowDateValue(a.rowRef.row, dateIndexes);
+    return dateDiff || Number(b.rowRef.rowNumber || 0) - Number(a.rowRef.rowNumber || 0);
+  };
   if (latestIndex >= 0) {
     const latestRows = rows.filter(({ rowRef }) => isTruthyLatest(rowRef.row[latestIndex]));
     if (latestRows.length) {
-      return latestRows.sort((a, b) => rowDateValue(b.rowRef.row, dateIndexes) - rowDateValue(a.rowRef.row, dateIndexes))[0];
+      return latestRows.sort(byNewest)[0];
     }
     const hasLatestSignal = rows.some(({ rowRef }) => String(rowRef.row[latestIndex] || "").trim() !== "");
     if (hasLatestSignal) return null;
-    return rows.sort((a, b) => rowDateValue(b.rowRef.row, dateIndexes) - rowDateValue(a.rowRef.row, dateIndexes))[0] || null;
+    return rows.sort(byNewest)[0] || null;
   }
-  return rows.sort((a, b) => rowDateValue(b.rowRef.row, dateIndexes) - rowDateValue(a.rowRef.row, dateIndexes))[0] || null;
+  return rows.sort(byNewest)[0] || null;
 }
 
 function isTruthyLatest(value) {
@@ -1638,6 +1779,7 @@ exports._test = {
   QUIZ_LOG_HEADERS,
   VIDEO_LOG_FIELDS,
   WORK_SUMMARY_FIELDS,
+  buildAiWorkAttemptState,
   buildClearedWorkResults,
   fieldForHeader,
   indexEvaluationDetails,

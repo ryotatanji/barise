@@ -1781,6 +1781,63 @@ textarea[aria-invalid="true"] { border-color: rgba(224, 80, 63, .7); }
 
 .ai-details summary::-webkit-details-marker { display: none; }
 
+.ai-work-achievement strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.ai-work-latest-result {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(212, 160, 23, .1);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ai-work-attempts {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ai-work-attempts > h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ai-work-attempt {
+  margin: 0;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.ai-work-attempt > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 12px;
+}
+
+.ai-work-attempt > summary span,
+.ai-work-attempt > summary strong {
+  overflow-wrap: anywhere;
+}
+
+.ai-work-attempt-body {
+  padding: 0 12px 12px;
+  min-width: 0;
+}
+
+.ai-work-attempt-body > h4 { margin: 8px 0 4px; }
+.ai-work-attempt-body .multiline-text { overflow-wrap: anywhere; }
+.ai-work-reattempt { margin-top: 12px; }
+
 .ai-evaluation-detail-grid {
   display: grid;
   gap: 10px;

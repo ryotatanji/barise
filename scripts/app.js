@@ -8,7 +8,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-4-0-wave2b";
+} from "./data-provider.js?v=7-5-0-wave3";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -1553,7 +1553,7 @@ function renderAiWorkStep(work, session) {
     return renderAiRevisionForm(work, session);
   }
   if (status === "answering" || status === "prompt_generated" || status === "ai_reviewing") {
-    return renderAiAnswerForm(work, session);
+    return `${renderAiWorkAchievementNotice(work)}${renderAiWorkLatestResult(work)}${renderAiWorkAttemptHistory(work)}${renderAiAnswerForm(work, session)}`;
   }
   if (status === "error") {
     return `
@@ -1641,6 +1641,9 @@ function renderAiFollowupForm(work, session) {
   const isGoalSettingWork = work.work_id === "W-P1-05";
   const followupQuestions = getAiFollowupQuestions(session);
   return `
+    ${renderAiWorkAchievementNotice(work)}
+    ${renderAiWorkLatestResult(work)}
+    ${renderAiWorkAttemptHistory(work)}
     ${renderAiGeneratedPrompt(session)}
     ${renderAiCriteriaProgress(session)}
     ${renderAiEvaluationSummary(session)}
@@ -1661,6 +1664,9 @@ function renderAiFollowupForm(work, session) {
 function renderAiRevisionForm(work, session) {
   const followupQuestions = getAiFollowupQuestions(session);
   return `
+    ${renderAiWorkAchievementNotice(work)}
+    ${renderAiWorkLatestResult(work)}
+    ${renderAiWorkAttemptHistory(work)}
     ${renderAiGeneratedPrompt(session)}
     <div class="ai-block ai-block--focus">
       <span>もう一度、いっしょに整理しましょう</span>
@@ -1700,7 +1706,77 @@ function renderAiFinalFeedback(work, session) {
         <ul>${(session.next_actions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </div>
     ` : ""}
+    ${renderAiWorkAchievementNotice(work)}
+    ${renderAiWorkLatestResult(work)}
+    ${renderAiWorkAttemptHistory(work)}
+    ${work.hasPassed ? `<button class="submit2 ai-work-reattempt" type="button" data-action="restart-ai-work" data-work-id="${escapeAttribute(work.work_id)}">もう一度取り組む</button>` : ""}
     ${nextLesson ? `<a class="submit2" href="${escapeAttribute(hashForLesson(nextLesson.lesson_id, "video"))}">次のレッスン「${escapeHtml(nextLesson.lesson_title || "")}」へ進む</a>` : `<a class="submit2" href="#/learning">次の学習へ進む</a>`}
+  `;
+}
+
+function renderAiWorkAchievementNotice(work) {
+  if (!work?.hasPassed) return "";
+  const bestScore = work.achievementSummary?.best_score;
+  const scoreText = bestScore !== null && bestScore !== undefined && String(bestScore).trim() !== "" && Number.isFinite(Number(bestScore))
+    ? ` / 最高${Number(bestScore)}点`
+    : "";
+  return `
+    <div class="ai-block ai-block--gold ai-work-achievement" aria-label="合格実績">
+      <strong>クリア済み（合格実績あり）${escapeHtml(scoreText)}</strong>
+      <p>今回の再挑戦結果にかかわらず、クリア状態と進行は維持されます。</p>
+    </div>
+  `;
+}
+
+function renderAiWorkLatestResult(work) {
+  const latest = work?.achievementSummary?.latest_result;
+  if (!latest) return "";
+  const scoreText = latest.score !== null && latest.score !== undefined && String(latest.score).trim() !== "" && Number.isFinite(Number(latest.score))
+    ? `${Number(latest.score)}点・`
+    : "";
+  const label = getAiEvaluationLabel({
+    standard_status: latest.standard_status,
+    result_status: latest.result_status,
+    score: latest.score
+  });
+  return `<p class="ai-work-latest-result">今回の結果: ${escapeHtml(`${scoreText}${label}`)}</p>`;
+}
+
+function renderAiWorkAttemptHistory(work) {
+  const attempts = Array.isArray(work?.attemptHistory) ? work.attemptHistory.slice(0, 3) : [];
+  if (!attempts.length) return "";
+  return `
+    <section class="ai-work-attempts" aria-label="これまでの提出" data-work-attempt-history>
+      <h3>これまでの提出</h3>
+      ${attempts.map((attempt, index) => {
+        const scoreText = attempt.score !== null && attempt.score !== undefined && String(attempt.score).trim() !== "" && Number.isFinite(Number(attempt.score))
+          ? `${Number(attempt.score)}点`
+          : "点数なし";
+        const label = getAiEvaluationLabel({
+          ...(attempt.evaluation || {}),
+          standard_status: attempt.standard_status || attempt.evaluation?.standard_status,
+          result_status: attempt.result_status || attempt.evaluation?.result_status
+        });
+        const evaluation = attempt.evaluation && typeof attempt.evaluation === "object" ? attempt.evaluation : null;
+        return `
+          <details class="ai-details ai-work-attempt" data-work-attempt${index === 0 ? " open" : ""}>
+            <summary>
+              <span>${escapeHtml(formatDate(attempt.submitted_at) || "日時なし")}</span>
+              <strong>${escapeHtml(scoreText)}・${escapeHtml(label)}</strong>
+            </summary>
+            <div class="ai-work-attempt-body">
+              <h4>自分の回答</h4>
+              <p class="multiline-text">${escapeHtml(attempt.answer_text || "回答は保存されていません。")}</p>
+              ${evaluation ? renderAiEvaluationSummary({
+                work_id: work.work_id,
+                status: attempt.result_status || "",
+                ai_evaluation_result: evaluation
+              }, { compact: true }) : ""}
+            </div>
+          </details>
+        `;
+      }).join("")}
+    </section>
   `;
 }
 
@@ -2215,7 +2291,7 @@ function getWorkCtaLabel(work) {
 function getWorkRequirementLabel(work) {
   const miniRemaining = Number(work.miniRemainingCount || 0);
   const videoRemaining = Number(work.videoRemainingCount || 0);
-  if (work.aiStatus === "completed") return "クリア済み";
+  if (work.hasPassed || work.aiStatus === "completed") return "クリア済み";
   if (miniRemaining > 0) return `関連ミニワーク あと${miniRemaining}件`;
   if (videoRemaining > 0) return `関連動画 あと${videoRemaining}件`;
   return "挑戦できます";
@@ -2935,6 +3011,17 @@ document.addEventListener("click", async (event) => {
     try {
       await provider.retryAiWork(state.email, actionTarget.dataset.workId);
       await refreshLearningState();
+      render();
+    } catch (error) {
+      renderError(error.message);
+    }
+  }
+
+  if (action === "restart-ai-work") {
+    try {
+      await provider.restartAiWork(state.email, actionTarget.dataset.workId);
+      await refreshLearningState();
+      window.location.hash = hashForWork(actionTarget.dataset.workId);
       render();
     } catch (error) {
       renderError(error.message);
