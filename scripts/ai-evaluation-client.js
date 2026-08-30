@@ -1,5 +1,6 @@
 export const AI_EVALUATION_SCHEMA_VERSION = "barise-work-evaluation-v1";
 export const MINI_WORK_EVALUATION_SCHEMA_VERSION = "barise-mini-work-evaluation-v2";
+export const B023_WORK_EVALUATION_SCHEMA_VERSION = "barise-main-work-evaluation-v2-2026-08-30";
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_UNMET_REASON = "回答本文が短く、具体的な場面・数字・判断理由が不足しています";
@@ -105,6 +106,25 @@ export class AiEvaluationClient {
     const completionRatio = criteriaCount ? localMet.length / criteriaCount : (requiredCriteriaMet ? 1 : 0.35);
     const submissionCount = Number(payload?.submissionCount || payload?.submission_count || 1);
 
+    if (String(payload?.workId || payload?.work_id || "") === "W-P1-07") {
+      return normalizeB023ClientResult({
+        schema_version: B023_WORK_EVALUATION_SCHEMA_VERSION,
+        status: "retry",
+        standard_status: "retry",
+        score: 70,
+        layer_decisions: { L1: "No", L2: "No", L3: "No", L4a: "No", L4b: "No" },
+        feedback: {
+          summary: "70点・再提出です。評価ゲートウェイへ接続して5層判定を確認してください。",
+          missingPoints: ["評価ゲートウェイでの5層判定が必要です。"],
+          rewritePoints: ["入力内容を保持したまま再送信してください。"],
+          growthPoints: [],
+          additionalQuestions: ["評価ゲートウェイへ接続して再確認してください。"]
+        },
+        flags: { aiError: true },
+        meta: { model: "local-safe-fixture", evaluatedAt: new Date().toISOString() }
+      }, payload, "local-safe-fixture");
+    }
+
     if (isMiniWork) {
       // 本番の点数計算はevaluate-work.jsに集約。ゲートウェイがないローカル環境では
       // 採点を模倣せず、全層Noの安全側70点fixtureだけを返す。
@@ -179,6 +199,9 @@ export class AiEvaluationClient {
   }
 
   normalizeEvaluation(rawEvaluation = {}, payload = {}, rawModel = "") {
+    if (String(payload?.workId || payload?.work_id || "") === "W-P1-07") {
+      return normalizeB023ClientResult(rawEvaluation, payload, rawModel);
+    }
     if (isMiniWorkV2Evaluation(rawEvaluation, payload)) {
       return normalizeMiniWorkV2ClientResult(rawEvaluation, payload, rawModel);
     }
@@ -282,6 +305,79 @@ export class AiEvaluationClient {
       errorMessageSafe: "AI判定に一時的な問題が発生しました。"
     }, payload, "gateway-error");
   }
+}
+
+function normalizeB023ClientResult(raw = {}, payload = {}, rawModel = "") {
+  const score = Number(raw.score);
+  const passed = [80, 90, 100].includes(score) && (raw.standard_status || raw.status) === "pass";
+  const standardStatus = passed ? "pass" : "retry";
+  const layerDecisions = raw.layerDecisions || raw.layer_decisions || {};
+  const layerResults = raw.layerResults || raw.layer_results || {};
+  const goodPoints = toStringArray(raw.feedback?.goodPoints || raw.good_points).slice(0, 4);
+  const missingPoints = toStringArray(raw.feedback?.missingPoints || raw.missing_points).slice(0, 4);
+  const rewritePoints = toStringArray(raw.feedback?.rewritePoints || raw.rewrite_points).slice(0, 4);
+  const growthPoints = toStringArray(raw.feedback?.growthPoints || raw.growth_points).slice(0, 4);
+  const improvementPoints = toStringArray(raw.feedback?.improvementPoints || raw.improvement_points || [...missingPoints, ...rewritePoints]).slice(0, 4);
+  const additionalQuestions = passed ? [] : toStringArray(
+    raw.feedback?.additionalQuestions || raw.additional_questions || raw.followup_questions
+  ).slice(0, 3);
+  const nextQuestion = String(raw.nextQuestion || raw.next_question || additionalQuestions[0] || "").trim();
+  const flags = normalizeFlags(raw.flags);
+  flags.needsFollowup = !passed;
+
+  return {
+    schema_version: B023_WORK_EVALUATION_SCHEMA_VERSION,
+    work_type: "work",
+    work_id: String(raw.workId || raw.work_id || payload.workId || payload.work_id || "W-P1-07"),
+    submission_id: raw.submission_id || raw.submissionId || payload.submission_id || payload.submissionId || "",
+    ai_log_id: raw.ai_log_id || raw.aiLogId || payload.ai_log_id || payload.aiLogId || "",
+    status: passed ? "passed" : "revision_required",
+    standard_status: standardStatus,
+    abc_grade: passed ? "A" : "B",
+    abcGrade: passed ? "A" : "B",
+    score: [70, 80, 90, 100].includes(score) ? score : 70,
+    passed,
+    label: passed ? "合格" : "再提出",
+    summary: String(raw.feedback?.summary || raw.summary || raw.reason || "").trim(),
+    reason: String(raw.reason || raw.feedback?.summary || raw.summary || "").trim(),
+    good_points: goodPoints,
+    improvement_points: improvementPoints,
+    missing_points: missingPoints,
+    rewrite_points: rewritePoints,
+    growth_points: growthPoints,
+    feedback: {
+      summary: String(raw.feedback?.summary || raw.summary || raw.reason || "").trim(),
+      goodPoints,
+      improvementPoints,
+      missingPoints,
+      rewritePoints,
+      growthPoints,
+      additionalQuestions
+    },
+    additional_questions: additionalQuestions,
+    unmet_criteria: passed ? [] : toStringArray(raw.unmet_criteria),
+    met_criteria: toStringArray(raw.met_criteria),
+    next_action: raw.next_action || (passed ? "次の学習へ進む" : "回答を書き直す"),
+    next_question: nextQuestion,
+    followup_questions: additionalQuestions,
+    needsFollowup: !passed,
+    needs_followup: !passed,
+    failed_layer: raw.failedLayer || raw.failed_layer || (passed ? "なし" : "L1"),
+    failed_layer_label: raw.failedLayerLabel || raw.failed_layer_label || "",
+    layer_decisions: structuredClone(layerDecisions),
+    layer_results: structuredClone(layerResults),
+    quotes: structuredClone(raw.quotes || {}),
+    staff_feedback: normalizeStaffFeedback(standardStatus, flags),
+    safety_notes: ["AIは受講者の経験や数値を捏造せず、入力内容に基づいて評価します"],
+    flags,
+    criteria: normalizeCriteria(raw.criteria),
+    raw_model: raw.meta?.model || raw.raw_model || rawModel || DEFAULT_MODEL,
+    evaluated_at: raw.meta?.evaluatedAt || raw.evaluated_at || new Date().toISOString(),
+    error_type: raw.errorType || raw.error_type || "",
+    error_message_safe: raw.errorMessageSafe || raw.error_message_safe || "",
+    detail_persisted: raw.detail_persisted === true,
+    detail_persistence: raw.detail_persistence || null
+  };
 }
 
 function isMiniWorkV2Evaluation(raw = {}, payload = {}) {

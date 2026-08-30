@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-3-2-wave2a-r2";
+} from "./data-provider.js?v=7-4-0-wave2b";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -177,7 +177,7 @@ function ensureOverlayDom() {
           <div class="judge-center"><b id="judgeScore">0</b><span id="judgeScoreNote">SCORE / 合格80</span></div>
           <div class="spark" id="judgeSpark"></div>
         </div>
-        <span class="judge-stamp" id="judgeStamp">★ クリア</span>
+        <span class="judge-stamp" id="judgeStamp" hidden>★ クリア</span>
         <p class="judge-fb" id="judgeFb"></p>
         <button class="judge-next" id="judgeNext" type="button">次の一歩へ →</button>
       </div>
@@ -217,6 +217,7 @@ function resetJudgeOverlay() {
   ringWrap.style.transform = "scale(1)";
   stamp.style.opacity = "0";
   stamp.style.transform = "scale(.8)";
+  stamp.hidden = true;
   fb.style.opacity = "0";
   fb.textContent = "";
   next.style.opacity = "0";
@@ -282,6 +283,7 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
 
   /* 金のクリアスタンプ（back.out(2.2)）＋粒子22個は good のときだけ */
   if (passed) {
+    stamp.hidden = false;
     sparkBurst();
     await tween({
       from: 0, to: 1, duration: 450, ease: easeBackOut(2.2),
@@ -889,6 +891,7 @@ function renderLesson(lessonId, section = "") {
         </div>
 
         ${renderVideoBlock(lesson)}
+        ${renderQuizBlock(lesson)}
         ${renderMiniWorkBlock(lesson)}
         ${renderWorkBlock(lesson)}
         ${renderLearningDetailBlock(lesson)}
@@ -922,6 +925,15 @@ function renderVideoBlock(lesson) {
 
 function renderMiniWorkBlock(lesson) {
   if (!lesson.miniWork) return "";
+  if (lesson.quiz && !lesson.quizState?.passed) {
+    return `
+      <section id="section-mini-work" class="mini-panel is-locked" data-section="mini-work" tabindex="-1" aria-labelledby="mini-work-title">
+        <p class="mp-k">MINI WORK ${renderStatusBadge("locked")}</p>
+        <h3 id="mini-work-title">${escapeHtml(lesson.miniWork.title)}</h3>
+        <div class="mp-callout"><span>先に理解度を確認</span>動画後の○×テストで5問中4問以上正解すると、回答欄がひらきます。</div>
+      </section>
+    `;
+  }
   const submission = lesson.latestMiniSubmission;
   const value = submission?.answer_text || "";
   const placeholder = getMiniWorkPlaceholder(lesson.miniWork);
@@ -941,6 +953,78 @@ function renderMiniWorkBlock(lesson) {
       ${submission ? renderSubmissionNote(submission) : ""}
       ${lesson.latestMiniEvaluation ? renderEvaluationResultCard(lesson.latestMiniEvaluation, "ミニワーク") : ""}
     </section>
+  `;
+}
+
+function renderQuizBlock(lesson) {
+  const quiz = lesson.quiz;
+  const quizState = lesson.quizState || {};
+  if (!quiz) return "";
+  if (!quizState.unlocked) {
+    return `
+      <section id="section-quiz" class="mini-panel quiz-panel is-locked" data-section="quiz" tabindex="-1" aria-labelledby="quiz-title">
+        <p class="mp-k">CHECK TEST ${renderStatusBadge("locked")}</p>
+        <h3 id="quiz-title">動画後の○×テスト</h3>
+        <div class="mp-callout"><span>視聴後にひらきます</span>動画を見て視聴完了にすると、5問の理解度テストに進めます。</div>
+      </section>
+    `;
+  }
+
+  const attempt = quizState.latestAttempt || null;
+  const result = attempt ? renderQuizAttemptResult(quiz, attempt, quizState.passed) : "";
+  const form = renderQuizForm(quiz, Boolean(attempt));
+  const legacyNotice = quizState.legacyExempt
+    ? `<div class="mp-callout"><span>受講済み</span>このテスト導入前の学習進捗を保持しているため、次の学習へそのまま進めます。必要なら理解度確認として受験できます。</div>`
+    : "";
+  return `
+    <section id="section-quiz" class="mini-panel quiz-panel" data-section="quiz" tabindex="-1" aria-labelledby="quiz-title">
+      <p class="mp-k">CHECK TEST ${quizState.passed ? renderStatusBadge("good") : renderStatusBadge("not_submitted")}</p>
+      <h3 id="quiz-title">動画後の○×テスト</h3>
+      <p class="mp-hint">5問すべてに○か×で回答してください。4問以上正解でクリアです。</p>
+      ${legacyNotice}
+      ${result}
+      ${attempt ? `<details class="quiz-retry"><summary>もう一度挑戦する</summary>${form}</details>` : form}
+    </section>
+  `;
+}
+
+function renderQuizForm(quiz, isRetry = false) {
+  return `
+    <form class="quiz-form" data-form="quiz" data-quiz-id="${escapeAttribute(quiz.quiz_id)}">
+      <ol class="quiz-question-list">
+        ${(quiz.questions || []).map((question, index) => `
+          <li class="quiz-question" data-quiz-question="${escapeAttribute(question.question_id)}">
+            <p><span>問${index + 1}</span>${escapeHtml(question.statement)}</p>
+            <fieldset>
+              <legend class="sr-only">問${index + 1}の回答</legend>
+              <label><input type="radio" name="${escapeAttribute(question.question_id)}" value="circle" required> ○</label>
+              <label><input type="radio" name="${escapeAttribute(question.question_id)}" value="cross" required> ×</label>
+            </fieldset>
+          </li>
+        `).join("")}
+      </ol>
+      <button class="submit2 quiz-submit-button" type="submit" disabled aria-disabled="true">${isRetry ? "再採点する" : "5問を採点する"}</button>
+    </form>
+  `;
+}
+
+function renderQuizAttemptResult(quiz, attempt, hasStickyPass) {
+  const answerMap = new Map((attempt.answers || []).map((item) => [item.question_id, item]));
+  return `
+    <div class="quiz-result" data-quiz-result="${attempt.passed ? "pass" : "retry"}" role="status">
+      <div class="quiz-result-head">
+        <strong>${attempt.correct_count} / ${attempt.total_count}問正解</strong>
+        <span>${attempt.passed ? "クリア" : (hasStickyPass ? "クリア済み（今回の結果）" : "もう一度挑戦")}</span>
+      </div>
+      <ol class="quiz-explanation-list">
+        ${(quiz.questions || []).map((question, index) => {
+          const row = answerMap.get(question.question_id) || {};
+          const answerLabel = row.answer === "circle" ? "○" : row.answer === "cross" ? "×" : "未回答";
+          const correctLabel = question.correct_answer === "circle" ? "○" : "×";
+          return `<li class="${row.is_correct ? "is-correct" : "is-wrong"}"><strong>問${index + 1}: あなたの回答 ${answerLabel}／正解 ${correctLabel}</strong><p>${escapeHtml(question.explanation)}</p></li>`;
+        }).join("")}
+      </ol>
+    </div>
   `;
 }
 
@@ -1092,6 +1176,13 @@ function renderSubmissionNote(submission) {
 function getLessonNextLockState(learning, lesson) {
   const nextLesson = getNextLesson(learning, lesson);
   if (!nextLesson) return { locked: false, label: "最終教材です" };
+  if (lesson.quiz && !lesson.quizState?.passed) {
+    return {
+      locked: true,
+      label: "○×テストをクリアするとひらきます",
+      detail: "この教材の○×テストで4問以上正解すると、次の動画への道がひらきます。"
+    };
+  }
   if (lesson.miniWork && lesson.progress.mini_work_status !== "good") {
     return {
       locked: true,
@@ -1844,12 +1935,21 @@ function renderAiCriteriaProgress(session, title = "現在満たせている観�
 function renderAiEvaluationSummary(session, options = {}) {
   const evaluation = session?.ai_evaluation_result;
   if (!evaluation) return "";
-  const goodPoints = evaluation.good_points || [];
-  const improvementPoints = evaluation.improvement_points || [];
+  const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
+  const isLayeredConceptWork = session?.work_id === "W-P1-07" || evaluation.work_id === "W-P1-07" || evaluation.schema_version === "barise-main-work-evaluation-v2-2026-08-30";
+  const goodPoints = evaluation.good_points || feedback.goodPoints || [];
+  const improvementPoints = evaluation.improvement_points || feedback.improvementPoints || [];
   const unmetCriteria = evaluation.unmet_criteria || [];
+  const missingPoints = evaluation.missing_points || feedback.missingPoints || [];
+  const rewritePoints = evaluation.rewrite_points || feedback.rewritePoints || [];
+  const growthPoints = evaluation.growth_points || feedback.growthPoints || [];
+  const additionalQuestions = evaluation.additional_questions || evaluation.followup_questions || feedback.additionalQuestions || [];
   const scoreText = Number.isFinite(Number(evaluation.score)) && Number(evaluation.score) > 0
     ? `${Number(evaluation.score)}点`
     : "評価中";
+  const details = isLayeredConceptWork
+    ? renderLayeredConceptWorkSummary(goodPoints, missingPoints, rewritePoints, growthPoints, additionalQuestions)
+    : renderAiEvaluationSummaryGrid(goodPoints, improvementPoints, unmetCriteria);
 
   return `
     <div class="ai-block" aria-label="評価結果">
@@ -1861,10 +1961,31 @@ function renderAiEvaluationSummary(session, options = {}) {
       ${options.compact ? `
         <details class="ai-details">
           <summary>評価の詳細を見る</summary>
-          ${renderAiEvaluationSummaryGrid(goodPoints, improvementPoints, unmetCriteria)}
+          ${details}
         </details>
-      ` : renderAiEvaluationSummaryGrid(goodPoints, improvementPoints, unmetCriteria)}
+      ` : details}
       ${evaluation.next_action ? `<p style="margin-top:6px;">${escapeHtml(evaluation.next_action)}</p>` : ""}
+    </div>
+  `;
+}
+
+function renderLayeredConceptWorkSummary(goodPoints, missingPoints, rewritePoints, growthPoints, additionalQuestions) {
+  const sections = [
+    ["良かった材料", goodPoints],
+    ["不足材料", missingPoints],
+    ["書き直し方", rewritePoints],
+    ["伸びしろ", growthPoints],
+    ["追加質問", additionalQuestions]
+  ].filter(([, items]) => Array.isArray(items) && items.length);
+  if (!sections.length) return "";
+  return `
+    <div class="ai-evaluation-detail-grid">
+      ${sections.map(([heading, items]) => `
+        <section>
+          <h4>${escapeHtml(heading)}</h4>
+          <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </section>
+      `).join("")}
     </div>
   `;
 }
@@ -2426,6 +2547,45 @@ async function handleSubmitWork(event) {
   }
 }
 
+async function handleSubmitQuiz(event) {
+  event.preventDefault();
+  const form = event.target;
+  const quizId = form.dataset.quizId;
+  const answers = formDataToObject(new FormData(form));
+  const questionCount = form.querySelectorAll("[data-quiz-question]").length;
+  const submitButton = form.querySelector("button[type='submit']");
+  if (Object.keys(answers).length !== questionCount || questionCount !== 5) {
+    showFormSubmissionError(form, "5問すべてに回答してください。");
+    return;
+  }
+
+  const originalButtonText = submitButton.textContent;
+  clearFormSubmissionError(form);
+  submitButton.disabled = true;
+  submitButton.setAttribute("aria-disabled", "true");
+  submitButton.classList.add("is-loading");
+  submitButton.setAttribute("aria-busy", "true");
+  submitButton.textContent = "保存して採点しています";
+  try {
+    await provider.submitQuizAttempt(state.email, quizId, answers);
+    await refreshLearningState();
+    const route = parseRoute();
+    if (route.name === "lesson") window.location.hash = hashForLesson(route.lessonId, "quiz");
+    render();
+  } catch (error) {
+    // 失敗時は再描画しないため、選択内容をそのまま残す。
+    showFormSubmissionError(form, error.message);
+  } finally {
+    if (document.body.contains(submitButton)) {
+      submitButton.disabled = false;
+      submitButton.setAttribute("aria-disabled", "false");
+      submitButton.classList.remove("is-loading");
+      submitButton.removeAttribute("aria-busy");
+      submitButton.textContent = originalButtonText;
+    }
+  }
+}
+
 // 入力ゲートの検知器（設問の①②③の「形」を軽く確認する。合否採点ではない＝空・超短文・無関係作文の足切り用。
 // 実際の合否は evaluate-work.js の AI評価＋決定論フロアが担う。ここでは設問ごとに必要な要素だけを見る）
 const MINI_WORK_GATE_DETECTORS = {
@@ -2687,6 +2847,10 @@ document.addEventListener("submit", async (event) => {
       await handleLogin(event);
     }
 
+    if (event.target.matches(".quiz-form")) {
+      await handleSubmitQuiz(event);
+    }
+
     if (event.target.matches(".work-form")) {
       await handleSubmitWork(event);
     }
@@ -2696,6 +2860,21 @@ document.addEventListener("submit", async (event) => {
     }
   } catch (error) {
     renderError(error.message);
+  }
+});
+
+document.addEventListener("change", (event) => {
+  const form = event.target.closest?.(".quiz-form");
+  if (!form) return;
+  const questionCount = form.querySelectorAll("[data-quiz-question]").length;
+  const answeredCount = new FormData(form).entries
+    ? Array.from(new FormData(form).keys()).length
+    : 0;
+  const button = form.querySelector(".quiz-submit-button");
+  const ready = questionCount === 5 && answeredCount === 5;
+  if (button) {
+    button.disabled = !ready;
+    button.setAttribute("aria-disabled", ready ? "false" : "true");
   }
 });
 

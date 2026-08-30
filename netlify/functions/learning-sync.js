@@ -2,6 +2,7 @@ const {
   appendValues,
   columnName,
   createSheet,
+  ensureAppendOnlySheet,
   findHeaderIndex,
   getSpreadsheetMetadata,
   getValues,
@@ -67,6 +68,18 @@ const AI_EVALUATION_DETAIL_FIELDS = {
   evaluatedAt: ["evaluated_at"]
 };
 
+const QUIZ_LOG_SHEET_NAME = "_○×テスト回答ログ_all";
+const QUIZ_LOG_HEADERS = [
+  "attempt_id", "email_key", "quiz_id", "lesson_id", "phase_id", "submitted_at",
+  "correct_count", "total_count", "passed", "answers_json", "quiz_version"
+];
+const QUIZ_LOG_FIELDS = {
+  attemptId: ["attempt_id"], emailKey: ["email_key"], quizId: ["quiz_id"],
+  lessonId: ["lesson_id"], phaseId: ["phase_id"], submittedAt: ["submitted_at"],
+  correctCount: ["correct_count"], totalCount: ["total_count"], passed: ["passed"],
+  answersJson: ["answers_json"], quizVersion: ["quiz_version"]
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
@@ -78,6 +91,7 @@ const ACTIONS = new Set([
   "restoreLearningState",
   "markVideoWatched",
   "setVideoCompletion",
+  "submitQuizAttempt",
   "submitMiniWork",
   "submitWork",
   "submitAiWorkAnswer",
@@ -200,7 +214,7 @@ exports.handler = async function handler(event) {
         email_key: emailKey,
         mock: true,
         warnings: [],
-        restored: { progress: [], submissions: [], evaluationResults: [], aiWorkSessions: [], clearedTargets: [] }
+        restored: { progress: [], submissions: [], evaluationResults: [], aiWorkSessions: [], quizAttempts: [], clearedTargets: [] }
       });
     }
 
@@ -221,6 +235,8 @@ exports.handler = async function handler(event) {
       result = await restoreLearningState(context);
     } else if (action === "markVideoWatched" || action === "setVideoCompletion") {
       result = await syncVideoCompletion(context);
+    } else if (action === "submitQuizAttempt") {
+      result = await syncQuizAttempt(context);
     } else {
       result = await syncWorkSubmission(context);
     }
@@ -248,6 +264,7 @@ function syncConfig() {
     progressSpreadsheetId: process.env.BARISE_PROGRESS_SPREADSHEET_ID || process.env.SPREADSHEET_ID || "",
     progressSummarySheetName: process.env.BARISE_PROGRESS_SUMMARY_SHEET_NAME || "_進捗サマリー",
     videoLogSheetName: process.env.BARISE_VIDEO_LOG_SHEET_NAME || "_視聴ログ_all",
+    quizLogSheetName: process.env.BARISE_QUIZ_LOG_SHEET_NAME || QUIZ_LOG_SHEET_NAME,
     workSpreadsheetId: process.env.BARISE_WORK_SPREADSHEET_ID || process.env.SPREADSHEET_ID || "",
     workSummarySheetName: process.env.BARISE_WORK_SUMMARY_SHEET_NAME || "_ワークサマリー",
     workLogSheetName: process.env.BARISE_WORK_LOG_SHEET_NAME || "_回答ログ_all",
@@ -364,6 +381,54 @@ async function syncVideoCompletion(context) {
   };
 }
 
+async function syncQuizAttempt(context, operations = {}) {
+  const { payload, config, now } = context;
+  const attemptId = String(payload.attemptId || payload.attempt_id || "").trim();
+  const quizId = String(payload.quizId || payload.quiz_id || "").trim();
+  const lessonId = String(payload.lessonId || payload.lesson_id || "").trim();
+  const phaseId = String(payload.phaseId || payload.phase_id || "").trim();
+  const submittedAt = payload.submittedAt || payload.submitted_at || now;
+  const answers = Array.isArray(payload.answers) ? payload.answers : [];
+  const totalCount = Number(payload.totalCount ?? payload.total_count ?? answers.length);
+  const correctCount = Number(payload.correctCount ?? payload.correct_count ?? answers.filter((item) => item?.is_correct === true).length);
+  if (!attemptId || !quizId || !lessonId || !phaseId) {
+    throw httpError(400, "quiz_identity_missing", "○×テストの保存情報が不足しています。");
+  }
+  if (answers.length !== 5 || totalCount !== 5 || !Number.isInteger(correctCount) || correctCount < 0 || correctCount > 5) {
+    throw httpError(400, "quiz_answers_invalid", "○×テスト5問すべての回答を確認してください。");
+  }
+
+  const ensureSheet = operations.ensureAppendOnlySheet || ensureAppendOnlySheet;
+  const readValues = operations.getValues || getValues;
+  const appendRows = operations.appendValues || appendValues;
+  const sheetName = config.quizLogSheetName || QUIZ_LOG_SHEET_NAME;
+  const ensured = await ensureSheet(config.workSpreadsheetId, sheetName, QUIZ_LOG_HEADERS, operations.sheetOperations || {});
+  const existingIds = await readValues(config.workSpreadsheetId, `${quoteSheetName(sheetName)}!A2:A`);
+  if (existingIds.some((row) => String(row[0] || "").trim() === attemptId)) {
+    return { idempotent: true, affected: [], sheetName };
+  }
+
+  const row = [
+    attemptId,
+    context.emailKey,
+    quizId,
+    lessonId,
+    phaseId,
+    submittedAt,
+    correctCount,
+    totalCount,
+    correctCount >= 4 ? "TRUE" : "FALSE",
+    safeJson(answers),
+    String(payload.quizVersion || payload.quiz_version || "")
+  ];
+  await appendRows(config.workSpreadsheetId, `${quoteSheetName(sheetName)}!A:K`, [row]);
+  return {
+    idempotent: false,
+    affected: [{ sheetName, action: "append" }],
+    createdSheet: Boolean(ensured.created)
+  };
+}
+
 async function syncWorkSubmission(context) {
   const { payload, config, warnings, now, action } = context;
   const submittedAt = payload.submittedAt || payload.submitted_at || now;
@@ -377,14 +442,18 @@ async function syncWorkSubmission(context) {
     return { idempotent: true, affected: [] };
   }
 
-  await clearLatestFlag({
-    spreadsheetId: config.workSpreadsheetId,
-    sheet: answerLog,
-    emailKey: context.emailKey,
-    targetAliases: ["work_id", "target_id", "ワークID", "ワークid", "mini_work_id"],
-    targetValue: workId,
-    warnings
-  });
+  // W-P1-07は既存行を一切更新しないappend-only要件。複数行がis_latest=trueでも
+  // restore側はsubmitted_atで最新行を選べるため、過去行のlatest flagを落とさない。
+  if (workId !== "W-P1-07") {
+    await clearLatestFlag({
+      spreadsheetId: config.workSpreadsheetId,
+      sheet: answerLog,
+      emailKey: context.emailKey,
+      targetAliases: ["work_id", "target_id", "ワークID", "ワークid", "mini_work_id"],
+      targetValue: workId,
+      warnings
+    });
+  }
 
   const evaluation = normalizeEvaluation(payload.evaluation || payload.aiEvaluation || payload.ai_evaluation || {});
   const answerValues = {
@@ -464,8 +533,10 @@ async function restoreLearningState(context) {
   const answerLog = await readSheet(config.workSpreadsheetId, config.workLogSheetName);
   const workSummary = await readSheet(config.workSpreadsheetId, config.workSummarySheetName);
   const evaluationDetail = await readOptionalSheet(config.workSpreadsheetId, config.aiEvaluationDetailSheetName);
+  const quizLog = await readOptionalSheet(config.workSpreadsheetId, config.quizLogSheetName);
   const videoState = restoreVideoState(videoLog, emailKey, now);
   const workState = restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetail);
+  const quizAttempts = restoreQuizAttempts(quizLog, emailKey);
 
   warnings.push(...videoState.warnings, ...workState.warnings);
 
@@ -474,7 +545,8 @@ async function restoreLearningState(context) {
       { sheetName: config.videoLogSheetName, action: "read" },
       { sheetName: config.workLogSheetName, action: "read" },
       { sheetName: config.workSummarySheetName, action: "read" },
-      ...(evaluationDetail.exists ? [{ sheetName: config.aiEvaluationDetailSheetName, action: "read" }] : [])
+      ...(evaluationDetail.exists ? [{ sheetName: config.aiEvaluationDetailSheetName, action: "read" }] : []),
+      ...(quizLog.exists ? [{ sheetName: config.quizLogSheetName, action: "read" }] : [])
     ],
     restored: {
       progress: [...videoState.progress, ...workState.progress],
@@ -482,10 +554,62 @@ async function restoreLearningState(context) {
       evaluationResults: workState.evaluationResults,
       clearedWorkResults: workState.clearedWorkResults,
       aiWorkSessions: workState.aiWorkSessions,
+      quizAttempts,
       clearedTargets: [...videoState.clearedTargets, ...workState.clearedTargets],
       restoredAt: now
     }
   };
+}
+
+// クライアントへ全履歴を返さず、各quiz_idの最新試行と最新合格試行（異なる場合のみ）に絞る。
+// これでリロード後の最新結果と、一度合格した状態の単調性を両立する。
+function restoreQuizAttempts(sheet, emailKey) {
+  if (!sheet?.exists) return [];
+  const attemptIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.attemptId);
+  const emailIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.emailKey);
+  const quizIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.quizId);
+  const lessonIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.lessonId);
+  const phaseIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.phaseId);
+  const submittedIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.submittedAt);
+  const correctIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.correctCount);
+  const totalIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.totalCount);
+  const passedIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.passed);
+  const answersIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.answersJson);
+  const versionIndex = findHeaderIndex(sheet.headers, QUIZ_LOG_FIELDS.quizVersion);
+  if ([attemptIndex, emailIndex, quizIndex, submittedIndex, passedIndex].some((index) => index < 0)) return [];
+
+  const groups = new Map();
+  (sheet.rowRefs || []).forEach((rowRef) => {
+    if (normalizeEmailKey(rowRef.row[emailIndex]) !== emailKey) return;
+    const quizId = String(rowRef.row[quizIndex] || "").trim();
+    const attemptId = String(rowRef.row[attemptIndex] || "").trim();
+    if (!quizId || !attemptId) return;
+    const rawPassed = String(rowRef.row[passedIndex] || "").trim().toLowerCase();
+    const item = {
+      attempt_id: attemptId,
+      email_normalized: emailKey,
+      quiz_id: quizId,
+      lesson_id: lessonIndex >= 0 ? String(rowRef.row[lessonIndex] || "").trim() : "",
+      phase_id: phaseIndex >= 0 ? String(rowRef.row[phaseIndex] || "").trim() : "",
+      submitted_at: String(rowRef.row[submittedIndex] || "").trim(),
+      correct_count: correctIndex >= 0 ? Number(rowRef.row[correctIndex] || 0) : 0,
+      total_count: totalIndex >= 0 ? Number(rowRef.row[totalIndex] || 5) : 5,
+      passed: ["true", "1", "yes", "合格"].includes(rawPassed),
+      answers: answersIndex >= 0 ? parseJsonCell(rowRef.row[answersIndex]) : [],
+      quiz_version: versionIndex >= 0 ? String(rowRef.row[versionIndex] || "").trim() : "",
+      restored_from_sheets: true
+    };
+    if (!Array.isArray(item.answers)) item.answers = [];
+    if (!groups.has(quizId)) groups.set(quizId, []);
+    groups.get(quizId).push(item);
+  });
+
+  return Array.from(groups.values()).flatMap((items) => {
+    items.sort((a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0));
+    const latest = items[0];
+    const latestPass = items.find((item) => item.passed) || null;
+    return latestPass && latestPass.attempt_id !== latest.attempt_id ? [latest, latestPass] : [latest];
+  });
 }
 
 function restoreVideoState(sheet, emailKey, now) {
@@ -624,10 +748,58 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
     const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
     const rewritePoints = toStringArray(feedback.rewritePoints || feedback.rewrite_points || evaluationJson.rewrite_points || evaluationJson.feedback?.rewritePoints);
     const growthPoints = toStringArray(feedback.growthPoints || feedback.growth_points || evaluationJson.growth_points || evaluationJson.growth_guidance || evaluationJson.feedback?.growthPoints);
+    const additionalQuestions = toStringArray(
+      feedback.additionalQuestions || feedback.additional_questions ||
+      evaluationJson.additional_questions || evaluationJson.followup_questions ||
+      evaluationJson.feedback?.additionalQuestions
+    );
     const layerDecisions = detail?.layerDecisions || evaluationJson.layer_decisions || evaluationJson.layerDecisions || feedback.layerDecisions || {};
     const layerResults = feedback.layerResults || evaluationJson.layer_results || evaluationJson.layerResults || {};
     const failedLayer = detail?.failedLayer || evaluationJson.failed_layer || evaluationJson.failedLayer || feedback.failedLayer || "";
     const failedLayerLabel = feedback.failedLayerLabel || evaluationJson.failed_layer_label || evaluationJson.failedLayerLabel || "";
+    // _AI評価詳細_all は submission_id + email_key + work_id が一致した場合だけ採用する。
+    // 詳細行を本ワークの復元セッションにも合成し、回答ログ側のJSONが簡略でも
+    // 提出直後と同じv2フィードバックを再描画できるようにする。
+    const restoredEvaluationJson = {
+      ...evaluationJson,
+      schema_version: feedback.schemaVersion || evaluationJson.schema_version || evaluationJson.schemaVersion || "",
+      work_type: workType === "mini_work" ? "miniWork" : "work",
+      work_id: targetId,
+      submission_id: submissionId,
+      ai_log_id: firstValue(row, [aiLogIndex]),
+      status: evaluationJson.status || normalizeStandardStatus(rawStatus),
+      standard_status: evaluationJson.standard_status || normalizeStandardStatus(rawStatus),
+      result_status: evaluationJson.result_status || uiStatus,
+      score,
+      summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || firstValue(row, [summaryIndex]) || "",
+      reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
+      good_points: goodPoints,
+      improvement_points: improvementPoints,
+      missing_points: missingPoints,
+      rewrite_points: rewritePoints,
+      growth_points: growthPoints,
+      additional_questions: additionalQuestions,
+      followup_questions: additionalQuestions,
+      layer_decisions: layerDecisions,
+      layer_results: layerResults,
+      failed_layer: failedLayer,
+      failed_layer_label: failedLayerLabel,
+      quotes: feedback.quotes || evaluationJson.quotes || {},
+      feedback: {
+        ...feedback,
+        summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || "",
+        goodPoints,
+        improvementPoints,
+        missingPoints,
+        rewritePoints,
+        growthPoints,
+        additionalQuestions,
+        layerDecisions,
+        layerResults,
+        failedLayer,
+        failedLayerLabel
+      }
+    };
 
     submissions.push({
       submission_id: submissionId,
@@ -652,12 +824,12 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       parent_lesson_id: lessonId,
       work_id: targetId,
       work_title: firstValue(row, [titleIndex]),
-      schema_version: feedback.schemaVersion || evaluationJson.schema_version || evaluationJson.schemaVersion || "",
+      schema_version: restoredEvaluationJson.schema_version,
       result_status: uiStatus,
       standard_status: normalizeStandardStatus(rawStatus),
       abc_grade: firstValue(row, [abcIndex]) || evaluationJson.abc_grade || evaluationJson.abcGrade || "",
       score,
-      reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
+      reason: restoredEvaluationJson.reason,
       good_points: goodPoints,
       improvement_points: uiStatus === "good" ? [] : improvementPoints,
       unmet_criteria: uiStatus === "good" ? [] : toStringArray(evaluationJson.unmet_criteria || evaluationJson.unmetCriteria),
@@ -673,6 +845,7 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       missing_points: missingPoints,
       rewrite_points: rewritePoints,
       growth_points: growthPoints,
+      additional_questions: additionalQuestions,
       feedback: {
         ...feedback,
         summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || "",
@@ -681,6 +854,7 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
         missingPoints,
         rewritePoints,
         growthPoints,
+        additionalQuestions,
         layerDecisions,
         layerResults,
         failedLayer,
@@ -721,9 +895,10 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
         status: rawStatus,
         uiStatus,
         score,
-        evaluationJson,
+        evaluationJson: restoredEvaluationJson,
         submittedAt,
-        submissionId
+        submissionId,
+        aiLogId: firstValue(row, [aiLogIndex])
       }));
     }
   });
@@ -849,7 +1024,7 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
   });
 }
 
-function buildRestoredAiWorkSession({ emailKey, workId, lessonId, workTitle, answerText, status, uiStatus, score, evaluationJson, submittedAt, submissionId }) {
+function buildRestoredAiWorkSession({ emailKey, workId, lessonId, workTitle, answerText, status, uiStatus, score, evaluationJson, submittedAt, submissionId, aiLogId }) {
   const sessionStatus = normalizeAiSessionStatus(status, uiStatus);
   return {
     session_id: `AWS-RESTORE-${emailKey}-${workId}`,
@@ -867,9 +1042,14 @@ function buildRestoredAiWorkSession({ emailKey, workId, lessonId, workTitle, ans
     ai_evaluation_result: evaluationJson && Object.keys(evaluationJson).length ? evaluationJson : null,
     good_points: toStringArray(evaluationJson.good_points || evaluationJson.goodPoints || evaluationJson.feedback?.goodPoints),
     improvement_points: toStringArray(evaluationJson.improvement_points || evaluationJson.improvementPoints || evaluationJson.feedback?.improvementPoints),
+    missing_points: toStringArray(evaluationJson.missing_points || evaluationJson.missingPoints || evaluationJson.feedback?.missingPoints),
+    rewrite_points: toStringArray(evaluationJson.rewrite_points || evaluationJson.rewritePoints || evaluationJson.feedback?.rewritePoints),
+    growth_points: toStringArray(evaluationJson.growth_points || evaluationJson.growthPoints || evaluationJson.feedback?.growthPoints),
     unmet_criteria: toStringArray(evaluationJson.unmet_criteria || evaluationJson.unmetCriteria),
-    followup_questions: toStringArray(evaluationJson.followup_questions || evaluationJson.followupQuestions || evaluationJson.next_question || evaluationJson.nextQuestion),
+    followup_questions: toStringArray(evaluationJson.additional_questions || evaluationJson.followup_questions || evaluationJson.followupQuestions || evaluationJson.feedback?.additionalQuestions || evaluationJson.next_question || evaluationJson.nextQuestion),
     next_actions: toStringArray(evaluationJson.next_action || evaluationJson.nextAction),
+    latest_submission_id: submissionId,
+    latest_ai_log_id: aiLogId || evaluationJson.ai_log_id || evaluationJson.aiLogId || "",
     restored_submission_id: submissionId,
     restored_from_sheets: true,
     created_at: submittedAt,
@@ -1184,7 +1364,9 @@ async function persistWorkFeedback(context, answerValues) {
   // 1) ai_evaluation_logs へ追記（毎回）
   const logSheet = await ensureSheetWithHeaders(config.workSpreadsheetId, config.aiEvaluationLogSheetName, AI_EVALUATION_LOG_HEADERS, AI_EVALUATION_LOG_FIELDS);
   await appendRow(config.workSpreadsheetId, logSheet, AI_EVALUATION_LOG_FIELDS, {
-    logId: createId("AI-LOG"),
+    // evaluate-work・回答ログ・AI評価ログで同じ生成済みIDを使い、
+    // submission_idから追える評価を別IDへ分断しない。旧クライアントはfallback生成を維持する。
+    logId: payload.aiLogId || payload.ai_log_id || answerValues.aiLogId || createId("AI-LOG"),
     requestId: payload.requestId || payload.request_id || answerValues.submissionId || "",
     sessionId: payload.sessionId || payload.session_id || "",
     userId: payload.userId || payload.user_id || "",
@@ -1356,6 +1538,8 @@ exports._test = {
   AI_EVALUATION_DETAIL_HEADERS,
   ANSWER_LOG_FIELDS,
   PROGRESS_SUMMARY_FIELDS,
+  QUIZ_LOG_FIELDS,
+  QUIZ_LOG_HEADERS,
   VIDEO_LOG_FIELDS,
   WORK_SUMMARY_FIELDS,
   buildClearedWorkResults,
@@ -1364,8 +1548,10 @@ exports._test = {
   normalizeEvaluation,
   normalizeWorkType,
   restoreVideoState,
+  restoreQuizAttempts,
   restoreWorkState,
   selectEvaluationDetail,
   selectLatestRow,
-  syncConfig
+  syncConfig,
+  syncQuizAttempt
 };
