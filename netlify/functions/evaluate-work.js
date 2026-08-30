@@ -11,6 +11,7 @@ const DEFAULT_MODEL = "gpt-4o-mini";
 const WORK_SCHEMA_VERSION = "barise-work-evaluation-v1";
 const MINI_WORK_SCHEMA_VERSION = "barise-mini-work-evaluation-v2";
 const B023_WORK_SCHEMA_VERSION = "barise-main-work-evaluation-v2-2026-08-30";
+const MAIN_WORK_SCHEMA_VERSION = "barise-main-work-evaluation-v1";
 const DEFAULT_TIMEOUT_MS = 20000; // V7.1採点是正: 12s→20s（偶発タイムアウトで良回答が0点になる事故を防ぐ）
 const AI_EVALUATION_DETAIL_SHEET_NAME = "_AI評価詳細_all";
 const AI_EVALUATION_DETAIL_HEADERS = [
@@ -153,7 +154,8 @@ async function persistMiniWorkEvaluationDetailSafe(payload, evaluation) {
 
 async function persistMiniWorkEvaluationDetail(payload, evaluation, options = {}) {
   const isB023 = payload?.workId === "W-P1-07";
-  if ((!payload?.isMiniWork && !isB023) || !evaluation) {
+  const isMainWork = !payload?.isMiniWork && /^W-/.test(String(payload?.workId || ""));
+  if ((!payload?.isMiniWork && !isMainWork) || !evaluation) {
     return { ok: true, skipped: true, reason: "not_layered_evaluation" };
   }
   const submissionId = String(payload.submissionId || payload.submission_id || "").trim();
@@ -188,7 +190,9 @@ function buildMiniWorkEvaluationDetailRow(payload, evaluation) {
   const isB023 = payload?.workId === "W-P1-07";
   const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
   const detailFeedback = {
-    schemaVersion: evaluation.schema_version || evaluation.schemaVersion || (isB023 ? B023_WORK_SCHEMA_VERSION : MINI_WORK_SCHEMA_VERSION),
+    schemaVersion: evaluation.schema_version || evaluation.schemaVersion || (
+      isB023 ? B023_WORK_SCHEMA_VERSION : (payload?.isMiniWork ? MINI_WORK_SCHEMA_VERSION : MAIN_WORK_SCHEMA_VERSION)
+    ),
     summary: feedback.summary || evaluation.summary || evaluation.reason || "",
     reason: evaluation.reason || feedback.summary || "",
     goodPoints: asArray(feedback.goodPoints || evaluation.good_points),

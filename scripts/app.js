@@ -1,13 +1,14 @@
 import {
   clearSession,
   createLearningProvider,
+  getAiEvaluationLabel,
   getAiWorkStatusLabel,
   getLastEmail,
   getStatusLabel,
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-4-0-wave2b";
+} from "./data-provider.js?v=7-5-0-wave3";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -157,6 +158,7 @@ let judgeDom = null;
 let toastDom = null;
 let toastTimer = 0;
 let judgeOnNext = null;
+let judgeResultGeneration = 0;
 
 function ensureOverlayDom() {
   if (judgeDom) return;
@@ -240,12 +242,13 @@ function openJudgeOverlay(message = "AIが回答を確認しています") {
 
 function closeJudgeOverlay() {
   if (!judgeDom) return;
+  judgeResultGeneration += 1;
   judgeDom.classList.remove("on");
   document.body.style.overflow = "";
   resetJudgeOverlay();
 }
 
-async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel, onNext }) {
+async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel, onNext, generation = judgeResultGeneration }) {
   ensureOverlayDom();
   const ringWrap = document.getElementById("judgeRingWrap");
   const ring = document.getElementById("judgeRing");
@@ -261,7 +264,10 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
   next.textContent = buttonLabel || "次の一歩へ →";
   judgeOnNext = onNext || null;
 
-  const target = Math.max(0, Math.min(100, Number(score) || 0));
+  const numericScore = Number(score);
+  if (!Number.isFinite(numericScore)) throw new Error("評価点を確認できませんでした。");
+  const target = Math.max(0, Math.min(100, numericScore));
+  const isCurrent = () => generation === judgeResultGeneration && judgeDom?.classList.contains("on");
 
   /* リング立ち上がり（back.out(1.6) / .45s） */
   await tween({
@@ -271,6 +277,7 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
       ringWrap.style.transform = `scale(${.85 + .15 * v})`;
     }
   });
+  if (!isCurrent()) return;
 
   /* スコアは必ず0から実スコアへ満ちる（1.2s） */
   await tween({
@@ -280,6 +287,10 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
       ring.style.strokeDashoffset = ringOffset(JUDGE_RING_C, v);
     }
   });
+  if (!isCurrent()) return;
+  // requestAnimationFrameの最終丸めに依存せず、確定値を必ずDOMへ残す。
+  scoreEl.textContent = String(Math.round(target));
+  ring.style.strokeDashoffset = ringOffset(JUDGE_RING_C, target);
 
   /* 金のクリアスタンプ（back.out(2.2)）＋粒子22個は good のときだけ */
   if (passed) {
@@ -292,12 +303,14 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
         stamp.style.transform = `scale(${.8 + .2 * v})`;
       }
     });
+    if (!isCurrent()) return;
   }
 
   await tween({
     from: 0, to: 1, duration: 500,
     onUpdate: (v) => { fb.style.opacity = String(Math.max(0, Math.min(1, v))); }
   });
+  if (!isCurrent()) return;
 
   await tween({
     from: 0, to: 1, duration: 450,
@@ -306,6 +319,7 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
       next.style.transform = `translateY(${10 * (1 - v)}px)`;
     }
   });
+  if (!isCurrent()) return;
   next.style.pointerEvents = "auto";
 }
 
@@ -1539,7 +1553,7 @@ function renderAiWorkStep(work, session) {
     return renderAiRevisionForm(work, session);
   }
   if (status === "answering" || status === "prompt_generated" || status === "ai_reviewing") {
-    return renderAiAnswerForm(work, session);
+    return `${renderAiWorkAchievementNotice(work)}${renderAiWorkLatestResult(work)}${renderAiWorkAttemptHistory(work)}${renderAiAnswerForm(work, session)}`;
   }
   if (status === "error") {
     return `
@@ -1627,6 +1641,9 @@ function renderAiFollowupForm(work, session) {
   const isGoalSettingWork = work.work_id === "W-P1-05";
   const followupQuestions = getAiFollowupQuestions(session);
   return `
+    ${renderAiWorkAchievementNotice(work)}
+    ${renderAiWorkLatestResult(work)}
+    ${renderAiWorkAttemptHistory(work)}
     ${renderAiGeneratedPrompt(session)}
     ${renderAiCriteriaProgress(session)}
     ${renderAiEvaluationSummary(session)}
@@ -1647,6 +1664,9 @@ function renderAiFollowupForm(work, session) {
 function renderAiRevisionForm(work, session) {
   const followupQuestions = getAiFollowupQuestions(session);
   return `
+    ${renderAiWorkAchievementNotice(work)}
+    ${renderAiWorkLatestResult(work)}
+    ${renderAiWorkAttemptHistory(work)}
     ${renderAiGeneratedPrompt(session)}
     <div class="ai-block ai-block--focus">
       <span>もう一度、いっしょに整理しましょう</span>
@@ -1686,7 +1706,77 @@ function renderAiFinalFeedback(work, session) {
         <ul>${(session.next_actions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </div>
     ` : ""}
+    ${renderAiWorkAchievementNotice(work)}
+    ${renderAiWorkLatestResult(work)}
+    ${renderAiWorkAttemptHistory(work)}
+    ${work.hasPassed ? `<button class="submit2 ai-work-reattempt" type="button" data-action="restart-ai-work" data-work-id="${escapeAttribute(work.work_id)}">もう一度取り組む</button>` : ""}
     ${nextLesson ? `<a class="submit2" href="${escapeAttribute(hashForLesson(nextLesson.lesson_id, "video"))}">次のレッスン「${escapeHtml(nextLesson.lesson_title || "")}」へ進む</a>` : `<a class="submit2" href="#/learning">次の学習へ進む</a>`}
+  `;
+}
+
+function renderAiWorkAchievementNotice(work) {
+  if (!work?.hasPassed) return "";
+  const bestScore = work.achievementSummary?.best_score;
+  const scoreText = bestScore !== null && bestScore !== undefined && String(bestScore).trim() !== "" && Number.isFinite(Number(bestScore))
+    ? ` / 最高${Number(bestScore)}点`
+    : "";
+  return `
+    <div class="ai-block ai-block--gold ai-work-achievement" aria-label="合格実績">
+      <strong>クリア済み（合格実績あり）${escapeHtml(scoreText)}</strong>
+      <p>今回の再挑戦結果にかかわらず、クリア状態と進行は維持されます。</p>
+    </div>
+  `;
+}
+
+function renderAiWorkLatestResult(work) {
+  const latest = work?.achievementSummary?.latest_result;
+  if (!latest) return "";
+  const scoreText = latest.score !== null && latest.score !== undefined && String(latest.score).trim() !== "" && Number.isFinite(Number(latest.score))
+    ? `${Number(latest.score)}点・`
+    : "";
+  const label = getAiEvaluationLabel({
+    standard_status: latest.standard_status,
+    result_status: latest.result_status,
+    score: latest.score
+  });
+  return `<p class="ai-work-latest-result">今回の結果: ${escapeHtml(`${scoreText}${label}`)}</p>`;
+}
+
+function renderAiWorkAttemptHistory(work) {
+  const attempts = Array.isArray(work?.attemptHistory) ? work.attemptHistory.slice(0, 3) : [];
+  if (!attempts.length) return "";
+  return `
+    <section class="ai-work-attempts" aria-label="これまでの提出" data-work-attempt-history>
+      <h3>これまでの提出</h3>
+      ${attempts.map((attempt, index) => {
+        const scoreText = attempt.score !== null && attempt.score !== undefined && String(attempt.score).trim() !== "" && Number.isFinite(Number(attempt.score))
+          ? `${Number(attempt.score)}点`
+          : "点数なし";
+        const label = getAiEvaluationLabel({
+          ...(attempt.evaluation || {}),
+          standard_status: attempt.standard_status || attempt.evaluation?.standard_status,
+          result_status: attempt.result_status || attempt.evaluation?.result_status
+        });
+        const evaluation = attempt.evaluation && typeof attempt.evaluation === "object" ? attempt.evaluation : null;
+        return `
+          <details class="ai-details ai-work-attempt" data-work-attempt${index === 0 ? " open" : ""}>
+            <summary>
+              <span>${escapeHtml(formatDate(attempt.submitted_at) || "日時なし")}</span>
+              <strong>${escapeHtml(scoreText)}・${escapeHtml(label)}</strong>
+            </summary>
+            <div class="ai-work-attempt-body">
+              <h4>自分の回答</h4>
+              <p class="multiline-text">${escapeHtml(attempt.answer_text || "回答は保存されていません。")}</p>
+              ${evaluation ? renderAiEvaluationSummary({
+                work_id: work.work_id,
+                status: attempt.result_status || "",
+                ai_evaluation_result: evaluation
+              }, { compact: true }) : ""}
+            </div>
+          </details>
+        `;
+      }).join("")}
+    </section>
   `;
 }
 
@@ -1944,6 +2034,7 @@ function renderAiEvaluationSummary(session, options = {}) {
   const rewritePoints = evaluation.rewrite_points || feedback.rewritePoints || [];
   const growthPoints = evaluation.growth_points || feedback.growthPoints || [];
   const additionalQuestions = evaluation.additional_questions || evaluation.followup_questions || feedback.additionalQuestions || [];
+  const resultLabel = getAiEvaluationLabel(evaluation, session?.status || "");
   const scoreText = Number.isFinite(Number(evaluation.score)) && Number(evaluation.score) > 0
     ? `${Number(evaluation.score)}点`
     : "評価中";
@@ -1955,7 +2046,7 @@ function renderAiEvaluationSummary(session, options = {}) {
     <div class="ai-block" aria-label="評価結果">
       <div class="ai-summary-head">
         <strong>${escapeHtml(scoreText)}</strong>
-        <em>${escapeHtml(evaluation.label || "確認中")}</em>
+        <em>${escapeHtml(resultLabel)}</em>
       </div>
       <p>${escapeHtml(evaluation.summary || "評価結果を保存しました。")}</p>
       ${options.compact ? `
@@ -2200,7 +2291,7 @@ function getWorkCtaLabel(work) {
 function getWorkRequirementLabel(work) {
   const miniRemaining = Number(work.miniRemainingCount || 0);
   const videoRemaining = Number(work.videoRemainingCount || 0);
-  if (work.aiStatus === "completed") return "クリア済み";
+  if (work.hasPassed || work.aiStatus === "completed") return "クリア済み";
   if (miniRemaining > 0) return `関連ミニワーク あと${miniRemaining}件`;
   if (videoRemaining > 0) return `関連動画 あと${videoRemaining}件`;
   return "挑戦できます";
@@ -2740,27 +2831,29 @@ async function handleSubmitAiWork(event) {
   submitButton.textContent = "AIが確認しています";
 
   const evaluationForms = ["ai-answer", "ai-followup", "ai-revision"];
+  const overlayGeneration = ++judgeResultGeneration;
   openJudgeOverlay(AI_FORM_WAIT_MESSAGE[formKind] || "AIが確認しています");
 
   try {
+    let submittedSession = null;
     if (formKind === "ai-theme") {
-      await provider.startAiWork(state.email, workId, formDataToObject(formData));
+      submittedSession = await provider.startAiWork(state.email, workId, formDataToObject(formData));
     }
 
     if (formKind === "ai-answer") {
-      await provider.submitAiWorkAnswer(state.email, workId, formData.get("answer"));
+      submittedSession = await provider.submitAiWorkAnswer(state.email, workId, formData.get("answer"));
     }
 
     if (formKind === "ai-intake-followup") {
-      await provider.submitAiWorkIntakeFollowup(state.email, workId, formData.get("intake_followup_answer"));
+      submittedSession = await provider.submitAiWorkIntakeFollowup(state.email, workId, formData.get("intake_followup_answer"));
     }
 
     if (formKind === "ai-followup") {
-      await provider.submitAiWorkFollowup(state.email, workId, formData.get("followup_answer"));
+      submittedSession = await provider.submitAiWorkFollowup(state.email, workId, formData.get("followup_answer"));
     }
 
     if (formKind === "ai-revision") {
-      await provider.submitAiWorkRevision(state.email, workId, formData.get("revision_answer"));
+      submittedSession = await provider.submitAiWorkRevision(state.email, workId, formData.get("revision_answer"));
     }
 
     await refreshLearningState();
@@ -2768,13 +2861,20 @@ async function handleSubmitAiWork(event) {
     render();
 
     const work = (state.learning?.works || []).find((item) => item.work_id === workId);
-    const session = work?.aiSession || null;
+    const refreshedSession = work?.aiSession || null;
+    // submit APIの確定結果を捨ててrefresh後の再構成sessionだけを見ると、
+    // 復元・再描画のタイミング次第でリングが初期値0のままになる。
+    // 今回のsubmission IDを持つ返却sessionを優先し、後着の古い状態を表示しない。
+    const session = submittedSession?.work_id === workId && submittedSession?.ai_evaluation_result
+      ? submittedSession
+      : refreshedSession;
     const evaluation = session?.ai_evaluation_result || null;
-    const hasScore = Number.isFinite(Number(evaluation?.score)) && Number(evaluation?.score) > 0;
+    const hasScore = evaluation?.score !== undefined && evaluation?.score !== null &&
+      String(evaluation.score).trim() !== "" && Number.isFinite(Number(evaluation.score));
 
     if (evaluationForms.includes(formKind) && evaluation && hasScore) {
       const passed = ["completed", "final_feedback_ready"].includes(session.status);
-      showJudgeResult({
+      await showJudgeResult({
         score: Number(evaluation.score),
         passed,
         feedback: evaluation.summary || "",
@@ -2785,7 +2885,8 @@ async function handleSubmitAiWork(event) {
         onNext: () => {
           closeJudgeOverlay();
           scrollToPageTop();
-        }
+        },
+        generation: overlayGeneration
       });
     } else {
       closeJudgeOverlay();
@@ -2910,6 +3011,17 @@ document.addEventListener("click", async (event) => {
     try {
       await provider.retryAiWork(state.email, actionTarget.dataset.workId);
       await refreshLearningState();
+      render();
+    } catch (error) {
+      renderError(error.message);
+    }
+  }
+
+  if (action === "restart-ai-work") {
+    try {
+      await provider.restartAiWork(state.email, actionTarget.dataset.workId);
+      await refreshLearningState();
+      window.location.hash = hashForWork(actionTarget.dataset.workId);
       render();
     } catch (error) {
       renderError(error.message);

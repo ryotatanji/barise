@@ -1,4 +1,4 @@
-import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-4-0-wave2b";
+import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-5-0-wave3";
 
 const DATA_URL = "./data/learning-data.json?v=7-4-0-wave2b";
 const STORAGE_KEY = "barise-learning-local-state:v11";
@@ -118,6 +118,35 @@ export function getStatusLabel(status) {
 
 export function getAiWorkStatusLabel(status) {
   return aiWorkStatusLabels[status] || "未着手";
+}
+
+export function getAiEvaluationLabel(evaluation = {}, sessionStatus = "") {
+  const candidates = [
+    evaluation.standard_status,
+    evaluation.standardStatus,
+    evaluation.result_status,
+    evaluation.resultStatus,
+    evaluation.status,
+    sessionStatus,
+    evaluation.label
+  ];
+  for (const candidate of candidates) {
+    const text = String(candidate || "").trim().toLowerCase();
+    if (!text) continue;
+    if (["pass", "passed", "good", "completed", "final_feedback_ready", "合格", "クリア", "通過", "完了"].includes(text)) {
+      return "合格";
+    }
+    if (["retry", "needs_more", "failed", "revision_required", "followup_required", "ai_error", "error", "再提出", "もう一度具体化"].includes(text)) {
+      return "再提出";
+    }
+    if (["review", "support_needed", "staff_feedback_ready", "support_suggested", "サポート相談", "担当者確認"].includes(text)) {
+      return "サポート相談";
+    }
+    if (["pending", "reviewing", "ai_reviewing", "intake_reviewing", "評価中", "確認中"].includes(text)) {
+      return "確認中";
+    }
+  }
+  return "確認中";
 }
 
 export function saveSession(email) {
@@ -380,9 +409,14 @@ export class LocalJsonLearningProvider {
   _phase2GateState(db, email, currentPhaseOrder, aiSessionsByWork = new Map()) {
     const guide = "フェーズ1の本ワーク『目標・目的設定』に合格するとフェーズ2へ進めます。";
     const phase1Session = aiSessionsByWork.get("W-P1-05") || null;
-    const phase1Passed = this.lastRestoredAiWorkIds.has("W-P1-05") &&
+    const phase1Achievement = (db.aiWorkAchievementSummaries || []).find((item) =>
+      item.email_normalized === email && item.work_id === "W-P1-05"
+    );
+    const phase1Passed = Boolean(phase1Achievement?.has_passed) || (
+      this.lastRestoredAiWorkIds.has("W-P1-05") &&
       phase1Session?.restored_from_sheets &&
-      ["completed", "final_feedback_ready"].includes(phase1Session.status);
+      ["completed", "final_feedback_ready"].includes(phase1Session.status)
+    );
     const hasPhase2Progress = (db.progress || []).some((item) =>
       item.email_normalized === email &&
       String(item.phase_id || "").startsWith("P2") &&
@@ -916,6 +950,57 @@ export class LocalJsonLearningProvider {
     return structuredClone(session);
   }
 
+  async restartAiWork(email, workId) {
+    const db = this._read();
+    const emailNormalized = normalizeEmail(email);
+    const work = this._findWork(db, workId);
+    const session = (db.aiWorkSessions || []).find((item) =>
+      item.email_normalized === emailNormalized && item.work_id === workId
+    );
+    if (!work || !session) throw new Error("保存中のワークが見つかりません。");
+    const achievement = (db.aiWorkAchievementSummaries || []).find((item) =>
+      item.email_normalized === emailNormalized && item.work_id === workId
+    );
+    const hasPassed = Boolean(achievement?.has_passed) || ["completed", "final_feedback_ready"].includes(session.status);
+    if (!hasPassed) throw new Error("クリア済みのワークだけ、もう一度取り組めます。");
+
+    const latestAttempt = (db.aiWorkAttemptHistories || []).find((item) =>
+      item.email_normalized === emailNormalized && item.work_id === workId
+    )?.attempts?.[0];
+    const previousAnswer = String(
+      latestAttempt?.answer_text || session.latest_revision_answer || session.initial_answer || ""
+    );
+    const now = this._now();
+    this._markLearningMutation(emailNormalized);
+    Object.assign(session, {
+      session_id: this._createId(`AWS-RETRY-${workId}`),
+      status: "answering",
+      active_reattempt: true,
+      reattempt_started_at: now,
+      initial_answer: previousAnswer,
+      latest_revision_answer: "",
+      revision_source_answer: previousAnswer,
+      revision_history: [],
+      followup_history: [],
+      followup_questions: [],
+      met_criteria: [],
+      unmet_criteria: [],
+      good_points: [],
+      improvement_points: [],
+      ai_score: null,
+      ai_summary: "前回の回答を引き継ぎました。内容を編集して再提出できます。",
+      ai_feedback: "",
+      ai_final_feedback: "",
+      ai_evaluation_result: null,
+      latest_submission_id: "",
+      latest_ai_log_id: "",
+      completed_at: "",
+      updated_at: now
+    });
+    this._write(db);
+    return structuredClone(session);
+  }
+
   _createInitialState() {
     const data = this.source.sampleData || {};
     return {
@@ -931,6 +1016,8 @@ export class LocalJsonLearningProvider {
       quizAttempts: structuredClone(data.quizAttempts || []),
       clearedWorkResults: structuredClone(data.clearedWorkResults || []),
       aiWorkSessions: structuredClone(data.aiWorkSessions || []),
+      aiWorkAttemptHistories: structuredClone(data.aiWorkAttemptHistories || []),
+      aiWorkAchievementSummaries: structuredClone(data.aiWorkAchievementSummaries || []),
       aiEvaluationLogs: structuredClone(data.aiEvaluationLogs || []),
       staffFeedbackQueue: structuredClone(data.staffFeedbackQueue || []),
       evaluationCriteria: structuredClone(data.evaluationCriteria || []),
@@ -960,6 +1047,8 @@ export class LocalJsonLearningProvider {
       quizAttempts: stored.quizAttempts || initial.quizAttempts,
       clearedWorkResults: stored.clearedWorkResults || initial.clearedWorkResults,
       aiWorkSessions: stored.aiWorkSessions || initial.aiWorkSessions,
+      aiWorkAttemptHistories: stored.aiWorkAttemptHistories || initial.aiWorkAttemptHistories,
+      aiWorkAchievementSummaries: stored.aiWorkAchievementSummaries || initial.aiWorkAchievementSummaries,
       aiEvaluationLogs: stored.aiEvaluationLogs || initial.aiEvaluationLogs,
       staffFeedbackQueue: stored.staffFeedbackQueue || initial.staffFeedbackQueue,
       evaluationCriteria: initial.evaluationCriteria,
@@ -1075,7 +1164,7 @@ export class LocalJsonLearningProvider {
     const videoDone = lessons.filter((lesson) => lesson.progress.video_status === "watched").length;
     const miniDone = lessons.filter((lesson) => lesson.mini_work_required && lesson.progress.mini_work_status === "good").length;
     const workTotal = works.length;
-    const workDone = works.filter((work) => work.aiStatus === "completed").length;
+    const workDone = works.filter((work) => work.hasPassed || work.aiStatus === "completed").length;
     const totalSteps = videoTotal + miniTotal + workTotal;
     const doneSteps = videoDone + miniDone + workDone;
 
@@ -1788,6 +1877,12 @@ export class LocalJsonLearningProvider {
           .map((lessonId) => db.miniWorks.find((miniWork) => miniWork.lesson_id === lessonId))
           .filter(Boolean);
         const session = aiSessionsByWork.get(work.work_id) || null;
+        const attemptHistory = (db.aiWorkAttemptHistories || []).find((item) =>
+          item.email_normalized === email && item.work_id === work.work_id
+        )?.attempts || [];
+        const achievementSummary = (db.aiWorkAchievementSummaries || []).find((item) =>
+          item.email_normalized === email && item.work_id === work.work_id
+        ) || null;
         const aiStatus = session?.status || "not_started";
         const phase = phaseById.get(work.phase_id);
         const videoRemaining = relatedLessons.filter((lesson) => lesson.progress.video_status !== "watched");
@@ -1812,6 +1907,9 @@ export class LocalJsonLearningProvider {
             title: miniWork.title
           })),
           aiSession: session ? structuredClone(session) : null,
+          attemptHistory: structuredClone(attemptHistory.slice(0, 3)),
+          achievementSummary: achievementSummary ? structuredClone(achievementSummary) : null,
+          hasPassed: Boolean(achievementSummary?.has_passed) || ["completed", "final_feedback_ready"].includes(aiStatus),
           commonProfileContext: { ...commonProfileContext },
           aiStatus,
           aiStatusLabel: getAiWorkStatusLabel(aiStatus),
@@ -1822,7 +1920,7 @@ export class LocalJsonLearningProvider {
           missingRequiredMiniLessonIds: unlockState.missingMiniLessonIds,
           unlockReason: unlockState.reason,
           primaryLessonId: relatedLessonIds[0] || "",
-          canStartAiWork: unlockState.unlocked || ["completed", "final_feedback_ready"].includes(aiStatus)
+          canStartAiWork: unlockState.unlocked || Boolean(achievementSummary?.has_passed) || ["completed", "final_feedback_ready"].includes(aiStatus)
         };
       })
       .sort((a, b) => {
@@ -2145,17 +2243,94 @@ export class LocalJsonLearningProvider {
   async _evaluateAndApplyAiWorkReview(db, email, work, session, answerText, stage, localReview, now) {
     const payload = this._createAiEvaluationPayload(email, work, session, answerText, stage, localReview, now);
     const evaluation = await this.aiClient.evaluateWork(payload);
-    if (work.work_id === "W-P1-07" && this.aiClient.mode === "gateway" && evaluation.detail_persisted !== true) {
+    if (this.aiClient.mode === "gateway" && evaluation.detail_persisted !== true) {
       throw new Error(SAVE_FAILURE_MESSAGE);
     }
     const review = this._convertAiEvaluationToReview(work, evaluation, localReview, answerText);
 
     this._applyAiWorkReview(db, email, work, session, review, now);
     this._applyAiEvaluationMeta(session, evaluation, payload, now);
+    this._recordAiWorkAttempt(db, email, work, session, answerText, evaluation, now);
     this._storeAiEvaluationLog(db, email, work, session, payload, evaluation, now);
 
     if (evaluation.staff_feedback?.recommended) {
       this._queueStaffFeedback(db, email, work, session, evaluation, now);
+    }
+  }
+
+  _recordAiWorkAttempt(db, email, work, session, answerText, evaluation, now) {
+    db.aiWorkAttemptHistories = db.aiWorkAttemptHistories || [];
+    db.aiWorkAchievementSummaries = db.aiWorkAchievementSummaries || [];
+    const submissionId = String(session.latest_submission_id || evaluation.submission_id || "").trim();
+    if (!submissionId) return;
+    let history = db.aiWorkAttemptHistories.find((item) =>
+      item.email_normalized === email && item.work_id === work.work_id
+    );
+    if (!history) {
+      history = { email_normalized: email, work_id: work.work_id, attempts: [] };
+      db.aiWorkAttemptHistories.push(history);
+    }
+    const rawScore = evaluation.score;
+    const score = rawScore !== undefined && rawScore !== null && String(rawScore).trim() !== "" && Number.isFinite(Number(rawScore))
+      ? Number(rawScore)
+      : null;
+    const standardStatus = String(evaluation.standard_status || evaluation.status || "").toLowerCase();
+    const resultStatus = ["pass", "passed", "good", "completed"].includes(standardStatus)
+      ? "good"
+      : (["review", "support_needed", "staff_feedback_ready"].includes(standardStatus) ? "support_needed" : "needs_more");
+    const attempt = {
+      submission_id: submissionId,
+      work_id: work.work_id,
+      submitted_at: now,
+      answer_text: String(answerText || ""),
+      score,
+      result_status: resultStatus,
+      standard_status: standardStatus,
+      raw_status: standardStatus,
+      legacy_normalized: false,
+      evaluation: structuredClone(evaluation || {})
+    };
+    history.attempts = [attempt, ...(history.attempts || []).filter((item) => item.submission_id !== submissionId)]
+      .sort((a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0))
+      .slice(0, 3);
+
+    let summary = db.aiWorkAchievementSummaries.find((item) =>
+      item.email_normalized === email && item.work_id === work.work_id
+    );
+    if (!summary) {
+      summary = { email_normalized: email, work_id: work.work_id, has_passed: false, best_score: null, latest_result: null };
+      db.aiWorkAchievementSummaries.push(summary);
+    }
+    summary.has_passed = Boolean(summary.has_passed) || resultStatus === "good";
+    if (score !== null && (summary.best_score === null || summary.best_score === undefined || score > Number(summary.best_score))) {
+      summary.best_score = score;
+    }
+    summary.latest_result = {
+      submission_id: submissionId,
+      submitted_at: now,
+      score,
+      result_status: resultStatus,
+      standard_status: standardStatus,
+      legacy_normalized: false
+    };
+    if (resultStatus === "good") {
+      db.clearedWorkResults = db.clearedWorkResults || [];
+      db.clearedWorkResults = db.clearedWorkResults.filter((item) =>
+        !(item.target_type === "work" && item.target_id === work.work_id)
+      );
+      db.clearedWorkResults.push({
+        submission_id: submissionId,
+        target_type: "work",
+        target_id: work.work_id,
+        work_id: work.work_id,
+        lesson_id: this._relatedLessonIdsForWork(work)[0] || "",
+        work_title: work.title,
+        answer_text: String(answerText || ""),
+        result_status: "good",
+        score,
+        submitted_at: now,
+        evaluation: structuredClone(evaluation || {})
+      });
     }
   }
 
@@ -2479,8 +2654,9 @@ export class LocalJsonLearningProvider {
   }
 
   _applyAiWorkReview(db, email, work, session, review, now) {
-    // V7.2 単調性: 一度completed(クリア)になったAIワークは再評価で降格させない（良い方を保持）
-    const wasCompleted = session.status === "completed" || session.status === "final_feedback_ready";
+    // 通常の再評価は従来どおり単調だが、明示的な再挑戦では今回結果をそのまま表示する。
+    // 過去の合格は別のachievement summaryとprogressで維持する。
+    const wasCompleted = !session.active_reattempt && (session.status === "completed" || session.status === "final_feedback_ready");
     session.met_criteria = review.metCriteria || [];
     session.unmet_criteria = review.unmetCriteria || [];
     session.good_points = review.goodPoints || [];
@@ -2494,6 +2670,7 @@ export class LocalJsonLearningProvider {
 
     if (review.status === "completed" || wasCompleted) {
       this._completeAiWork(db, email, work, session, now);
+      session.active_reattempt = false;
       return;
     }
 
@@ -3134,6 +3311,8 @@ export class LocalJsonLearningProvider {
     db.evaluationResults = db.evaluationResults || [];
     db.quizAttempts = db.quizAttempts || [];
     db.aiWorkSessions = db.aiWorkSessions || [];
+    db.aiWorkAttemptHistories = db.aiWorkAttemptHistories || [];
+    db.aiWorkAchievementSummaries = db.aiWorkAchievementSummaries || [];
     db.clearedWorkResults = Array.isArray(restored.clearedWorkResults)
       ? structuredClone(restored.clearedWorkResults)
       : [];
@@ -3157,6 +3336,35 @@ export class LocalJsonLearningProvider {
           quiz_version: String(attempt.quiz_version || attempt.quizVersion || ""),
           submitted_at: attempt.submitted_at || attempt.submittedAt || this._now(),
           restored_from_sheets: true
+        });
+      });
+    }
+    if (Array.isArray(restored.aiWorkAttemptHistories)) {
+      db.aiWorkAttemptHistories = db.aiWorkAttemptHistories.filter((item) => item.email_normalized !== email);
+      restored.aiWorkAttemptHistories.forEach((history) => {
+        const workId = String(history.work_id || history.workId || "").trim();
+        if (!workId) return;
+        db.aiWorkAttemptHistories.push({
+          email_normalized: email,
+          work_id: workId,
+          attempts: (Array.isArray(history.attempts) ? history.attempts : []).slice(0, 3).map((attempt) => structuredClone(attempt))
+        });
+      });
+    }
+    if (Array.isArray(restored.aiWorkAchievementSummaries)) {
+      db.aiWorkAchievementSummaries = db.aiWorkAchievementSummaries.filter((item) => item.email_normalized !== email);
+      restored.aiWorkAchievementSummaries.forEach((summary) => {
+        const workId = String(summary.work_id || summary.workId || "").trim();
+        if (!workId) return;
+        const rawBestScore = summary.best_score ?? summary.bestScore;
+        db.aiWorkAchievementSummaries.push({
+          ...structuredClone(summary),
+          email_normalized: email,
+          work_id: workId,
+          has_passed: summary.has_passed === true || String(summary.has_passed || summary.hasPassed || "").toLowerCase() === "true",
+          best_score: rawBestScore !== undefined && rawBestScore !== null && String(rawBestScore).trim() !== "" && Number.isFinite(Number(rawBestScore))
+            ? Number(rawBestScore)
+            : null
         });
       });
     }
@@ -3240,6 +3448,7 @@ export class LocalJsonLearningProvider {
     const layerResults = structuredClone(evaluation.layer_results || evaluation.layerResults || feedback.layerResults || {});
     const failedLayer = evaluation.failed_layer || evaluation.failedLayer || feedback.failedLayer || "";
     const failedLayerLabel = evaluation.failed_layer_label || evaluation.failedLayerLabel || feedback.failedLayerLabel || "";
+    const label = getAiEvaluationLabel({ ...evaluation, result_status: resultStatus });
     return {
       ...structuredClone(evaluation),
       evaluation_id: evaluation.evaluation_id || this._createId("RESTORE-EV"),
@@ -3248,6 +3457,7 @@ export class LocalJsonLearningProvider {
       target_id: String(evaluation.target_id || evaluation.work_id || evaluation.mini_work_id || ""),
       result_status: resultStatus,
       status: resultStatus,
+      label,
       score: Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : null,
       good_points: goodPoints,
       improvement_points: resultStatus === "good" ? [] : improvementPoints,

@@ -442,9 +442,10 @@ async function syncWorkSubmission(context) {
     return { idempotent: true, affected: [] };
   }
 
-  // W-P1-07は既存行を一切更新しないappend-only要件。複数行がis_latest=trueでも
-  // restore側はsubmitted_atで最新行を選べるため、過去行のlatest flagを落とさない。
-  if (workId !== "W-P1-07") {
+  // 本ワークの再挑戦は完全append-onlyとする。複数行がis_latest=trueでも
+  // restore側がsubmitted_at、同時刻なら行番号で最新行を決定するため、過去行は更新しない。
+  // ミニワークは既存契約を維持し、従来どおりlatest flagを整理する。
+  if (workType === "mini_work") {
     await clearLatestFlag({
       spreadsheetId: config.workSpreadsheetId,
       sheet: answerLog,
@@ -554,6 +555,8 @@ async function restoreLearningState(context) {
       evaluationResults: workState.evaluationResults,
       clearedWorkResults: workState.clearedWorkResults,
       aiWorkSessions: workState.aiWorkSessions,
+      aiWorkAttemptHistories: workState.aiWorkAttemptHistories,
+      aiWorkAchievementSummaries: workState.aiWorkAchievementSummaries,
       quizAttempts,
       clearedTargets: [...videoState.clearedTargets, ...workState.clearedTargets],
       restoredAt: now
@@ -690,7 +693,10 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
 
   if (emailIndex < 0 || (workIndex < 0 && miniIndex < 0)) {
     warnings.push({ sheetName: answerLog.sheetName, warning: "restore_answer_columns_missing" });
-    return { progress: [], submissions: [], evaluationResults: [], clearedWorkResults: [], aiWorkSessions: [], clearedTargets: [], warnings };
+    return {
+      progress: [], submissions: [], evaluationResults: [], clearedWorkResults: [], aiWorkSessions: [],
+      aiWorkAttemptHistories: [], aiWorkAchievementSummaries: [], clearedTargets: [], warnings
+    };
   }
 
   const groups = new Map();
@@ -734,15 +740,21 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
     const lessonId = firstValue(row, [lessonIndex]);
     const submittedAt = firstValue(row, [submittedIndex, updatedIndex]) || now;
     const rawStatus = firstValue(row, [statusIndex]);
-    const uiStatus = workType === "mini_work"
-      ? normalizeMiniWorkStatus(rawStatus)
-      : normalizeWorkStatus(rawStatus);
     const submissionId = firstValue(row, [submissionIndex]) || createId("RESTORE-SUB");
     const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, targetId);
     const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
     const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
     const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
     const feedback = detail ? detail.feedback : answerFeedback;
+    const effectiveStatus = resolveEffectiveWorkStatus({
+      rawStatus,
+      score,
+      workType,
+      evaluationJson,
+      feedback,
+      detail
+    });
+    const uiStatus = effectiveStatus.uiStatus;
     const goodPoints = toStringArray(feedback.goodPoints || feedback.good_points || evaluationJson.good_points || evaluationJson.feedback?.goodPoints);
     const improvementPoints = toStringArray(feedback.improvementPoints || feedback.improvement_points || evaluationJson.improvement_points || evaluationJson.feedback?.improvementPoints);
     const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
@@ -767,9 +779,11 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       work_id: targetId,
       submission_id: submissionId,
       ai_log_id: firstValue(row, [aiLogIndex]),
-      status: evaluationJson.status || normalizeStandardStatus(rawStatus),
-      standard_status: evaluationJson.standard_status || normalizeStandardStatus(rawStatus),
-      result_status: evaluationJson.result_status || uiStatus,
+      status: effectiveStatus.standardStatus,
+      standard_status: effectiveStatus.standardStatus,
+      result_status: uiStatus,
+      raw_status: rawStatus,
+      legacy_normalized: effectiveStatus.legacyNormalized,
       score,
       summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || firstValue(row, [summaryIndex]) || "",
       reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
@@ -808,6 +822,8 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       target_id: targetId,
       answer_text: firstValue(row, [answerIndex]),
       status: uiStatus,
+      raw_status: rawStatus,
+      legacy_normalized: effectiveStatus.legacyNormalized,
       score,
       submitted_at: submittedAt,
       ai_log_id: firstValue(row, [aiLogIndex]),
@@ -826,7 +842,9 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       work_title: firstValue(row, [titleIndex]),
       schema_version: restoredEvaluationJson.schema_version,
       result_status: uiStatus,
-      standard_status: normalizeStandardStatus(rawStatus),
+      standard_status: effectiveStatus.standardStatus,
+      raw_status: rawStatus,
+      legacy_normalized: effectiveStatus.legacyNormalized,
       abc_grade: firstValue(row, [abcIndex]) || evaluationJson.abc_grade || evaluationJson.abcGrade || "",
       score,
       reason: restoredEvaluationJson.reason,
@@ -905,8 +923,25 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
 
   applyWorkSummaryClears(workSummary, emailKey).forEach((item) => clearedTargets.push(item));
   const clearedWorkResults = buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission);
+  const { aiWorkAttemptHistories, aiWorkAchievementSummaries } = buildAiWorkAttemptState(
+    answerLog,
+    emailKey,
+    now,
+    detailsBySubmission
+  );
 
-  return { progress, submissions, evaluationResults, clearedWorkResults, aiWorkSessions, clearedTargets, warnings };
+  // 最新挑戦がretryでも、一度の合格実績は進行・ゲートに対して単調に維持する。
+  const passedWorkIds = new Set(aiWorkAchievementSummaries.filter((item) => item.has_passed).map((item) => item.work_id));
+  progress.forEach((item) => {
+    if (!item.work_id || !passedWorkIds.has(item.work_id)) return;
+    item.work_status = "good";
+    item.has_passed = true;
+  });
+
+  return {
+    progress, submissions, evaluationResults, clearedWorkResults, aiWorkSessions,
+    aiWorkAttemptHistories, aiWorkAchievementSummaries, clearedTargets, warnings
+  };
 }
 
 // マイページ用には全回答履歴を返さず、work IDごとの最新合格／完了結果だけを返す。
@@ -940,12 +975,38 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
     const targetId = explicitMiniId || workId;
     if (!targetId) return;
     const workType = normalizeRestoredWorkType(firstValue(row, [typeIndex]), targetId);
-    const uiStatus = workType === "mini_work"
-      ? normalizeMiniWorkStatus(firstValue(row, [statusIndex]))
-      : normalizeWorkStatus(firstValue(row, [statusIndex]));
+    const submissionId = firstValue(row, [submissionIndex]) || createId("RESTORE-SUB");
+    const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, targetId);
+    const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
+    const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
+    const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
+    const feedback = detail ? detail.feedback : answerFeedback;
+    const effectiveStatus = resolveEffectiveWorkStatus({
+      rawStatus: firstValue(row, [statusIndex]),
+      score,
+      workType,
+      evaluationJson,
+      feedback,
+      detail
+    });
+    const uiStatus = effectiveStatus.uiStatus;
     if (uiStatus !== "good") return;
     const submittedAt = firstValue(row, [submittedIndex, updatedIndex]) || now;
-    const candidate = { rowRef, workType, workId: workId || targetId, miniWorkId: explicitMiniId, targetId, submittedAt };
+    const candidate = {
+      rowRef,
+      workType,
+      workId: workId || targetId,
+      miniWorkId: explicitMiniId,
+      targetId,
+      submittedAt,
+      submissionId,
+      detail,
+      score,
+      answerFeedback,
+      evaluationJson,
+      feedback,
+      effectiveStatus
+    };
     const current = latestByTarget.get(targetId);
     const candidateTime = Date.parse(submittedAt) || 0;
     const currentTime = current ? (Date.parse(current.submittedAt) || 0) : -1;
@@ -957,12 +1018,11 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
   return Array.from(latestByTarget.values()).map((selected) => {
     const row = selected.rowRef.row;
     const targetId = selected.targetId;
-    const submissionId = firstValue(row, [submissionIndex]) || createId("RESTORE-SUB");
-    const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, targetId);
-    const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
-    const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
-    const feedback = detail ? detail.feedback : answerFeedback;
-    const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
+    const submissionId = selected.submissionId;
+    const detail = selected.detail;
+    const evaluationJson = selected.evaluationJson;
+    const feedback = selected.feedback;
+    const score = selected.score;
     const goodPoints = toStringArray(feedback.goodPoints || feedback.good_points || evaluationJson.good_points || evaluationJson.feedback?.goodPoints);
     const improvementPoints = toStringArray(feedback.improvementPoints || feedback.improvement_points || evaluationJson.improvement_points || evaluationJson.feedback?.improvementPoints);
     const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
@@ -982,6 +1042,8 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
       work_title: firstValue(row, [titleIndex]),
       answer_text: firstValue(row, [answerIndex]),
       result_status: "good",
+      raw_status: firstValue(row, [statusIndex]),
+      legacy_normalized: selected.effectiveStatus.legacyNormalized,
       score,
       submitted_at: selected.submittedAt,
       ai_log_id: firstValue(row, [aiLogIndex]),
@@ -992,6 +1054,8 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
         schema_version: feedback.schemaVersion || evaluationJson.schema_version || evaluationJson.schemaVersion || "",
         result_status: "good",
         standard_status: "pass",
+        raw_status: firstValue(row, [statusIndex]),
+        legacy_normalized: selected.effectiveStatus.legacyNormalized,
         abc_grade: firstValue(row, [abcIndex]) || evaluationJson.abc_grade || evaluationJson.abcGrade || "",
         score,
         reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
@@ -1022,6 +1086,120 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
       restored_from_sheets: true
     };
   });
+}
+
+// 本ワーク履歴は回答ログ全行から合格実績・最高点を集計する一方、
+// 回答本文と詳細FBは新しい順の直近3件だけを返す。
+// 詳細FBは既存契約どおり submission_id + email_key + work_id の厳密一致のみ採用する。
+function buildAiWorkAttemptState(answerLog, emailKey, now, detailsBySubmission = new Map(), limit = 3) {
+  const emailIndex = findHeaderIndex(answerLog.headers, EMAIL_HEADERS);
+  const workIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.workId);
+  const miniIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.miniWorkId);
+  const typeIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.workType);
+  const statusIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.status);
+  const scoreIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.score);
+  const answerIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.answerText);
+  const submittedIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.submittedAt);
+  const updatedIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.updatedAt);
+  const submissionIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.submissionId);
+  const summaryIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.summary);
+  const feedbackIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.feedbackJson);
+  const evaluationIndex = findHeaderIndex(answerLog.headers, ANSWER_LOG_FIELDS.evaluationJson);
+  if (emailIndex < 0 || workIndex < 0 || statusIndex < 0) {
+    return { aiWorkAttemptHistories: [], aiWorkAchievementSummaries: [] };
+  }
+
+  const byWork = new Map();
+  (answerLog.rowRefs || []).forEach((rowRef) => {
+    const row = rowRef.row;
+    if (normalizeEmailKey(row[emailIndex]) !== normalizeEmailKey(emailKey)) return;
+    const workId = firstValue(row, [workIndex]);
+    const miniWorkId = firstValue(row, [miniIndex]);
+    const workType = normalizeRestoredWorkType(firstValue(row, [typeIndex]), miniWorkId || workId);
+    if (!workId || miniWorkId || workType === "mini_work") return;
+
+    const submissionId = firstValue(row, [submissionIndex]);
+    if (!submissionId) return;
+    const detail = selectEvaluationDetail(detailsBySubmission, submissionId, emailKey, workId);
+    const score = detail?.score ?? parseScore(firstValue(row, [scoreIndex]));
+    // intakeや途中保存は提出履歴ではない。実スコアが確定した評価行だけを対象にする。
+    if (score === null) return;
+    const answerFeedback = parseJsonCell(firstValue(row, [feedbackIndex]));
+    const evaluationJson = parseJsonCell(firstValue(row, [evaluationIndex]));
+    const feedback = detail ? detail.feedback : answerFeedback;
+    const rawStatus = firstValue(row, [statusIndex]);
+    const effectiveStatus = resolveEffectiveWorkStatus({
+      rawStatus, score, workType, evaluationJson, feedback, detail
+    });
+    const goodPoints = toStringArray(feedback.goodPoints || feedback.good_points || evaluationJson.good_points || evaluationJson.feedback?.goodPoints);
+    const improvementPoints = toStringArray(feedback.improvementPoints || feedback.improvement_points || evaluationJson.improvement_points || evaluationJson.feedback?.improvementPoints);
+    const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
+    const rewritePoints = toStringArray(feedback.rewritePoints || feedback.rewrite_points || evaluationJson.rewrite_points || evaluationJson.feedback?.rewritePoints);
+    const growthPoints = toStringArray(feedback.growthPoints || feedback.growth_points || evaluationJson.growth_points || evaluationJson.feedback?.growthPoints);
+    const additionalQuestions = toStringArray(feedback.additionalQuestions || feedback.additional_questions || evaluationJson.additional_questions || evaluationJson.feedback?.additionalQuestions);
+    const submittedAt = firstValue(row, [submittedIndex, updatedIndex]) || now;
+    const attempt = {
+      submission_id: submissionId,
+      work_id: workId,
+      submitted_at: submittedAt,
+      answer_text: firstValue(row, [answerIndex]),
+      score,
+      result_status: effectiveStatus.uiStatus,
+      standard_status: effectiveStatus.standardStatus,
+      raw_status: rawStatus,
+      legacy_normalized: effectiveStatus.legacyNormalized,
+      evaluation: {
+        submission_id: submissionId,
+        work_id: workId,
+        score,
+        result_status: effectiveStatus.uiStatus,
+        standard_status: effectiveStatus.standardStatus,
+        reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
+        good_points: goodPoints,
+        improvement_points: improvementPoints,
+        missing_points: missingPoints,
+        rewrite_points: rewritePoints,
+        growth_points: growthPoints,
+        additional_questions: additionalQuestions,
+        feedback: {
+          ...feedback,
+          goodPoints, improvementPoints, missingPoints, rewritePoints, growthPoints, additionalQuestions
+        }
+      },
+      row_number: Number(rowRef.rowNumber || 0)
+    };
+    if (!byWork.has(workId)) byWork.set(workId, []);
+    byWork.get(workId).push(attempt);
+  });
+
+  const aiWorkAttemptHistories = [];
+  const aiWorkAchievementSummaries = [];
+  byWork.forEach((attempts, workId) => {
+    attempts.sort((a, b) => {
+      const timeDiff = (Date.parse(b.submitted_at) || 0) - (Date.parse(a.submitted_at) || 0);
+      return timeDiff || b.row_number - a.row_number;
+    });
+    const scored = attempts.map((item) => item.score).filter((score) => Number.isFinite(score));
+    const latest = attempts[0] || null;
+    aiWorkAttemptHistories.push({
+      work_id: workId,
+      attempts: attempts.slice(0, Math.max(0, Number(limit) || 3)).map(({ row_number, ...attempt }) => attempt)
+    });
+    aiWorkAchievementSummaries.push({
+      work_id: workId,
+      has_passed: attempts.some((item) => item.result_status === "good"),
+      best_score: scored.length ? Math.max(...scored) : null,
+      latest_result: latest ? {
+        submission_id: latest.submission_id,
+        submitted_at: latest.submitted_at,
+        score: latest.score,
+        result_status: latest.result_status,
+        standard_status: latest.standard_status,
+        legacy_normalized: latest.legacy_normalized
+      } : null
+    });
+  });
+  return { aiWorkAttemptHistories, aiWorkAchievementSummaries };
 }
 
 function buildRestoredAiWorkSession({ emailKey, workId, lessonId, workTitle, answerText, status, uiStatus, score, evaluationJson, submittedAt, submissionId, aiLogId }) {
@@ -1079,16 +1257,20 @@ function applyWorkSummaryClears(sheet, emailKey) {
 }
 
 function selectLatestRow(rows, headers, latestIndex, dateIndexes = []) {
+  const byNewest = (a, b) => {
+    const dateDiff = rowDateValue(b.rowRef.row, dateIndexes) - rowDateValue(a.rowRef.row, dateIndexes);
+    return dateDiff || Number(b.rowRef.rowNumber || 0) - Number(a.rowRef.rowNumber || 0);
+  };
   if (latestIndex >= 0) {
     const latestRows = rows.filter(({ rowRef }) => isTruthyLatest(rowRef.row[latestIndex]));
     if (latestRows.length) {
-      return latestRows.sort((a, b) => rowDateValue(b.rowRef.row, dateIndexes) - rowDateValue(a.rowRef.row, dateIndexes))[0];
+      return latestRows.sort(byNewest)[0];
     }
     const hasLatestSignal = rows.some(({ rowRef }) => String(rowRef.row[latestIndex] || "").trim() !== "");
     if (hasLatestSignal) return null;
-    return rows.sort((a, b) => rowDateValue(b.rowRef.row, dateIndexes) - rowDateValue(a.rowRef.row, dateIndexes))[0] || null;
+    return rows.sort(byNewest)[0] || null;
   }
-  return rows.sort((a, b) => rowDateValue(b.rowRef.row, dateIndexes) - rowDateValue(a.rowRef.row, dateIndexes))[0] || null;
+  return rows.sort(byNewest)[0] || null;
 }
 
 function isTruthyLatest(value) {
@@ -1143,6 +1325,61 @@ function normalizeWorkStatus(value) {
   if (standard === "review") return "support_needed";
   if (/failed|error|ai_error/i.test(String(value || ""))) return "failed";
   return "needs_more";
+}
+
+// 第1弾前の旧判定には、80点以上でも review / サポート相談として保存された行がある。
+// Sheetsのraw値は変更せず、v2の明示的な失敗根拠がない旧行だけを読取時にpassへ救済する。
+// 現行v2のretryを点数だけで誤昇格させないため、schemaとlayer判定も同時に確認する。
+function resolveEffectiveWorkStatus({ rawStatus, score, workType, evaluationJson = {}, feedback = {}, detail = null } = {}) {
+  const rawStandardStatus = normalizeStandardStatus(rawStatus);
+  const detailFeedback = detail?.feedback && typeof detail.feedback === "object" ? detail.feedback : {};
+  const evaluationFeedback = evaluationJson.feedback && typeof evaluationJson.feedback === "object"
+    ? evaluationJson.feedback
+    : {};
+  const schemaVersion = String(
+    evaluationJson.schema_version || evaluationJson.schemaVersion ||
+    feedback.schemaVersion || feedback.schema_version ||
+    evaluationFeedback.schemaVersion || evaluationFeedback.schema_version ||
+    detailFeedback.schemaVersion || detailFeedback.schema_version || ""
+  ).trim();
+  const explicitStatuses = [
+    evaluationJson.standard_status,
+    evaluationJson.status,
+    evaluationJson.result_status,
+    detail?.status
+  ].map((value) => String(value || "").trim().toLowerCase());
+  const failedLayer = String(
+    detail?.failedLayer || evaluationJson.failed_layer || evaluationJson.failedLayer ||
+    feedback.failedLayer || evaluationFeedback.failedLayer || detailFeedback.failedLayer || ""
+  ).trim();
+  const layerDecisions = detail?.layerDecisions || evaluationJson.layer_decisions ||
+    evaluationJson.layerDecisions || feedback.layerDecisions || evaluationFeedback.layerDecisions ||
+    detailFeedback.layerDecisions || {};
+  const hasExplicitFailure = explicitStatuses.some((status) =>
+    ["retry", "needs_more", "revision_required", "failed", "ai_error", "error"].includes(status)
+  ) || Boolean(failedLayer) || decisionContainsFailure(layerDecisions);
+  const numericScore = Number(score);
+  const legacyNormalized = Number.isFinite(numericScore) && numericScore >= 80 &&
+    rawStandardStatus === "review" && !/v2/i.test(schemaVersion) && !hasExplicitFailure;
+  const standardStatus = legacyNormalized ? "pass" : rawStandardStatus;
+  const uiStatus = standardStatus === "pass"
+    ? "good"
+    : workType === "mini_work"
+      ? normalizeMiniWorkStatus(rawStatus)
+      : normalizeWorkStatus(rawStatus);
+
+  return { rawStatus: String(rawStatus || ""), standardStatus, uiStatus, legacyNormalized };
+}
+
+function decisionContainsFailure(value) {
+  if (value === false) return true;
+  if (Array.isArray(value)) return value.some(decisionContainsFailure);
+  if (value && typeof value === "object") {
+    if (Object.prototype.hasOwnProperty.call(value, "decision")) return decisionContainsFailure(value.decision);
+    if (Object.prototype.hasOwnProperty.call(value, "passed")) return decisionContainsFailure(value.passed);
+    return Object.values(value).some(decisionContainsFailure);
+  }
+  return ["no", "false", "fail", "failed", "0"].includes(String(value ?? "").trim().toLowerCase());
 }
 
 function normalizeAiSessionStatus(value, uiStatus) {
@@ -1542,11 +1779,13 @@ exports._test = {
   QUIZ_LOG_HEADERS,
   VIDEO_LOG_FIELDS,
   WORK_SUMMARY_FIELDS,
+  buildAiWorkAttemptState,
   buildClearedWorkResults,
   fieldForHeader,
   indexEvaluationDetails,
   normalizeEvaluation,
   normalizeWorkType,
+  resolveEffectiveWorkStatus,
   restoreVideoState,
   restoreQuizAttempts,
   restoreWorkState,
