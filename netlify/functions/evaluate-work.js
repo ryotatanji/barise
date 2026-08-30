@@ -10,6 +10,7 @@ const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-4o-mini";
 const WORK_SCHEMA_VERSION = "barise-work-evaluation-v1";
 const MINI_WORK_SCHEMA_VERSION = "barise-mini-work-evaluation-v2";
+const B023_WORK_SCHEMA_VERSION = "barise-main-work-evaluation-v2-2026-08-30";
 const DEFAULT_TIMEOUT_MS = 20000; // V7.1採点是正: 12s→20s（偶発タイムアウトで良回答が0点になる事故を防ぐ）
 const AI_EVALUATION_DETAIL_SHEET_NAME = "_AI評価詳細_all";
 const AI_EVALUATION_DETAIL_HEADERS = [
@@ -27,6 +28,7 @@ const AI_EVALUATION_DETAIL_HEADERS = [
 
 const ALLOWED_WORK_IDS = new Set([
   "W-P1-05",
+  "W-P1-07",
   "W-P1-09",
   "W-P2-01",
   "W-P2-02",
@@ -46,6 +48,14 @@ const CRITERIA_KEYS = [
 ];
 
 const MINI_WORK_LAYER_KEYS = ["L1", "L2", "L3", "L4a", "L4b"];
+const B023_LAYER_LABELS = {
+  L1: "4項目と別々の2事例",
+  L2: "2事例の場面・行動・結果と転用先",
+  L3: "共通構造・原則・別場面への再具体化",
+  L4a: "事実から原則への接続",
+  L4b: "転用可能な実行設計"
+};
+const B023_REQUIRED_QUOTES = ["事例Aの事実", "事例Bの事実", "共通構造", "原則", "転用行動"];
 
 // 評価基準v2の18本をIDで一意に選ぶ。点数・合否はこの定義ではなく
 // calculateMiniWorkScore() だけで決める。
@@ -142,8 +152,9 @@ async function persistMiniWorkEvaluationDetailSafe(payload, evaluation) {
 }
 
 async function persistMiniWorkEvaluationDetail(payload, evaluation, options = {}) {
-  if (!payload?.isMiniWork || !evaluation) {
-    return { ok: true, skipped: true, reason: "not_mini_work" };
+  const isB023 = payload?.workId === "W-P1-07";
+  if ((!payload?.isMiniWork && !isB023) || !evaluation) {
+    return { ok: true, skipped: true, reason: "not_layered_evaluation" };
   }
   const submissionId = String(payload.submissionId || payload.submission_id || "").trim();
   const emailKey = normalizeEmailKey(payload.user?.email || payload.email || payload.email_normalized || "");
@@ -174,9 +185,10 @@ async function persistMiniWorkEvaluationDetail(payload, evaluation, options = {}
 }
 
 function buildMiniWorkEvaluationDetailRow(payload, evaluation) {
+  const isB023 = payload?.workId === "W-P1-07";
   const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
   const detailFeedback = {
-    schemaVersion: evaluation.schema_version || evaluation.schemaVersion || MINI_WORK_SCHEMA_VERSION,
+    schemaVersion: evaluation.schema_version || evaluation.schemaVersion || (isB023 ? B023_WORK_SCHEMA_VERSION : MINI_WORK_SCHEMA_VERSION),
     summary: feedback.summary || evaluation.summary || evaluation.reason || "",
     reason: evaluation.reason || feedback.summary || "",
     goodPoints: asArray(feedback.goodPoints || evaluation.good_points),
@@ -194,6 +206,9 @@ function buildMiniWorkEvaluationDetailRow(payload, evaluation) {
     unmetCriteria: asArray(evaluation.unmet_criteria || evaluation.unmetCriteria),
     metCriteria: asArray(evaluation.met_criteria || evaluation.metCriteria)
   };
+  detailFeedback.additionalQuestions = asArray(
+    feedback.additionalQuestions || evaluation.additional_questions || evaluation.followup_questions
+  );
   return [
     String(payload.submissionId || payload.submission_id || "").trim(),
     normalizeEmailKey(payload.user?.email || payload.email || payload.email_normalized || ""),
@@ -386,6 +401,17 @@ async function postOpenAiPrompt(payload, apiKey, model, userPrompt, timeoutMs) {
 }
 
 function buildSystemPrompt(payload = {}) {
+  if (payload.workId === "W-P1-07") {
+    return [
+      "あなたはBarise本ワーク『概念的思考力』の根拠抽出・層判定AIです。",
+      "回答だけを根拠にL1・L2・L3・L4a・L4bをYesまたはNoで判定してください。迷う場合はNoです。",
+      "点数、合否、status、A/B/C、落ちた層は決めず、出力にも含めないでください。",
+      "会社名・顧客名・個人名を不必要に反復せず、回答中の短い引用を使ってください。",
+      "良かった材料、不足材料、書き直し方、伸びしろを分け、70点相当の材料不足には追加質問を1〜3件返してください。",
+      "完成回答を代筆せず、回答にない経験・事実・数値を創作しないでください。",
+      "返却は指定されたJSONのみです。"
+    ].join("\n");
+  }
   if (payload.isMiniWork) {
     return [
       "あなたはBariseミニワークの根拠抽出・層判定AIです。",
@@ -412,7 +438,36 @@ function buildSystemPrompt(payload = {}) {
 
 function buildUserPrompt(payload) {
   if (payload.isMiniWork) return buildMiniWorkUserPrompt(payload);
+  if (payload.workId === "W-P1-07") return buildB023UserPrompt(payload);
   return buildWorkUserPrompt(payload);
+}
+
+function buildB023UserPrompt(payload) {
+  return [
+    "P1-07概念的思考力の本ワーク回答を5層で判定してください。",
+    "L1: ①〜④がすべてあり、①②が別々の2事例である。",
+    "L2: ①②それぞれに場面・行動・結果があり、④に別の転用先がある。",
+    "L3: 表面的な共通点ではなく仕組み・関係・流れを取り出し、一般化した原則を別場面へ具体化している。",
+    "L4a: ①②の観察事実を各1つ以上使い、事実→共通構造→原則の因果が読める。",
+    "L4b: ④に実施時期または開始条件、具体行動、観察可能な成功条件が揃う。",
+    "L3は、名称・外見・印象だけ、詳細の羅列、固有事例の言い換え、同じ場面への反復、原則と行動の不一致、人物への決めつけのいずれかがあればNoです。",
+    "出力JSON:",
+    JSON.stringify({
+      layerDecisions: { L1: "Yes / No", L2: "Yes / No", L3: "Yes / No", L4a: "Yes / No", L4b: "Yes / No" },
+      quotes: Object.fromEntries(B023_REQUIRED_QUOTES.map((key) => [key, "回答からの短い引用"])),
+      feedback: {
+        goodPoints: ["良かった材料"],
+        missingPoints: ["不足材料"],
+        rewritePoints: ["書き直し方"],
+        growthPoints: ["伸びしろ"],
+        additionalQuestions: ["L1〜L3にNoがある場合だけ1〜3件。すべてYesなら空配列"]
+      }
+    }, null, 2),
+    "受講者への4つの問い:",
+    JSON.stringify(payload.questions || [], null, 2),
+    "受講者回答:",
+    payload.userAnswer
+  ].join("\n\n");
 }
 
 function buildWorkUserPrompt(payload) {
@@ -819,10 +874,119 @@ function normalizeMiniWorkV2Evaluation(source, payload, evaluatedAt, rawModel) {
   };
 }
 
+function normalizeB023Evaluation(source, payload, evaluatedAt, rawModel) {
+  const feedbackSource = source.feedback && typeof source.feedback === "object"
+    ? source.feedback
+    : (source["フィードバック"] && typeof source["フィードバック"] === "object" ? source["フィードバック"] : {});
+  const calculated = calculateMiniWorkScore(normalizeMiniWorkLayerDecisions(source));
+  const rawQuotes = source.quotes || source["引用"] || {};
+  const quotes = Object.fromEntries(B023_REQUIRED_QUOTES.map((key) => [key, safeText(rawQuotes[key] || "")]));
+  const quotedGood = Object.entries(quotes)
+    .filter(([, quote]) => quote)
+    .map(([label, quote]) => `「${quote}」から、${label}が確認できます。`);
+  const goodPoints = uniqueArray([
+    ...asArray(feedbackSource.goodPoints || source.good_points),
+    ...quotedGood,
+    ...["L1", "L2", "L3"].filter((key) => calculated.layers[key] === "Yes").map((key) => B023_LAYER_LABELS[key])
+  ]).slice(0, 4);
+  const missingPoints = uniqueArray([
+    ...asArray(feedbackSource.missingPoints || source.missing_points),
+    ...MINI_WORK_LAYER_KEYS.filter((key) => calculated.layers[key] === "No").map((key) => `${B023_LAYER_LABELS[key]}がまだ確認できません。`)
+  ]).slice(0, 4);
+  const failedLayerLabel = calculated.failedLayer === "なし" ? "" : B023_LAYER_LABELS[calculated.failedLayer];
+  const fallbackRewrite = calculated.passed
+    ? ["事実と原則のつながり、または転用の実行条件をさらに明確にできます。"]
+    : [`${failedLayerLabel}が読み取れる事実を、該当する回答欄へ追記してください。`];
+  const rewritePoints = uniqueArray([
+    ...asArray(feedbackSource.rewritePoints || source.rewrite_points),
+    ...fallbackRewrite
+  ]).slice(0, 4);
+  const growthPoints = uniqueArray([
+    ...asArray(feedbackSource.growthPoints || source.growth_points),
+    ...["L4a", "L4b"].filter((key) => calculated.layers[key] === "No").map((key) => `${B023_LAYER_LABELS[key]}を加えると、さらに再現性が高まります。`)
+  ]).slice(0, 4);
+  const fallbackQuestions = {
+    L1: ["①〜④のうち未回答の項目と、比較する2つ目の出来事を書いてください。"],
+    L2: ["2つの出来事は、いつ・どんな場面で、誰が何をし、どんな結果になりましたか。"],
+    L3: ["2つで同じように起きていた仕組み・関係・流れは何ですか。", "その原則を元の2件とは別のどの場面で使いますか。"]
+  };
+  const additionalQuestions = calculated.passed ? [] : uniqueArray([
+    ...asArray(feedbackSource.additionalQuestions || source.additional_questions || source.followup_questions),
+    ...(fallbackQuestions[calculated.failedLayer] || [])
+  ]).slice(0, 3);
+  const summary = calculated.score === 70
+    ? `70点・再提出です。最初に満たせなかったのは「${failedLayerLabel}」です。回答は何度でも再提出できます。`
+    : calculated.score === 80
+      ? "80点・合格です。具体→抽象→具体の基本往復は成立しています。事実から原則への接続と転用の実行条件が次の伸びしろです。"
+      : calculated.score === 90
+        ? "90点・合格です。基本往復に加えて発展層の1つまで成立しています。残る伸びしろを加えると、さらに再現性が高まります。"
+        : "100点・合格です。2つの経験を再現可能な原則へ変え、別場面の行動まで一本につなげられています。";
+  const layerResults = Object.fromEntries(MINI_WORK_LAYER_KEYS.map((key) => [key, {
+    decision: calculated.layers[key],
+    label: B023_LAYER_LABELS[key]
+  }]));
+
+  return {
+    schema_version: B023_WORK_SCHEMA_VERSION,
+    workType: "work",
+    work_type: "work",
+    workId: payload.workId,
+    work_id: payload.workId,
+    status: calculated.passed ? "pass" : "retry",
+    standard_status: calculated.passed ? "pass" : "retry",
+    label: calculated.passed ? "通過" : "もう一度整理",
+    abcGrade: calculated.passed ? "A" : "B",
+    abc_grade: calculated.passed ? "A" : "B",
+    score: calculated.score,
+    passed: calculated.passed,
+    failedLayer: calculated.failedLayer,
+    failed_layer: calculated.failedLayer,
+    failedLayerLabel,
+    failed_layer_label: failedLayerLabel,
+    layerDecisions: calculated.layers,
+    layer_decisions: calculated.layers,
+    layerResults,
+    layer_results: layerResults,
+    quotes,
+    reason: summary,
+    summary,
+    feedback: {
+      summary,
+      goodPoints,
+      missingPoints,
+      rewritePoints,
+      growthPoints,
+      improvementPoints: uniqueArray([...missingPoints, ...rewritePoints]).slice(0, 4),
+      additionalQuestions
+    },
+    good_points: goodPoints,
+    missing_points: missingPoints,
+    rewrite_points: rewritePoints,
+    growth_points: growthPoints,
+    improvement_points: uniqueArray([...missingPoints, ...rewritePoints]).slice(0, 4),
+    additional_questions: additionalQuestions,
+    followup_questions: additionalQuestions,
+    unmet_criteria: MINI_WORK_LAYER_KEYS.filter((key) => calculated.layers[key] === "No").map((key) => B023_LAYER_LABELS[key]),
+    met_criteria: MINI_WORK_LAYER_KEYS.filter((key) => calculated.layers[key] === "Yes").map((key) => B023_LAYER_LABELS[key]),
+    nextQuestion: additionalQuestions[0] || (calculated.passed ? "合格です。次の学習へ進めます。" : rewritePoints[0]),
+    next_question: additionalQuestions[0] || "",
+    next_action: calculated.passed ? "次の学習へ進む" : "回答を書き直す",
+    needsFollowup: !calculated.passed,
+    needs_followup: !calculated.passed,
+    flags: { needsHumanReview: false, needsSupport: false, needsFollowup: !calculated.passed, aiError: Boolean(source.flags?.aiError), policyWarning: false },
+    meta: { model: rawModel || DEFAULT_MODEL, schemaVersion: B023_WORK_SCHEMA_VERSION, evaluatedAt },
+    raw_model: rawModel || DEFAULT_MODEL,
+    evaluated_at: evaluatedAt
+  };
+}
+
 function normalizeEvaluation(raw = {}, payload, evaluatedAt, rawModel) {
   const source = raw && typeof raw === "object" ? raw : {};
   if (payload.isMiniWork) {
     return normalizeMiniWorkV2Evaluation(source, payload, evaluatedAt, rawModel);
+  }
+  if (payload.workId === "W-P1-07") {
+    return normalizeB023Evaluation(source, payload, evaluatedAt, rawModel);
   }
   const flags = normalizeFlags(source.flags);
   let score = clampScore(source.score);
@@ -1126,6 +1290,22 @@ function createFallbackEvaluation(payload, errorType, evaluatedAt) {
     }, payload, evaluatedAt, DEFAULT_MODEL);
     evaluation.errorType = errorType || "openai_error";
     evaluation.errorMessageSafe = safeErrorMessage(errorType);
+    return evaluation;
+  }
+  if (payload?.workId === "W-P1-07") {
+    const evaluation = normalizeB023Evaluation({
+      layerDecisions: { L1: "No", L2: "No", L3: "No", L4a: "No", L4b: "No" },
+      feedback: {
+        missingPoints: ["AI判定を完了できなかったため、安全側で再提出としました。"],
+        rewritePoints: ["入力内容は保持されています。時間を置いて再提出してください。"],
+        additionalQuestions: ["時間を置いて、同じ回答をもう一度送信してください。"]
+      },
+      flags: { aiError: true }
+    }, payload, evaluatedAt, DEFAULT_MODEL);
+    evaluation.errorType = errorType || "openai_error";
+    evaluation.error_type = evaluation.errorType;
+    evaluation.errorMessageSafe = safeErrorMessage(errorType);
+    evaluation.error_message_safe = evaluation.errorMessageSafe;
     return evaluation;
   }
   // V7.1採点是正: タイムアウト/失敗時は「0点」にせず、決定論フロアのスコアで安全側に判定する。
@@ -1990,8 +2170,10 @@ exports._test = {
   MINI_WORK_V2_RUBRICS,
   buildMiniWorkEvaluationDetailRow,
   buildMiniWorkUserPrompt,
+  buildB023UserPrompt,
   calculateMiniWorkScore,
   normalizeMiniWorkLayerDecisions,
   normalizeMiniWorkV2Evaluation,
+  normalizeB023Evaluation,
   persistMiniWorkEvaluationDetail
 };

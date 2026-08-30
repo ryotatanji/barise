@@ -1,6 +1,6 @@
-import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-2-12-r3";
+import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-4-0-wave2b";
 
-const DATA_URL = "./data/learning-data.json?v=7-3-2-wave2a-r2";
+const DATA_URL = "./data/learning-data.json?v=7-4-0-wave2b";
 const STORAGE_KEY = "barise-learning-local-state:v11";
 const SESSION_KEY = "barise-learning-session:v4";
 const LAST_EMAIL_KEY = "barise-learning-last-email:v4";
@@ -2145,6 +2145,9 @@ export class LocalJsonLearningProvider {
   async _evaluateAndApplyAiWorkReview(db, email, work, session, answerText, stage, localReview, now) {
     const payload = this._createAiEvaluationPayload(email, work, session, answerText, stage, localReview, now);
     const evaluation = await this.aiClient.evaluateWork(payload);
+    if (work.work_id === "W-P1-07" && this.aiClient.mode === "gateway" && evaluation.detail_persisted !== true) {
+      throw new Error(SAVE_FAILURE_MESSAGE);
+    }
     const review = this._convertAiEvaluationToReview(work, evaluation, localReview, answerText);
 
     this._applyAiWorkReview(db, email, work, session, review, now);
@@ -2160,6 +2163,7 @@ export class LocalJsonLearningProvider {
     session.common_profile = this._extractCommonProfile(session);
     const requestId = this._createId("AI-REQ");
     const submissionId = this._createId("AI-SUB");
+    const aiLogId = this._createId("AI-LOG");
     const submissionCount = this._aiSubmissionCount(session);
     const answer = String(answerText || "").trim();
     const relatedLessonId = this._relatedLessonIdsForWork(work)[0] || "";
@@ -2186,6 +2190,8 @@ export class LocalJsonLearningProvider {
       requestId,
       submission_id: submissionId,
       submissionId,
+      ai_log_id: aiLogId,
+      aiLogId,
       session_id: session.session_id,
       sessionId: session.session_id,
       user_id: session.user_id || "",
@@ -2383,6 +2389,7 @@ export class LocalJsonLearningProvider {
   _applyAiEvaluationMeta(session, evaluation, payload, now) {
     session.ai_evaluation_result = structuredClone(evaluation);
     session.latest_submission_id = payload.submission_id || payload.submissionId || session.latest_submission_id || "";
+    session.latest_ai_log_id = payload.ai_log_id || payload.aiLogId || session.latest_ai_log_id || "";
     session.ai_score = evaluation.score;
     session.ai_label = evaluation.label;
     session.ai_prompt_text = payload.prompt_text;
@@ -2401,7 +2408,7 @@ export class LocalJsonLearningProvider {
   _storeAiEvaluationLog(db, email, work, session, payload, evaluation, now) {
     db.aiEvaluationLogs = db.aiEvaluationLogs || [];
     db.aiEvaluationLogs.push({
-      log_id: this._createId("AI-LOG"),
+      log_id: payload.ai_log_id || payload.aiLogId || this._createId("AI-LOG"),
       submission_id: payload.submission_id || "",
       request_id: payload.request_id,
       session_id: session.session_id,
@@ -2428,7 +2435,11 @@ export class LocalJsonLearningProvider {
       feedback_json: JSON.stringify({
         summary: evaluation.summary || "",
         goodPoints: evaluation.good_points || [],
-        improvementPoints: evaluation.improvement_points || []
+        improvementPoints: evaluation.improvement_points || [],
+        missingPoints: evaluation.missing_points || [],
+        rewritePoints: evaluation.rewrite_points || [],
+        growthPoints: evaluation.growth_points || [],
+        additionalQuestions: evaluation.additional_questions || evaluation.followup_questions || []
       }),
       unmet_criteria: evaluation.unmet_criteria || [],
       next_action: evaluation.next_action || "",
@@ -3418,7 +3429,8 @@ export class LocalJsonLearningProvider {
       staffFeedbackReason: evaluationPayload.staff_feedback?.reason || "",
       unmetCriteria: evaluationPayload.unmet_criteria || evaluationPayload.unmetCriteria || [],
       nextAction: evaluationPayload.next_action || evaluationPayload.next_question || "",
-      clientSubmissionId: this._createId(`AI-SUB-${stage}`)
+      clientSubmissionId: session.latest_submission_id || this._createId(`AI-SUB-${stage}`),
+      aiLogId: session.latest_ai_log_id || ""
     });
   }
 
@@ -3444,6 +3456,7 @@ export class LocalJsonLearningProvider {
         missingPoints: evaluation.missing_points || evaluation.missingPoints || feedback.missingPoints || [],
         rewritePoints: evaluation.rewrite_points || evaluation.rewritePoints || feedback.rewritePoints || [],
         growthPoints: evaluation.growth_points || evaluation.growthPoints || feedback.growthPoints || [],
+        additionalQuestions: evaluation.additional_questions || evaluation.additionalQuestions || feedback.additionalQuestions || [],
         layerDecisions: evaluation.layer_decisions || evaluation.layerDecisions || feedback.layerDecisions || {},
         layerResults: evaluation.layer_results || evaluation.layerResults || feedback.layerResults || {},
         failedLayer: evaluation.failed_layer || evaluation.failedLayer || feedback.failedLayer || "",

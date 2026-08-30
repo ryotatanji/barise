@@ -442,14 +442,18 @@ async function syncWorkSubmission(context) {
     return { idempotent: true, affected: [] };
   }
 
-  await clearLatestFlag({
-    spreadsheetId: config.workSpreadsheetId,
-    sheet: answerLog,
-    emailKey: context.emailKey,
-    targetAliases: ["work_id", "target_id", "ワークID", "ワークid", "mini_work_id"],
-    targetValue: workId,
-    warnings
-  });
+  // W-P1-07は既存行を一切更新しないappend-only要件。複数行がis_latest=trueでも
+  // restore側はsubmitted_atで最新行を選べるため、過去行のlatest flagを落とさない。
+  if (workId !== "W-P1-07") {
+    await clearLatestFlag({
+      spreadsheetId: config.workSpreadsheetId,
+      sheet: answerLog,
+      emailKey: context.emailKey,
+      targetAliases: ["work_id", "target_id", "ワークID", "ワークid", "mini_work_id"],
+      targetValue: workId,
+      warnings
+    });
+  }
 
   const evaluation = normalizeEvaluation(payload.evaluation || payload.aiEvaluation || payload.ai_evaluation || {});
   const answerValues = {
@@ -744,10 +748,58 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
     const missingPoints = toStringArray(feedback.missingPoints || feedback.missing_points || evaluationJson.missing_points || evaluationJson.feedback?.missingPoints);
     const rewritePoints = toStringArray(feedback.rewritePoints || feedback.rewrite_points || evaluationJson.rewrite_points || evaluationJson.feedback?.rewritePoints);
     const growthPoints = toStringArray(feedback.growthPoints || feedback.growth_points || evaluationJson.growth_points || evaluationJson.growth_guidance || evaluationJson.feedback?.growthPoints);
+    const additionalQuestions = toStringArray(
+      feedback.additionalQuestions || feedback.additional_questions ||
+      evaluationJson.additional_questions || evaluationJson.followup_questions ||
+      evaluationJson.feedback?.additionalQuestions
+    );
     const layerDecisions = detail?.layerDecisions || evaluationJson.layer_decisions || evaluationJson.layerDecisions || feedback.layerDecisions || {};
     const layerResults = feedback.layerResults || evaluationJson.layer_results || evaluationJson.layerResults || {};
     const failedLayer = detail?.failedLayer || evaluationJson.failed_layer || evaluationJson.failedLayer || feedback.failedLayer || "";
     const failedLayerLabel = feedback.failedLayerLabel || evaluationJson.failed_layer_label || evaluationJson.failedLayerLabel || "";
+    // _AI評価詳細_all は submission_id + email_key + work_id が一致した場合だけ採用する。
+    // 詳細行を本ワークの復元セッションにも合成し、回答ログ側のJSONが簡略でも
+    // 提出直後と同じv2フィードバックを再描画できるようにする。
+    const restoredEvaluationJson = {
+      ...evaluationJson,
+      schema_version: feedback.schemaVersion || evaluationJson.schema_version || evaluationJson.schemaVersion || "",
+      work_type: workType === "mini_work" ? "miniWork" : "work",
+      work_id: targetId,
+      submission_id: submissionId,
+      ai_log_id: firstValue(row, [aiLogIndex]),
+      status: evaluationJson.status || normalizeStandardStatus(rawStatus),
+      standard_status: evaluationJson.standard_status || normalizeStandardStatus(rawStatus),
+      result_status: evaluationJson.result_status || uiStatus,
+      score,
+      summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || firstValue(row, [summaryIndex]) || "",
+      reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
+      good_points: goodPoints,
+      improvement_points: improvementPoints,
+      missing_points: missingPoints,
+      rewrite_points: rewritePoints,
+      growth_points: growthPoints,
+      additional_questions: additionalQuestions,
+      followup_questions: additionalQuestions,
+      layer_decisions: layerDecisions,
+      layer_results: layerResults,
+      failed_layer: failedLayer,
+      failed_layer_label: failedLayerLabel,
+      quotes: feedback.quotes || evaluationJson.quotes || {},
+      feedback: {
+        ...feedback,
+        summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || "",
+        goodPoints,
+        improvementPoints,
+        missingPoints,
+        rewritePoints,
+        growthPoints,
+        additionalQuestions,
+        layerDecisions,
+        layerResults,
+        failedLayer,
+        failedLayerLabel
+      }
+    };
 
     submissions.push({
       submission_id: submissionId,
@@ -772,12 +824,12 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       parent_lesson_id: lessonId,
       work_id: targetId,
       work_title: firstValue(row, [titleIndex]),
-      schema_version: feedback.schemaVersion || evaluationJson.schema_version || evaluationJson.schemaVersion || "",
+      schema_version: restoredEvaluationJson.schema_version,
       result_status: uiStatus,
       standard_status: normalizeStandardStatus(rawStatus),
       abc_grade: firstValue(row, [abcIndex]) || evaluationJson.abc_grade || evaluationJson.abcGrade || "",
       score,
-      reason: feedback.reason || feedback.summary || evaluationJson.reason || evaluationJson.summary || firstValue(row, [summaryIndex]) || "",
+      reason: restoredEvaluationJson.reason,
       good_points: goodPoints,
       improvement_points: uiStatus === "good" ? [] : improvementPoints,
       unmet_criteria: uiStatus === "good" ? [] : toStringArray(evaluationJson.unmet_criteria || evaluationJson.unmetCriteria),
@@ -793,6 +845,7 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
       missing_points: missingPoints,
       rewrite_points: rewritePoints,
       growth_points: growthPoints,
+      additional_questions: additionalQuestions,
       feedback: {
         ...feedback,
         summary: feedback.summary || evaluationJson.feedback?.summary || evaluationJson.summary || evaluationJson.reason || "",
@@ -801,6 +854,7 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
         missingPoints,
         rewritePoints,
         growthPoints,
+        additionalQuestions,
         layerDecisions,
         layerResults,
         failedLayer,
@@ -841,9 +895,10 @@ function restoreWorkState(answerLog, workSummary, emailKey, now, evaluationDetai
         status: rawStatus,
         uiStatus,
         score,
-        evaluationJson,
+        evaluationJson: restoredEvaluationJson,
         submittedAt,
-        submissionId
+        submissionId,
+        aiLogId: firstValue(row, [aiLogIndex])
       }));
     }
   });
@@ -969,7 +1024,7 @@ function buildClearedWorkResults(answerLog, emailKey, now, detailsBySubmission =
   });
 }
 
-function buildRestoredAiWorkSession({ emailKey, workId, lessonId, workTitle, answerText, status, uiStatus, score, evaluationJson, submittedAt, submissionId }) {
+function buildRestoredAiWorkSession({ emailKey, workId, lessonId, workTitle, answerText, status, uiStatus, score, evaluationJson, submittedAt, submissionId, aiLogId }) {
   const sessionStatus = normalizeAiSessionStatus(status, uiStatus);
   return {
     session_id: `AWS-RESTORE-${emailKey}-${workId}`,
@@ -987,9 +1042,14 @@ function buildRestoredAiWorkSession({ emailKey, workId, lessonId, workTitle, ans
     ai_evaluation_result: evaluationJson && Object.keys(evaluationJson).length ? evaluationJson : null,
     good_points: toStringArray(evaluationJson.good_points || evaluationJson.goodPoints || evaluationJson.feedback?.goodPoints),
     improvement_points: toStringArray(evaluationJson.improvement_points || evaluationJson.improvementPoints || evaluationJson.feedback?.improvementPoints),
+    missing_points: toStringArray(evaluationJson.missing_points || evaluationJson.missingPoints || evaluationJson.feedback?.missingPoints),
+    rewrite_points: toStringArray(evaluationJson.rewrite_points || evaluationJson.rewritePoints || evaluationJson.feedback?.rewritePoints),
+    growth_points: toStringArray(evaluationJson.growth_points || evaluationJson.growthPoints || evaluationJson.feedback?.growthPoints),
     unmet_criteria: toStringArray(evaluationJson.unmet_criteria || evaluationJson.unmetCriteria),
-    followup_questions: toStringArray(evaluationJson.followup_questions || evaluationJson.followupQuestions || evaluationJson.next_question || evaluationJson.nextQuestion),
+    followup_questions: toStringArray(evaluationJson.additional_questions || evaluationJson.followup_questions || evaluationJson.followupQuestions || evaluationJson.feedback?.additionalQuestions || evaluationJson.next_question || evaluationJson.nextQuestion),
     next_actions: toStringArray(evaluationJson.next_action || evaluationJson.nextAction),
+    latest_submission_id: submissionId,
+    latest_ai_log_id: aiLogId || evaluationJson.ai_log_id || evaluationJson.aiLogId || "",
     restored_submission_id: submissionId,
     restored_from_sheets: true,
     created_at: submittedAt,
@@ -1304,7 +1364,9 @@ async function persistWorkFeedback(context, answerValues) {
   // 1) ai_evaluation_logs へ追記（毎回）
   const logSheet = await ensureSheetWithHeaders(config.workSpreadsheetId, config.aiEvaluationLogSheetName, AI_EVALUATION_LOG_HEADERS, AI_EVALUATION_LOG_FIELDS);
   await appendRow(config.workSpreadsheetId, logSheet, AI_EVALUATION_LOG_FIELDS, {
-    logId: createId("AI-LOG"),
+    // evaluate-work・回答ログ・AI評価ログで同じ生成済みIDを使い、
+    // submission_idから追える評価を別IDへ分断しない。旧クライアントはfallback生成を維持する。
+    logId: payload.aiLogId || payload.ai_log_id || answerValues.aiLogId || createId("AI-LOG"),
     requestId: payload.requestId || payload.request_id || answerValues.submissionId || "",
     sessionId: payload.sessionId || payload.session_id || "",
     userId: payload.userId || payload.user_id || "",

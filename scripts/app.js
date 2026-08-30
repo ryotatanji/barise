@@ -7,7 +7,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-3-2-wave2a-r2";
+} from "./data-provider.js?v=7-4-0-wave2b";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -177,7 +177,7 @@ function ensureOverlayDom() {
           <div class="judge-center"><b id="judgeScore">0</b><span id="judgeScoreNote">SCORE / 合格80</span></div>
           <div class="spark" id="judgeSpark"></div>
         </div>
-        <span class="judge-stamp" id="judgeStamp">★ クリア</span>
+        <span class="judge-stamp" id="judgeStamp" hidden>★ クリア</span>
         <p class="judge-fb" id="judgeFb"></p>
         <button class="judge-next" id="judgeNext" type="button">次の一歩へ →</button>
       </div>
@@ -217,6 +217,7 @@ function resetJudgeOverlay() {
   ringWrap.style.transform = "scale(1)";
   stamp.style.opacity = "0";
   stamp.style.transform = "scale(.8)";
+  stamp.hidden = true;
   fb.style.opacity = "0";
   fb.textContent = "";
   next.style.opacity = "0";
@@ -282,6 +283,7 @@ async function showJudgeResult({ score, passed, feedback, scoreNote, buttonLabel
 
   /* 金のクリアスタンプ（back.out(2.2)）＋粒子22個は good のときだけ */
   if (passed) {
+    stamp.hidden = false;
     sparkBurst();
     await tween({
       from: 0, to: 1, duration: 450, ease: easeBackOut(2.2),
@@ -1933,12 +1935,21 @@ function renderAiCriteriaProgress(session, title = "現在満たせている観�
 function renderAiEvaluationSummary(session, options = {}) {
   const evaluation = session?.ai_evaluation_result;
   if (!evaluation) return "";
-  const goodPoints = evaluation.good_points || [];
-  const improvementPoints = evaluation.improvement_points || [];
+  const feedback = evaluation.feedback && typeof evaluation.feedback === "object" ? evaluation.feedback : {};
+  const isLayeredConceptWork = session?.work_id === "W-P1-07" || evaluation.work_id === "W-P1-07" || evaluation.schema_version === "barise-main-work-evaluation-v2-2026-08-30";
+  const goodPoints = evaluation.good_points || feedback.goodPoints || [];
+  const improvementPoints = evaluation.improvement_points || feedback.improvementPoints || [];
   const unmetCriteria = evaluation.unmet_criteria || [];
+  const missingPoints = evaluation.missing_points || feedback.missingPoints || [];
+  const rewritePoints = evaluation.rewrite_points || feedback.rewritePoints || [];
+  const growthPoints = evaluation.growth_points || feedback.growthPoints || [];
+  const additionalQuestions = evaluation.additional_questions || evaluation.followup_questions || feedback.additionalQuestions || [];
   const scoreText = Number.isFinite(Number(evaluation.score)) && Number(evaluation.score) > 0
     ? `${Number(evaluation.score)}点`
     : "評価中";
+  const details = isLayeredConceptWork
+    ? renderLayeredConceptWorkSummary(goodPoints, missingPoints, rewritePoints, growthPoints, additionalQuestions)
+    : renderAiEvaluationSummaryGrid(goodPoints, improvementPoints, unmetCriteria);
 
   return `
     <div class="ai-block" aria-label="評価結果">
@@ -1950,10 +1961,31 @@ function renderAiEvaluationSummary(session, options = {}) {
       ${options.compact ? `
         <details class="ai-details">
           <summary>評価の詳細を見る</summary>
-          ${renderAiEvaluationSummaryGrid(goodPoints, improvementPoints, unmetCriteria)}
+          ${details}
         </details>
-      ` : renderAiEvaluationSummaryGrid(goodPoints, improvementPoints, unmetCriteria)}
+      ` : details}
       ${evaluation.next_action ? `<p style="margin-top:6px;">${escapeHtml(evaluation.next_action)}</p>` : ""}
+    </div>
+  `;
+}
+
+function renderLayeredConceptWorkSummary(goodPoints, missingPoints, rewritePoints, growthPoints, additionalQuestions) {
+  const sections = [
+    ["良かった材料", goodPoints],
+    ["不足材料", missingPoints],
+    ["書き直し方", rewritePoints],
+    ["伸びしろ", growthPoints],
+    ["追加質問", additionalQuestions]
+  ].filter(([, items]) => Array.isArray(items) && items.length);
+  if (!sections.length) return "";
+  return `
+    <div class="ai-evaluation-detail-grid">
+      ${sections.map(([heading, items]) => `
+        <section>
+          <h4>${escapeHtml(heading)}</h4>
+          <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </section>
+      `).join("")}
     </div>
   `;
 }
