@@ -1,6 +1,6 @@
 import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-2-12-r3";
 
-const DATA_URL = "./data/learning-data.json?v=5-1-2";
+const DATA_URL = "./data/learning-data.json?v=7-3-1-wave2a-r1";
 const STORAGE_KEY = "barise-learning-local-state:v11";
 const SESSION_KEY = "barise-learning-session:v4";
 const LAST_EMAIL_KEY = "barise-learning-last-email:v4";
