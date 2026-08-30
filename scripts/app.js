@@ -1,6 +1,7 @@
 import {
   clearSession,
   createLearningProvider,
+  getAiEvaluationLabel,
   getAiWorkStatusLabel,
   getLastEmail,
   getStatusLabel,
@@ -1957,6 +1958,7 @@ function renderAiEvaluationSummary(session, options = {}) {
   const rewritePoints = evaluation.rewrite_points || feedback.rewritePoints || [];
   const growthPoints = evaluation.growth_points || feedback.growthPoints || [];
   const additionalQuestions = evaluation.additional_questions || evaluation.followup_questions || feedback.additionalQuestions || [];
+  const resultLabel = getAiEvaluationLabel(evaluation, session?.status || "");
   const scoreText = Number.isFinite(Number(evaluation.score)) && Number(evaluation.score) > 0
     ? `${Number(evaluation.score)}点`
     : "評価中";
@@ -1968,7 +1970,7 @@ function renderAiEvaluationSummary(session, options = {}) {
     <div class="ai-block" aria-label="評価結果">
       <div class="ai-summary-head">
         <strong>${escapeHtml(scoreText)}</strong>
-        <em>${escapeHtml(evaluation.label || "確認中")}</em>
+        <em>${escapeHtml(resultLabel)}</em>
       </div>
       <p>${escapeHtml(evaluation.summary || "評価結果を保存しました。")}</p>
       ${options.compact ? `

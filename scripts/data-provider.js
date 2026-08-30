@@ -120,6 +120,35 @@ export function getAiWorkStatusLabel(status) {
   return aiWorkStatusLabels[status] || "未着手";
 }
 
+export function getAiEvaluationLabel(evaluation = {}, sessionStatus = "") {
+  const candidates = [
+    evaluation.standard_status,
+    evaluation.standardStatus,
+    evaluation.result_status,
+    evaluation.resultStatus,
+    evaluation.status,
+    sessionStatus,
+    evaluation.label
+  ];
+  for (const candidate of candidates) {
+    const text = String(candidate || "").trim().toLowerCase();
+    if (!text) continue;
+    if (["pass", "passed", "good", "completed", "final_feedback_ready", "合格", "クリア", "通過", "完了"].includes(text)) {
+      return "合格";
+    }
+    if (["retry", "needs_more", "failed", "revision_required", "followup_required", "ai_error", "error", "再提出", "もう一度具体化"].includes(text)) {
+      return "再提出";
+    }
+    if (["review", "support_needed", "staff_feedback_ready", "support_suggested", "サポート相談", "担当者確認"].includes(text)) {
+      return "サポート相談";
+    }
+    if (["pending", "reviewing", "ai_reviewing", "intake_reviewing", "評価中", "確認中"].includes(text)) {
+      return "確認中";
+    }
+  }
+  return "確認中";
+}
+
 export function saveSession(email) {
   const normalizedEmail = normalizeEmail(email);
   try {
@@ -3240,6 +3269,7 @@ export class LocalJsonLearningProvider {
     const layerResults = structuredClone(evaluation.layer_results || evaluation.layerResults || feedback.layerResults || {});
     const failedLayer = evaluation.failed_layer || evaluation.failedLayer || feedback.failedLayer || "";
     const failedLayerLabel = evaluation.failed_layer_label || evaluation.failedLayerLabel || feedback.failedLayerLabel || "";
+    const label = getAiEvaluationLabel({ ...evaluation, result_status: resultStatus });
     return {
       ...structuredClone(evaluation),
       evaluation_id: evaluation.evaluation_id || this._createId("RESTORE-EV"),
@@ -3248,6 +3278,7 @@ export class LocalJsonLearningProvider {
       target_id: String(evaluation.target_id || evaluation.work_id || evaluation.mini_work_id || ""),
       result_status: resultStatus,
       status: resultStatus,
+      label,
       score: Number.isFinite(Number(evaluation.score)) ? Number(evaluation.score) : null,
       good_points: goodPoints,
       improvement_points: resultStatus === "good" ? [] : improvementPoints,
