@@ -1,6 +1,6 @@
 import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-2-12-r3";
 
-const DATA_URL = "./data/learning-data.json?v=7-3-1-wave2a-r1";
+const DATA_URL = "./data/learning-data.json?v=7-3-2-wave2a-r2";
 const STORAGE_KEY = "barise-learning-local-state:v11";
 const SESSION_KEY = "barise-learning-session:v4";
 const LAST_EMAIL_KEY = "barise-learning-last-email:v4";
@@ -874,9 +874,12 @@ export class LocalJsonLearningProvider {
     const initial = this._createInitialState();
     return {
       users: this._mergeByKey(initial.users, stored.users, "user_id"),
-      phases: this._mergeByKey(initial.phases, stored.phases, "phase_id"),
+      // phases / miniWorks は教材定義なので、配信JSONを唯一の正本にする。
+      // sourceに存在しないstored-only行も、廃止済み教材を再表示しないため意図的に破棄する。
+      // 受講者固有の状態は下段のprogress等へ分離して保持する。
+      phases: initial.phases,
       lessons: initial.lessons, // V5.1.1 fix: content lessons always from source JSON (prevents stale localStorage from wiping video_url)
-      miniWorks: this._mergeByKey(initial.miniWorks, stored.miniWorks, "mini_work_id"),
+      miniWorks: initial.miniWorks,
       works: initial.works, // V7.2.9: 本ワーク定義（intake_fields等のコンテンツ）は常にsource JSONから。stored localStorage優先だと古いintake定義が残り続ける（lessonsと同じ方針）。ユーザー状態はprogress/aiWorkSessions側に保持
       progress: stored.progress || initial.progress,
       submissions: stored.submissions || initial.submissions,
