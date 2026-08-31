@@ -1,4 +1,4 @@
-import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-5-0-wave3";
+import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-5-1-wave3fix";
 
 const DATA_URL = "./data/learning-data.json?v=7-4-0-wave2b";
 const STORAGE_KEY = "barise-learning-local-state:v11";
@@ -997,6 +997,11 @@ export class LocalJsonLearningProvider {
       completed_at: "",
       updated_at: now
     });
+    // Sheets復元値には生成済み問題文が含まれないため、再挑戦開始時に
+    // source優先の現行work定義から、初回と同じ問いブロックを再構成する。
+    session.generated_work_prompt_parts = this._createAiWorkPromptParts(work, session);
+    session.generated_work_prompt = this._createAiWorkPrompt(work, session);
+    session.personalized_question_text = session.generated_work_prompt;
     this._write(db);
     return structuredClone(session);
   }
