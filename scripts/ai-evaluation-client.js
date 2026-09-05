@@ -271,7 +271,9 @@ export class AiEvaluationClient {
       evaluated_at: standard.meta.evaluatedAt || new Date().toISOString(),
       local_met_criteria: localMet,
       error_type: rawEvaluation.errorType || rawEvaluation.error_type || "",
-      error_message_safe: rawEvaluation.errorMessageSafe || rawEvaluation.error_message_safe || ""
+      error_message_safe: rawEvaluation.errorMessageSafe || rawEvaluation.error_message_safe || "",
+      detail_persisted: rawEvaluation.detail_persisted === true,
+      detail_persistence: rawEvaluation.detail_persistence || null
     };
   }
 

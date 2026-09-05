@@ -1,4 +1,4 @@
-import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-5-1-wave3fix";
+import { AiEvaluationClient } from "./ai-evaluation-client.js?v=7-5-1-b031fix";
 
 const DATA_URL = "./data/learning-data.json?v=7-4-0-wave2b";
 const STORAGE_KEY = "barise-learning-local-state:v11";
