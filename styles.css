@@ -2221,6 +2221,51 @@ button, a, [role="button"] {
   *, *::before, *::after {
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 例外：進行中を示すものは止めない。止めると「固まった」に見えるため */
+  .loading-ring {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+  .thinking .dots i {
+    animation-duration: 1.2s !important;
+    animation-iteration-count: infinite !important;
   }
 }
 /* ============ VISUAL PHASE 1 ここまで ============ */
+
+/* ============ VISUAL PHASE 1-b — モーション（ここから） ============ */
+/* 既存セレクタを後勝ちで上書きする。新しいセレクタは足さない。 */
+
+/* ---- M1. 押下の手応え：押しは速く（60ms）、戻りはゆっくり（180ms）---- */
+.back, .tabbar a, .primary-button, .ghost-button, .line-button,
+.t2-btn, .ch-row, a.ls-row, .submit2, .judge-next {
+  transition:
+    transform 180ms var(--ease-out),
+    background-color 180ms var(--ease-out),
+    opacity 180ms var(--ease-out),
+    border-color 180ms var(--ease-out);
+}
+.back:active, .tabbar a:active, .primary-button:active, .ghost-button:active,
+.line-button:active, .t2-btn:active, .ch-row:active, a.ls-row:active,
+.submit2:active, .judge-next:active {
+  transition-duration: 60ms;
+}
+
+/* ---- M2. 立ち上がりを短く（.7s は待たされる）---- */
+.rise { animation: riseIn .44s var(--ease-out) both; }
+
+/* ---- M3. 画面遷移のイージングを統一 ---- */
+.stage[data-enter="fwd"]  { animation: screenIn .34s var(--ease-out) both; }
+.stage[data-enter="back"] { animation: screenInBack .34s var(--ease-out) both; }
+
+/* ---- M4. ログイン画面の入りを短く ---- */
+.login-screen { animation: fadeIn .5s var(--ease-out) both; }
+
+/* ---- M5. クリア済みワークのリンク：色の変化をじわっと ---- */
+.cleared-work-link {
+  transition: border-color 180ms var(--ease-out), background-color 180ms var(--ease-out);
+}
+/* ============ VISUAL PHASE 1-b ここまで ============ */
