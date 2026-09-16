@@ -7,22 +7,33 @@
    ============================================================ */
 
 :root {
-  --bg: #131316;
-  --panel: #1c1c20;
-  --panel-2: #242429;
-  --hair: rgba(255, 255, 255, .08);
-  --ink: #f5f5f7;
-  --dim: rgba(245, 245, 247, .55);
-  --faint: rgba(245, 245, 247, .32);
-  --red: #e0503f;
-  --red-deep: #c0392b;
-  --gold: #d4a017;
-  --sage: #57a58c;
-  --radius-l: 22px;
-  --radius-m: 16px;
-  --radius-s: 13px;
-  --shadow-card: 0 20px 50px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .05);
-  --shadow-soft: 0 12px 30px rgba(0, 0, 0, .28);
+  /* ---- 面と文字 ---- */
+  --bg: #0E1117;                    /* 旧 #131316：純グレーの黒に青の芯を入れる */
+  --panel: #161B26;                 /* 旧 #1c1c20 */
+  --panel-2: #1B2130;               /* 旧 #242429 */
+  --hair: rgba(163, 174, 192, .22); /* 旧 rgba(255,255,255,.08)：無色→補助色を溶かした罫 */
+  --ink: #EDF1F7;                   /* 旧 #f5f5f7：16.7:1 */
+  --dim: #A3AEC0;                   /* 旧 rgba(245,245,247,.55)：8.4:1 */
+  --faint: #8B96A8;                 /* 旧 rgba(245,245,247,.32)＝2.6:1で基準未達 → 6.3:1 */
+
+  /* ---- 意味を持つ色 ---- */
+  --red: #E0503F;                   /* 変更なし。現在地の印・線・文字 4.9:1 */
+  --red-deep: #C6412F;              /* 旧 #c0392b。白文字を載せる塗り専用 5.0:1（旧は3.9:1） */
+  --gold: #E5B049;                  /* 旧 #d4a017。合格・達成のみ 9.6:1 */
+  --sage: #5FBFA0;                  /* 旧 #57a58c。公式LINE導線のみ 8.5:1 */
+
+  /* ---- 形 ---- */
+  --radius-l: 14px;                 /* 旧 22px */
+  --radius-m: 10px;                 /* 旧 16px */
+  --radius-s: 10px;                 /* 旧 13px */
+
+  /* ---- 影：暗背景で不可視な外側の影を廃し、効いている1pxだけ残す ---- */
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, .05);  /* 旧 0 20px 50px rgba(0,0,0,.35) ＋ inset */
+  --shadow-soft: none;                                     /* 旧 0 12px 30px rgba(0,0,0,.28) */
+
+  /* ---- 追加（2つだけ） ---- */
+  --line-ui: rgba(163, 174, 192, .42); /* 操作できるものの輪郭 3.1:1（WCAG 1.4.11） */
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
 }
 
 * {
@@ -2147,3 +2158,69 @@ textarea[aria-invalid="true"] { border-color: rgba(224, 80, 63, .7); }
       var(--bg);
   }
 }
+
+/* ============================================================
+   VISUAL PHASE 1 — 移行ブロック
+   切り戻し: このブロックを削除し、:root を旧版へ戻す（2手）
+   ============================================================ */
+
+/* ---- A-2 空気層（夜明け前の稜線）------------------------- */
+/* html 側の background:var(--bg) が地になるので body は透明にする */
+body { background: transparent; }
+
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 38%, transparent 48%, rgba(5, 7, 11, .55) 100%),
+    radial-gradient(115% 40% at 50% -8%, rgba(126, 146, 196, .13), transparent 60%),
+    radial-gradient(80% 30% at 84% 0%,   rgba(229, 176, 73, .06),  transparent 58%),
+    radial-gradient(120% 56% at 30% 104%, rgba(24, 31, 48, .9),    transparent 62%);
+}
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  opacity: .045; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---- A-3 外側の影 → 罫線 --------------------------------- */
+.login-panel,
+.gauge-card,
+.today2,
+.evaluation-card,
+.work-card {
+  border: 1px solid var(--hair);
+  border-top-color: rgba(255, 255, 255, .09); /* 光の当たる上端だけ明るく */
+}
+.primary-button,
+.t2-btn,
+.judge-stamp { box-shadow: none; }
+
+/* ---- 塗りボタンを単色に（白文字 3.9:1 → 5.0:1）----------- */
+.primary-button,
+.t2-btn,
+.ls-cta { background: var(--red-deep); }
+
+/* ---- A-4 タップ領域 44px（実測で未達だった4箇所）--------- */
+.tabbar a        { min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; } /* 実測37px */
+.text-button     { min-height: 44px; padding: 0 8px; }                                             /* 実測31px */
+.ls-cta          { min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; } /* 実測34px */
+.cleared-work-link { min-height: 44px; }                                                           /* 実測40px */
+
+/* ---- A-4 フォーカス表示：赤→インク ----------------------- */
+/* 既存は outline:2px solid rgba(224,80,63,.8)。赤は「現在地」の色として温存する */
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* ---- 触覚まわり ------------------------------------------ */
+button, a, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- reduced-motion：動きだけ止める（色の変化は残す）----- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+/* ============ VISUAL PHASE 1 ここまで ============ */
