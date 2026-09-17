@@ -484,6 +484,7 @@ function renderLogin(errorMessage = "", emailValue = getLastEmail(), showSupport
         </form>
         <p class="login-support-note">うまく入れないときも、サポートが確認しますのでご安心ください。</p>
       </section>
+      ${renderLand("fixed")}
     </main>
   `;
 }
@@ -605,6 +606,29 @@ function bindDParallax() {
   }, { passive: true });
 }
 
+/* ---- 4. 窓のマークアップ（全画面で同一。差は variant クラスだけ）-- */
+function renderLand(variant = "") {
+  if (!D_LIVE) return "";
+  return `
+    <div class="land${variant ? " " + variant : ""}" aria-hidden="true">
+      <div class="ll far" data-k=".18">
+        <svg viewBox="0 0 420 200" preserveAspectRatio="none"><path d="M0,200 L0,118 C28,110 58,86 94,90 C120,93 138,54 168,44 C188,38 204,60 226,54 C258,46 282,10 308,20 C332,30 352,64 384,56 C400,52 410,50 420,58 L420,200 Z"/></svg>
+        <div class="glint"></div>
+      </div>
+      <div class="ll mid" data-k=".10">
+        <svg viewBox="0 0 420 200" preserveAspectRatio="none"><path d="M0,200 L0,144 C34,134 70,114 110,118 C140,121 164,90 198,82 C224,76 246,104 276,98 C302,93 322,70 352,78 C382,86 402,108 420,102 L420,200 Z"/></svg>
+        <div class="mist"></div>
+      </div>
+      <div class="ll near" data-k=".04">
+        <svg viewBox="0 0 420 200" preserveAspectRatio="none">
+          <path d="M0,200 L0,170 C40,162 80,154 118,146 C150,139 175,114 196,94 L214,76 L226,90 C244,114 270,134 300,144 C340,158 380,164 420,160 L420,200 Z"/>
+          <path class="crest" d="M196,94 L214,76 L226,90" fill="none" stroke="url(#crestGrad)" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </div>
+    </div>
+  `;
+}
+
 /* ============================================================
    ホーム（#/home）＝計器盤
    ============================================================ */
@@ -650,6 +674,8 @@ function renderHome() {
             <div class="gs hot"><b>${passCount}<em> /${passTotal}</em></b><small>クリアしたワーク</small></div>
           </div>
         </section>
+
+        ${renderLand("h")}
 
         ${cta ? `
           <section class="today2 rise rise-1" aria-label="今日の一歩">
@@ -869,6 +895,7 @@ function renderLearningPage() {
         <p class="page-kicker">ROUTE</p>
         <h1 class="page-title">登頂ルート</h1>
         <p class="page-lead">動画を見て、ミニワークで言葉にする。その一歩ずつが、次の章への道になります。</p>
+        ${renderLand("r")}
         ${phases.map((phase, index) => renderPhaseGroup(learning, phase, index)).join("")}
         <div class="page-foot">
           <a class="text-link" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
@@ -986,6 +1013,8 @@ function renderLesson(lessonId, section = "") {
           <p class="lt-k">${isFinalPhase(phase) ? "最終まとめ" : `CHAPTER ${padChapter(phase?.phase_order)}`}</p>
           <h1>${escapeHtml(lesson.lesson_title)}</h1>
         </div>
+
+        ${renderLand("t")}
 
         ${renderVideoBlock(lesson)}
         ${renderQuizBlock(lesson)}
@@ -1467,6 +1496,8 @@ function renderWorksPage() {
         <h1 class="page-title">実践ワーク</h1>
         <p class="page-lead">学んだ視点を、あなたの実務に落とし込む場所です。AIが伴走し、テーマ整理から最終フィードバックまでこのページ内で完結します。</p>
 
+        ${renderLand("r")}
+
         ${nextWork ? `
           <div class="sec-h-row rise">
             <span class="sec-h">いま取り組むワーク</span>
@@ -1585,6 +1616,7 @@ function renderAiWorkMain(work) {
       <h1>${escapeHtml(work.title)}</h1>
       <p class="lt-sub">${escapeHtml(work.work_goal || work.purpose)}</p>
     </div>
+    ${renderLand("t")}
     <div class="meta-chips">
       ${renderAiWorkStatusBadge(status)}
       ${renderMetaChip("鍛える力", work.target_skill || "判断力 / 仮説検証 / PDCA")}
