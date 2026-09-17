@@ -960,6 +960,73 @@ function renderChapterRow(learning, phase) {
    学習一覧（#/learning）
    ============================================================ */
 
+/* ---- C-2 ルートライン（v2.2 修正）---------------------------- */
+
+/* 節点の中心は border 込みで実測。各節点の担当区間を中点で分ける。 */
+function layoutRouteSegments(route) {
+  if (!D_LIVE || !document.body.classList.contains("d-live")) return;
+  const rail = route.querySelector(":scope > .route-rail");
+  const rows = [...route.querySelectorAll(":scope > .ls-row")];
+  if (!rail) return;
+  const rr = route.getBoundingClientRect();
+  const routeStyle = getComputedStyle(route);
+  const scale = rr.width / parseFloat(routeStyle.width) || 1;
+  const railStyle = getComputedStyle(rail);
+  const top = parseFloat(railStyle.top);
+  const end = Math.max(top, parseFloat(routeStyle.height) - parseFloat(railStyle.bottom));
+  const centers = rows.map((row) => {
+    const box = row.getBoundingClientRect();
+    const style = getComputedStyle(row);
+    const dot = getComputedStyle(row, "::before");
+    return (box.top - rr.top) / scale + parseFloat(style.borderTopWidth)
+      + parseFloat(dot.top) + parseFloat(dot.height) / 2;
+  });
+  /* 共通の境界を1/64px単位へ揃え、隣接区間の丸め方による隙間を防ぐ。 */
+  const edges = [top, ...centers.slice(1).map((center, i) => (centers[i] + center) / 2), end]
+    .map((value) => Math.round(value * 64) / 64);
+  const segments = rows.map((row, i) => {
+    const start = edges[i];
+    const stop = edges[i + 1];
+    const segment = document.createElement("span");
+    segment.className = "route-segment";
+    segment.dataset.state = row.dataset.state;
+    segment.style.top = Math.max(0, start - top) + "px";
+    segment.style.height = Math.max(0, Math.min(end, stop) - Math.max(top, start)) + "px";
+    return segment;
+  });
+  rail.replaceChildren(...segments);
+  const currentIndex = rows.findIndex((row) => row.classList.contains("is-current"));
+  if (currentIndex >= 0) {
+    route.style.setProperty("--trail", Math.max(0, centers[currentIndex] - top) + "px");
+  }
+}
+
+/* 光は現在地の章で1回だけ。色は全章で更新し、文字折返しにも追従する。 */
+let routeSparkShown = false;
+let routeResizeObserver = null;
+function playRouteSpark() {
+  if (!D_LIVE || !document.body.classList.contains("d-live")) return;
+  const routes = [...document.querySelectorAll(".route")];
+  routes.forEach(layoutRouteSegments);
+  if (typeof ResizeObserver !== "undefined") {
+    if (!routeResizeObserver) routeResizeObserver = new ResizeObserver((entries) => {
+      const changed = new Set(entries.map((entry) => entry.target.closest(".route")));
+      changed.forEach((route) => { if (route?.isConnected) layoutRouteSegments(route); });
+    });
+    routeResizeObserver.disconnect();
+    routes.forEach((route) => {
+      routeResizeObserver.observe(route);
+      route.querySelectorAll(":scope > .ls-row").forEach((row) => routeResizeObserver.observe(row));
+    });
+  }
+  const route = document.querySelector(".route .ls-row.is-current")?.closest(".route");
+  if (!route) return;
+  const spark = route.querySelector(":scope > .spark");
+  if (!spark || D_RM || routeSparkShown) return;
+  routeSparkShown = true;
+  route.classList.add("route-play");
+}
+
 function renderLearningPage() {
   const learning = state.learning;
   if (!learning) {
@@ -990,6 +1057,7 @@ function renderLearningPage() {
   `;
 
   requestAnimationFrame(() => scrollToPageTop());
+  requestAnimationFrame(() => playRouteSpark());
 }
 
 function renderPhaseGroup(learning, phase, index) {
@@ -1017,7 +1085,13 @@ function renderPhaseGroup(learning, phase, index) {
         <span class="ph-title">${no ? `<span class="no">${no}</span>` : ""}${escapeHtml(phase.phase_title)}</span>
         <span class="ph-count${stateName === "done" ? " done" : ""}">${stateName === "done" ? "★ クリア " : ""}${done}/${total}</span>
       </div>
-      ${phase.lessons.map((lesson) => renderLessonRow(learning, phase, lesson)).join("") || `<p class="phase-locked-note">この章の教材は順次ひらいていきます。</p>`}
+      ${phase.lessons.length ? `
+        <div class="route">
+          <span class="route-rail" aria-hidden="true"></span>
+          <span class="spark" aria-hidden="true"></span>
+          ${phase.lessons.map((lesson) => renderLessonRow(learning, phase, lesson)).join("")}
+        </div>
+      ` : `<p class="phase-locked-note">この章の教材は順次ひらいていきます。</p>`}
     </section>
   `;
 }
@@ -1068,9 +1142,9 @@ function renderLessonRow(learning, phase, lesson) {
   `;
 
   if (stateName === "locked") {
-    return `<div class="ls-row is-locked">${inner}</div>`;
+    return `<div class="ls-row is-locked" data-state="locked">${inner}</div>`;
   }
-  return `<a class="ls-row${stateName === "current" ? " is-current" : ""}" href="${escapeAttribute(cta.href)}">${inner}</a>`;
+  return `<a class="ls-row${stateName === "current" ? " is-current" : ""}" data-state="${stateName}" href="${escapeAttribute(cta.href)}">${inner}</a>`;
 }
 
 /* ============================================================

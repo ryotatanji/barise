@@ -2420,4 +2420,74 @@ body.d-live::before {
   /* ▼ 例外：既存の transition-duration:.01ms!important を打ち消す */
   .d-live .ridge-band .rim { transition-duration: .9s !important; }
 }
+/* ---- C-2 ルートライン（v2.2 修正）------------------------------
+   既存の .ls-row は一切書き換えない。足すのは
+   ①区間別軌道（.route-rail） ②節点（.ls-row::before） ③光（.spark） の3つだけ。 */
+/* .route は既存行の器。OFFでも display を変更しない。装飾だけ隠す。 */
+.route > .route-rail,
+.route > .spark { display: none; }
+
+.d-live .route {
+  position: relative; padding-left: 30px; overflow: hidden;
+}
+/* ① 軌道：節点間の中点で区切り、各レッスンの完了状態で塗る */
+.d-live .route > .route-rail {
+  display: block; position: absolute; left: 6px; top: 20px; bottom: 26px; width: 1px;
+  pointer-events: none;
+}
+.d-live .route-rail > .route-segment {
+  position: absolute; left: 0; width: 1px; background: var(--hair);
+}
+.d-live .route-segment[data-state="complete"] { background: var(--gold); }
+.d-live .route-segment[data-state="current"] { background: var(--red); }
+/* ② 節点：各行の左に1つ。色は既存の状態クラスから引く */
+.d-live .route .ls-row { position: relative; }
+.d-live .route .ls-row::before {
+  content: ""; position: absolute; left: -28px; top: 20px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold); box-shadow: 0 0 0 4px var(--bg);
+}
+.d-live .route .ls-row.is-current::before { background: var(--red); }
+.d-live .route .ls-row.is-locked::before {
+  background: var(--bg); border: 1px solid var(--line-ui); box-shadow: 0 0 0 4px var(--bg);
+}
+.d-live .route .ls-row[data-state="progress"]::before { background: var(--ink); }
+.d-live .route .ls-row[data-state="not-started"]::before {
+  background: var(--bg); border: 1px solid var(--line-ui); box-shadow: 0 0 0 4px var(--bg);
+}
+/* 現在地の脈 */
+.d-live .route .ls-row.is-current::after {
+  content: ""; position: absolute; left: -31px; top: 17px;
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 1px solid var(--red); opacity: 0;
+}
+.d-live .route.route-play .ls-row.is-current::after {
+  animation: routeHalo 2s var(--ease-out) 3 both;
+}
+@keyframes routeHalo {
+  0%   { transform: scale(.5); opacity: .85 }
+  70%  { transform: scale(1.9); opacity: 0 }
+  100% { opacity: 0 }
+}
+/* ③ 光：上→下。読込1回だけ */
+.d-live .route .spark {
+  display: block; pointer-events: none; position: absolute; left: 5px; top: 20px; width: 3px; height: 56px; border-radius: 2px;
+  background: linear-gradient(180deg, transparent, rgba(255, 240, 226, .9), transparent);
+  opacity: 0;
+}
+.d-live .route.route-play .spark {
+  animation: routeTrail 1.1s var(--ease-out) .25s 1 both;
+}
+@keyframes routeTrail {
+  0%   { transform: translateY(-56px); opacity: 0 }
+  18%  { opacity: 1 }
+  88%  { opacity: 1 }
+  100% { transform: translateY(var(--trail, 300px)); opacity: 0 }
+}
+/* reduced-motion：光と脈は装飾なので完全に消す。軌道の色は残す */
+@media (prefers-reduced-motion: reduce) {
+  .d-live .route .spark { display: none !important; }
+  .d-live .route.route-play .ls-row.is-current::after { animation: none !important; opacity: 0 !important; }
+}
+
 /* ============ VISUAL PHASE 4 ここまで ============ */
