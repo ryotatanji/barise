@@ -2269,3 +2269,155 @@ button, a, [role="button"] {
   transition: border-color 180ms var(--ease-out), background-color 180ms var(--ease-out);
 }
 /* ============ VISUAL PHASE 1-b ここまで ============ */
+
+/* ============================================================
+   VISUAL PHASE 4 — 全画面D「生きた背景」（ここから）
+   OFFスイッチ: <body> から d-live を外すと、この節は1行も効かない。
+   切り戻し: このブロックを丸ごと削除する（:root の --sky-a / --sky-b も同時に消える）。
+   ============================================================ */
+
+/* ---- 0. OFFスイッチの土台 ------------------------------------
+   D の要素は既定で display:none。.d-live が付いたときだけ現れる。
+   ＝ body からクラスを外せば、DOMが残っていても見た目は完全に元へ戻る。 */
+.d-atmo,
+.land,
+.ridge-band { display: none; }
+
+/* ---- 1. 時刻連動の空 -----------------------------------------
+   フェーズ1の body::before を、変数で駆動する形に差し替える。
+   .d-live が無いときは --sky-a/--sky-b の既定値が効き、見た目は現行と同じ。 */
+:root {
+  --sky-a: rgba(126, 146, 196, .13);
+  --sky-b: rgba(229, 176, 73, .06);
+}
+body.d-live.tod-morning { --sky-a: rgba(229, 176, 73, .30); --sky-b: rgba(224, 120, 90, .18); --glint: rgba(229, 176, 73, .30); }
+body.d-live.tod-day     { --sky-a: rgba(160, 185, 230, .22); --sky-b: rgba(126, 146, 196, .26); --glint: rgba(200, 215, 240, .22); }
+body.d-live.tod-evening { --sky-a: rgba(224,  80,  63, .24); --sky-b: rgba(229, 176,  73, .20); --glint: rgba(224, 110,  63, .32); }
+body.d-live.tod-night   { --sky-a: rgba(126, 146, 196, .10); --sky-b: rgba( 60,  80, 140, .24); --glint: rgba(180, 200, 240, .18); }
+
+body.d-live::before {
+  background:
+    radial-gradient(ellipse at 50% 38%, transparent 48%, rgba(5, 7, 11, .55) 100%),
+    radial-gradient(115% 40% at 50% -8%, var(--sky-a), transparent 60%),
+    radial-gradient(80% 30% at 84% 0%,   var(--sky-b), transparent 58%),
+    radial-gradient(120% 56% at 30% 104%, rgba(24, 31, 48, .9), transparent 62%);
+  transition: background 1.2s ease;
+}
+
+/* ---- 2. 等高線の層（画面全体・上45%のみ・視差） ---------------- */
+.d-live .d-atmo {
+  display: block; position: fixed; inset: 0; z-index: -1;
+  pointer-events: none; overflow: hidden;
+}
+.d-live .d-atmo .lyr {
+  position: absolute; inset: 0;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 45%, transparent 100%);
+          mask-image: linear-gradient(180deg, #000 0, #000 45%, transparent 100%);
+  will-change: auto;
+}
+.d-live .d-atmo .cstat { position: absolute; inset: -8% -8%; width: 116%; height: 116%; }
+.d-live .d-atmo .cstat svg { width: 100%; height: 100%; }
+
+/* ---- 3. 山の「窓」（高さ0。リストの裏には決して入らない）-------- */
+.d-live .land {
+  display: block; position: relative; z-index: 0;
+  height: 0; margin: 0; pointer-events: none;
+}
+.d-live .land .ll {
+  position: absolute; left: -18px; right: -18px; top: -52px; height: 250px;
+  overflow: hidden;                  /* 霧(width:160%)が横スクロールを生むのを防ぐ */
+  transform: translate3d(0, 0, 0); will-change: auto;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 40%, transparent 82%);
+          mask-image: linear-gradient(180deg, #000 0, #000 40%, transparent 82%);
+}
+.d-live .land .ll svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.d-live .land .ll.far  path { fill: rgba(62, 76, 112, .50); }
+.d-live .land .ll.mid  path { fill: rgba(34, 44,  70, .80); }
+.d-live .land .ll.near path { fill: rgba(15, 19,  30, .97); }
+.d-live .land .ll.near .crest { opacity: .9; }
+
+/* 窓の位置：画面ごと */
+.d-live .land.r .ll {
+  top: -168px; height: 215px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 32%, transparent 74%);
+          mask-image: linear-gradient(180deg, #000 0, #000 32%, transparent 74%);
+}
+.d-live .land.t .ll {
+  top: -150px; height: 200px; opacity: .55;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 30%, transparent 70%);
+          mask-image: linear-gradient(180deg, #000 0, #000 30%, transparent 70%);
+}
+.d-live .land.t .ll.near { display: none; }   /* 詳細画面の窓は遠景・中景のみ */
+
+/* ログインは画面下固定の地平 */
+.d-live .login-screen { position: relative; }  /* .land.fixed の基準にする */
+.d-live .land.fixed { position: absolute !important; left: 0; right: 0; bottom: 0; height: 0; }
+.d-live .land.fixed .ll {
+  left: 0; right: 0;               /* 画面幅の窓は左右へ広げない。高さ0の親では切り取らない */
+  top: -172px; height: 220px;
+  -webkit-mask-image: none; mask-image: none;
+}
+.d-live .land.fixed .glint { display: none; }
+
+/* ---- 4. 常時動く2つ：頂の灯と霧（他は動かさない）--------------- */
+.d-live .land .glint {
+  position: absolute; width: 110px; height: 110px; border-radius: 50%;
+  left: calc(73% - 55px); top: calc(10% - 55px);
+  background: radial-gradient(circle, var(--glint, rgba(229,176,73,.24)), rgba(229,176,73,0) 62%);
+  transition: background 1.2s ease;
+  animation: dGlint 9s ease-in-out infinite;
+}
+.d-live .land .mist {
+  position: absolute; left: -30%; width: 160%; height: 64px; top: 38%; filter: blur(14px);
+  background: linear-gradient(90deg, transparent, rgba(163,174,192,.085) 40%, rgba(163,174,192,.06) 60%, transparent);
+  animation: dMist 46s ease-in-out infinite alternate;
+}
+@keyframes dGlint { 0%,100% { opacity:.55; transform:scale(.9) } 50% { opacity:1; transform:scale(1.08) } }
+@keyframes dMist  { from { transform:translate3d(-40px,0,0) } to { transform:translate3d(40px,0,0) } }
+
+/* スクロール中だけ will-change を付ける（常時付けると合成レイヤを食う）*/
+.d-live.scrolling .d-atmo .lyr,
+.d-live.scrolling .land .ll { will-change: transform; }
+
+/* ---- 5. 窓の上のカードは文字の地を確保する --------------------- */
+.d-live .gauge-card,
+.d-live .today2,
+.d-live .cleared-works .work-card,
+.d-live .phase-group,
+.d-live .ai-panel { background-color: rgba(14, 17, 23, .92); }
+.d-live .login-panel { background-color: rgba(14, 17, 23, .90); }
+
+/* ---- 6. 稜線の帯（進捗パネル下部）。光は左→右、右端の頂＝100% -- */
+.d-live .gauge-card { position: relative; overflow: hidden; padding-bottom: 62px; }
+.d-live .gauge-card > .ring-wrap,
+.d-live .gauge-card > .gauge-stats { position: relative; z-index: 1; }
+.d-live .ridge-band {
+  display: block; position: absolute; left: 0; right: 0; bottom: 0; height: 56px; z-index: 0;
+}
+.d-live .ridge-band .fill { fill: rgba(163, 174, 192, .07); }
+.d-live .ridge-band .rim2 { fill: none; stroke: rgba(163, 174, 192, .22); stroke-width: 1; stroke-linejoin: round; }
+.d-live .ridge-band .rim {
+  fill: none; stroke: rgba(229, 176, 73, .8); stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 100; stroke-dashoffset: var(--climb, 100);
+  transition: stroke-dashoffset .9s var(--ease-out);
+}
+.d-live .ridge-band .head {
+  fill: #FFF3D6; filter: drop-shadow(0 0 4px rgba(229, 176, 73, .9));
+  transition: none;                      /* 頭は transform を WAAPI で動かす */
+}
+.d-live .ridge-band .head-g { will-change: transform; }
+.d-live .ridge-band .head-g.hide { opacity: 0; }
+
+/* ---- 7. reduced-motion ---------------------------------------
+   霧と灯は止める。視差はJS側で登録しない。
+   進捗連動（稜線の光）は「動き」ではなく「値の表示」なので例外で残す。 */
+@media (prefers-reduced-motion: reduce) {
+  .d-live .land .glint,
+  .d-live .land .mist { animation: none !important; }
+  .d-live .land .ll,
+  .d-live .d-atmo .lyr { transform: translate3d(0, 0, 0) !important; }
+  /* ▼ 例外：既存の transition-duration:.01ms!important を打ち消す */
+  .d-live .ridge-band .rim { transition-duration: .9s !important; }
+}
+/* ============ VISUAL PHASE 4 ここまで ============ */
