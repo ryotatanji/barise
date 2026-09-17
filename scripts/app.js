@@ -66,6 +66,12 @@ function phaseChapterLabel(phase) {
   return isFinalPhase(phase) ? "" : kanjiChapter(phase?.phase_order);
 }
 
+function getLessonDisplayNumber(lessonId) {
+  const context = state.learning ? findLessonContext(state.learning, lessonId) : null;
+  if (!context) return lessonId;
+  return `${context.phase.phase_id}-${String(context.lesson.lesson_order).padStart(2, "0")}`;
+}
+
 /* ============================================================
    トゥイーンエンジン（デモのGSAP演出タイミングを移植・依存ゼロ）
    ============================================================ */
@@ -874,7 +880,7 @@ function renderLessonRow(learning, phase, lesson) {
   if (stateName === "not-started") ctaMarkup = `<span class="ls-cta ls-cta--calm">ひらく</span>`;
 
   const inner = `
-    <span class="ls-id">${escapeHtml(lesson.lesson_id)}</span>
+    <span class="ls-id">${escapeHtml(getLessonDisplayNumber(lesson.lesson_id))}</span>
     <div class="ls-side">
       ${stateMarkup}
       ${ctaMarkup}
@@ -908,7 +914,7 @@ function renderLesson(lessonId, section = "") {
 
   app.innerHTML = `
     <div class="stage" data-enter="${dir}">
-      ${renderBackTop("#/learning", "戻る", [phaseChapterLabel(phase), lesson.lesson_id].filter(Boolean).join(" ・ "))}
+      ${renderBackTop("#/learning", "戻る", [phaseChapterLabel(phase), getLessonDisplayNumber(lesson.lesson_id)].filter(Boolean).join(" ・ "))}
       <main>
         <div class="lesson-title">
           <p class="lt-k">${isFinalPhase(phase) ? "最終まとめ" : `CHAPTER ${padChapter(phase?.phase_order)}`}</p>
@@ -1085,7 +1091,7 @@ function renderWorkBlock(lesson) {
 function renderLockedWorkNote(lesson) {
   const remaining = lesson.workUnlockRemainingLessonIds || [];
   const lessonNames = remaining
-    .map((lessonId) => findLessonContext(state.learning, lessonId)?.lesson?.lesson_title || lessonId)
+    .map((lessonId) => findLessonContext(state.learning, lessonId)?.lesson?.lesson_title || getLessonDisplayNumber(lessonId))
     .filter(Boolean);
 
   return `
@@ -1463,7 +1469,7 @@ function renderWorkCard(work, featured = false) {
       </dl>
       ${featured && relatedLessons.length ? `
         <dl class="wc-meta" style="margin-top:8px;">
-          ${relatedLessons.map((lesson) => `<div><dt>教材</dt><dd><a class="text-link" href="${escapeAttribute(hashForLesson(lesson.lesson_id, "video"))}">${escapeHtml(lesson.lesson_id)} ${escapeHtml(lesson.lesson_title)}</a></dd></div>`).join("")}
+          ${relatedLessons.map((lesson) => `<div><dt>教材</dt><dd><a class="text-link" href="${escapeAttribute(hashForLesson(lesson.lesson_id, "video"))}">${escapeHtml(getLessonDisplayNumber(lesson.lesson_id))} ${escapeHtml(lesson.lesson_title)}</a></dd></div>`).join("")}
         </dl>
       ` : ""}
       <a class="submit2" href="${escapeAttribute(hashForWork(work.work_id))}">${escapeHtml(getWorkCtaLabel(work))}</a>
@@ -1538,7 +1544,7 @@ function renderAiWorkLockedGate(work) {
       <p>${escapeHtml(work.unlockReason || "関連する動画の視聴とミニワークのクリア後に始められます。")}</p>
       ${missingLessons.length ? `
         <p style="margin-top:8px;"><strong style="font-size:11px;">視聴が必要な動画</strong></p>
-        <ul>${missingLessons.map((lessonId) => `<li><a class="text-link" href="${escapeAttribute(hashForLesson(lessonId, "video"))}">${escapeHtml(lessonId)} の動画へ</a></li>`).join("")}</ul>
+        <ul>${missingLessons.map((lessonId) => `<li><a class="text-link" href="${escapeAttribute(hashForLesson(lessonId, "video"))}">${escapeHtml(getLessonDisplayNumber(lessonId))} の動画へ</a></li>`).join("")}</ul>
       ` : ""}
       ${missingMiniWorks.length ? `
         <p style="margin-top:8px;"><strong style="font-size:11px;">クリアが必要なミニワーク</strong></p>
@@ -1799,7 +1805,7 @@ function renderAiWorkRelatedPanel(work) {
       <p class="ch-h">RELATED</p>
       ${relatedLessons.map((lesson) => `
         <a class="ls-row" href="${escapeAttribute(hashForLesson(lesson.lesson_id, "video"))}">
-          <span class="ls-id">${escapeHtml(lesson.lesson_id)}</span>
+          <span class="ls-id">${escapeHtml(getLessonDisplayNumber(lesson.lesson_id))}</span>
           <div class="ls-side"><span class="ls-state${lesson.video_status === "watched" ? " watched" : ""}">${escapeHtml(getVideoWatchLabel(lesson.video_status))}</span></div>
           <h4>${escapeHtml(lesson.lesson_title)}</h4>
           <p class="ls-sub">ミニワーク: ${escapeHtml(lesson.mini_work_status === "none" ? "対象なし" : learnerStatusLabel(lesson.mini_work_status))}</p>
@@ -2328,7 +2334,7 @@ function getEvaluationResultHelp(status) {
 
 function getLearningLessonCta(lesson) {
   const nextAction = getLessonCta(lesson);
-  if (lesson.isComplete) return { ...nextAction, label: "ふり返る" };
+  if (lesson.isComplete) return { ...nextAction, label: "ふり返る", href: hashForLesson(lesson.lesson_id) };
   if (lesson.progress.video_status === "watched") return { ...nextAction, label: "続きから登る" };
   return { ...nextAction, label: "ここから登る" };
 }
@@ -2385,7 +2391,7 @@ function getLessonCta(lesson) {
       label: "次の動画へ進む",
       href: hashForLesson(lesson.nextUnlockLessonId, "video"),
       shortNote: "解放条件を進める",
-      summary: `関連ミニワークをクリアするとワークがひらきます。次は「${nextContext?.lesson?.lesson_title || lesson.nextUnlockLessonId}」へ進みましょう。`
+      summary: `関連ミニワークをクリアするとワークがひらきます。次は「${nextContext?.lesson?.lesson_title || getLessonDisplayNumber(lesson.nextUnlockLessonId)}」へ進みましょう。`
     };
   }
 
