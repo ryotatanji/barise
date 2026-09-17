@@ -629,6 +629,80 @@ function renderLand(variant = "") {
   `;
 }
 
+/* ---- 5. 稜線の帯（ホームの進捗パネル内）---------------------- */
+function renderRidgeBand() {
+  if (!D_LIVE) return "";
+  return `
+    <svg class="ridge-band" viewBox="0 0 340 56" preserveAspectRatio="none" aria-hidden="true">
+      <path class="fill" d="M0,56 L0,52 C60,51 120,49 180,44 C220,40 250,34 280,24 C300,16 322,8 340,4 L340,56 Z"/>
+      <path class="rim2" d="M0,52 C60,51 120,49 180,44 C220,40 250,34 280,24 C300,16 322,8 340,4"/>
+      <path class="rim" pathLength="100" d="M0,52 C60,51 120,49 180,44 C220,40 250,34 280,24 C300,16 322,8 340,4"/>
+      <g class="head-g"><circle class="head" r="2.8" cx="0" cy="0"/></g>
+    </svg>
+  `;
+}
+
+/* ---- 6. 稜線の光：頭は経路上を歩く（cx/cy は使わない：Firefox）-- */
+function ridgeHeadKeyframes(rim, fromPct, toPct) {
+  const L = rim.getTotalLength(), kf = [], n = 14;
+  for (let i = 0; i <= n; i++) {
+    const p = rim.getPointAtLength(L * (fromPct + (toPct - fromPct) * i / n) / 100);
+    kf.push({ transform: `translate(${p.x.toFixed(2)}px,${p.y.toFixed(2)}px)` });
+  }
+  return kf;
+}
+function setRidgeHead(pct) {
+  const rim = document.querySelector(".ridge-band .rim");
+  const g = document.querySelector(".ridge-band .head-g");
+  if (!rim || !g) return;
+  const p = rim.getPointAtLength(rim.getTotalLength() * pct / 100);
+  g.style.transform = `translate(${p.x.toFixed(2)}px,${p.y.toFixed(2)}px)`;
+  g.classList.toggle("hide", pct <= 0);
+}
+
+/* 読込時：リング／数字は既存 tween() が担当。稜線と頭だけ同じ所作に合わせる */
+let ridgePctShown = null;
+function playRidge(pct, fromPct = 0) {
+  const rim = document.querySelector(".ridge-band .rim");
+  const g = document.querySelector(".ridge-band .head-g");
+  if (!rim) return;
+  ridgePctShown = pct;
+  const to = String(100 - pct);
+  if (D_RM) {
+    rim.style.transition = "";
+    rim.style.strokeDashoffset = to;
+    setRidgeHead(pct);
+    return;
+  }
+  rim.style.transition = "none";
+  setTimeout(() => { rim.style.transition = ""; }, 900);
+  rim.style.strokeDashoffset = to;
+  setRidgeHead(pct);
+  rim.animate([{ strokeDashoffset: String(100 - fromPct) }, { strokeDashoffset: to }],
+    { duration: 620, delay: 180, easing: D_EASE, fill: "backwards" });
+  if (g && pct > 0) {
+    g.animate(ridgeHeadKeyframes(rim, fromPct, pct),
+      { duration: 620, delay: 180, easing: D_EASE, fill: "backwards" });
+  }
+}
+
+/* 進捗が変わったとき：リング・数字（既存 tween）と同時・同イージング */
+function setRidgeProgress(pct) {
+  const rim = document.querySelector(".ridge-band .rim");
+  const g = document.querySelector(".ridge-band .head-g");
+  if (!rim) return;
+  if (D_RM) rim.style.transition = "";
+  const prev = ridgePctShown == null ? pct : ridgePctShown;
+  ridgePctShown = pct;
+  rim.style.strokeDashoffset = String(100 - pct);
+  if (!g) return;
+  if (D_RM) { setRidgeHead(pct); return; }
+  g.classList.remove("hide");
+  const a = g.animate(ridgeHeadKeyframes(rim, prev, pct),
+    { duration: 900, easing: D_EASE, fill: "forwards" });
+  a.onfinish = () => { a.cancel(); setRidgeHead(pct); };
+}
+
 /* ============================================================
    ホーム（#/home）＝計器盤
    ============================================================ */
@@ -673,6 +747,7 @@ function renderHome() {
             <div class="gs"><b>${summary.videoDone}<em> /${summary.videoTotal}</em></b><small>視聴した動画</small></div>
             <div class="gs hot"><b>${passCount}<em> /${passTotal}</em></b><small>クリアしたワーク</small></div>
           </div>
+          ${renderRidgeBand()}
         </section>
 
         ${renderLand("h")}
@@ -719,16 +794,20 @@ function renderHome() {
           from: growth.from, to: growth.to, duration: 1100, ease: easePower2Out,
           onUpdate: (v) => setHomeRing(v)
         });
+        setRidgeProgress(growth.to);          // リング・数字と同時に、同じ長さで動く
         showToast(`標高が上がりました <span class="g">${growth.from}% → ${growth.to}%</span>`);
       }, 450);
+      playRidge(growth.from, growth.from);    // 変化前の位置で静かに置いておく
     } else if (!homeRingShown) {
       homeRingShown = true;
       tween({
         from: 0, to: percent, duration: 1300, delay: 250, ease: easePower2Out,
         onUpdate: (v) => setHomeRing(v)
       });
+      playRidge(percent, 0);                  // 0 → 現在値。リングと同じ所作
     } else {
       setHomeRing(percent);
+      playRidge(percent, percent);            // 再訪時は再生しない（値だけ置く）
     }
   });
 }
