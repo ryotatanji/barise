@@ -542,9 +542,9 @@ const D_CONTOUR_SVG = `<svg  viewBox="0 0 375 680" preserveAspectRatio="xMidYMid
 
 const D_LIVE = true;
 const D_EASE = "cubic-bezier(.22,.61,.36,1)";
-const D_RM = window.matchMedia
-  ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  : false;
+const D_MOTION = true;
+const D_RM = !D_MOTION;
+document.documentElement.dataset.motion = D_MOTION ? "on" : "off";
 
 /* ---- 1. 時刻の判定は「1か所」だけ ---------------------------
    既存 greetingByHour() の境界（4 / 11 / 18）をそのまま使い、

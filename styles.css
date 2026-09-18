@@ -2299,24 +2299,32 @@ button, a, [role="button"] {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* ---- reduced-motion：動きだけ止める（色の変化は残す）----- */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
-    scroll-behavior: auto !important;
-  }
-  /* 例外：進行中を示すものは止めない。止めると「固まった」に見えるため */
-  .loading-ring {
-    animation-duration: 1s !important;
-    animation-iteration-count: infinite !important;
-  }
-  .thinking .dots i {
-    animation-duration: 1.2s !important;
-    animation-iteration-count: infinite !important;
-  }
+/* ---- C9: app-controlled decorative motion ----------------- */
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  transition-duration: .01ms !important;
+  scroll-behavior: auto !important;
 }
+html[data-motion="off"] .stage,
+html[data-motion="off"] .rise,
+html[data-motion="off"] .login-screen,
+html[data-motion="off"] .here-dot::after,
+html[data-motion="off"] .spark i,
+html[data-motion="off"] .d-live .land .glint,
+html[data-motion="off"] .d-live .land .mist,
+html[data-motion="off"] .d-live .route.route-play .ls-row.is-current::after,
+html[data-motion="off"] .d-live .route > .ls-row[style*="--row-entry"] > *,
+html[data-motion="off"] .d-live .quiz-question[style*="--row-entry"] > * {
+  animation: none !important;
+}
+html[data-motion="off"] .d-live .land .ll,
+html[data-motion="off"] .d-live .d-atmo .lyr {
+  transform: translate3d(0, 0, 0) !important;
+}
+html[data-motion="off"] .d-live .route .spark { display: none !important; }
+html[data-motion="off"] .d-live .ridge-band .rim { transition-duration: .9s !important; }
+/* ---- C9 end ------------------------------------------------ */
 /* ============ VISUAL PHASE 1 ここまで ============ */
 
 /* ============ VISUAL PHASE 1-b — モーション（ここから） ============ */
@@ -2495,14 +2503,7 @@ body.d-live::before {
 /* ---- 7. reduced-motion ---------------------------------------
    霧と灯は止める。視差はJS側で登録しない。
    進捗連動（稜線の光）は「動き」ではなく「値の表示」なので例外で残す。 */
-@media (prefers-reduced-motion: reduce) {
-  .d-live .land .glint,
-  .d-live .land .mist { animation: none !important; }
-  .d-live .land .ll,
-  .d-live .d-atmo .lyr { transform: translate3d(0, 0, 0) !important; }
-  /* ▼ 例外：既存の transition-duration:.01ms!important を打ち消す */
-  .d-live .ridge-band .rim { transition-duration: .9s !important; }
-}
+
 /* ---- C-2 ルートライン（v2.2 修正）------------------------------
    既存の .ls-row は一切書き換えない。足すのは
    ①区間別軌道（.route-rail） ②節点（.ls-row::before） ③光（.spark） の3つだけ。 */
@@ -2568,9 +2569,6 @@ body.d-live::before {
   100% { transform: translateY(var(--trail, 300px)); opacity: 0 }
 }
 /* reduced-motion：光と脈は装飾なので完全に消す。軌道の色は残す */
-@media (prefers-reduced-motion: reduce) {
-  .d-live .route .spark { display: none !important; }
-  .d-live .route.route-play .ls-row.is-current::after { animation: none !important; opacity: 0 !important; }
-}
+
 
 /* ============ VISUAL PHASE 4 ここまで ============ */
