@@ -3246,6 +3246,10 @@ document.addEventListener("submit", async (event) => {
 document.addEventListener("change", (event) => {
   const form = event.target.closest?.(".quiz-form");
   if (!form) return;
+  form.querySelectorAll('.quiz-question label').forEach((label) => {
+    const input = label.querySelector('input[type="radio"]');
+    label.classList.toggle("is-selected", Boolean(input?.checked));
+  });
   const questionCount = form.querySelectorAll("[data-quiz-question]").length;
   const answeredCount = new FormData(form).entries
     ? Array.from(new FormData(form).keys()).length
