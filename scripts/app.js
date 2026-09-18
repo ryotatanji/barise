@@ -8,7 +8,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-5-1-b031fix";
+} from "./data-provider.js?v=9-1-0-live";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -374,6 +374,7 @@ async function boot() {
       }
     }
 
+    mountDLive();
     render();
   } catch (error) {
     renderError(error.message);
@@ -489,6 +490,7 @@ function renderLogin(errorMessage = "", emailValue = getLastEmail(), showSupport
         </form>
         <p class="login-support-note">うまく入れないときも、サポートが確認しますのでご安心ください。</p>
       </section>
+      ${renderLand("fixed")}
     </main>
   `;
 }
@@ -531,12 +533,180 @@ function renderTabbar(current) {
   `;
 }
 
+const D_CONTOUR_SVG = `<svg  viewBox="0 0 375 680" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="none" stroke="rgba(163,174,192,.07)" stroke-width="1"><path d="M147.8,180.0 L148.2,181.6 L148.3,183.1 L148.0,184.7 L147.5,186.2 L146.8,187.7 L145.8,189.0 L144.7,190.3 L143.4,191.4 L142.1,192.5 L140.7,193.5 L139.4,194.4 L138.0,195.2 L136.7,196.1 L135.3,196.9 L134.0,197.7 L132.6,198.4 L131.1,199.1 L129.7,199.8 L128.1,200.3 L126.6,200.7 L124.9,201.0 L123.3,201.1 L121.6,201.2 L120.0,201.1 L118.4,200.9 L116.8,200.7 L115.2,200.5 L113.6,200.2 L112.0,199.9 L110.4,199.6 L108.7,199.3 L107.0,199.0 L105.3,198.6 L103.5,198.1 L101.8,197.5 L100.2,196.8 L98.6,195.9 L97.2,194.8 L96.1,193.5 L95.2,192.1 L94.5,190.6 L94.1,189.1 L94.0,187.5 L94.1,185.9 L94.4,184.3 L94.9,182.8 L95.3,181.4 L95.8,180.0 L96.3,178.7 L96.7,177.4 L97.0,176.1 L97.3,174.9 L97.5,173.5 L97.8,172.2 L98.0,170.8 L98.4,169.4 L98.8,168.0 L99.5,166.7 L100.3,165.4 L101.2,164.1 L102.4,163.0 L103.7,162.0 L105.1,161.1 L106.6,160.3 L108.2,159.7 L109.8,159.1 L111.4,158.6 L113.1,158.2 L114.8,157.8 L116.5,157.5 L118.2,157.3 L120.0,157.1 L121.8,157.0 L123.6,157.1 L125.3,157.3 L127.1,157.7 L128.7,158.2 L130.3,159.0 L131.7,159.9 L133.0,160.9 L134.2,162.0 L135.2,163.2 L136.1,164.5 L136.9,165.7 L137.7,166.9 L138.5,168.0 L139.3,169.1 L140.2,170.1 L141.1,171.2 L142.2,172.2 L143.3,173.3 L144.4,174.5 L145.4,175.7 L146.4,177.1 L147.2,178.5Z"/><path d="M176.2,180.0 L177.0,183.2 L177.1,186.4 L176.7,189.5 L175.7,192.6 L174.1,195.5 L172.0,198.2 L169.4,200.6 L166.6,202.8 L163.7,204.7 L160.6,206.4 L157.6,207.9 L154.7,209.4 L151.9,210.8 L149.2,212.2 L146.6,213.6 L144.0,215.1 L141.4,216.6 L138.7,218.2 L135.9,219.6 L133.0,220.9 L129.9,222.0 L126.7,222.9 L123.4,223.6 L120.0,223.9 L116.6,223.9 L113.2,223.7 L109.8,223.2 L106.5,222.6 L103.2,221.8 L100.0,220.9 L96.8,219.9 L93.6,218.8 L90.4,217.5 L87.2,216.2 L84.1,214.7 L81.0,213.0 L78.2,211.0 L75.6,208.8 L73.4,206.3 L71.6,203.7 L70.2,200.8 L69.4,197.7 L69.0,194.6 L69.1,191.5 L69.6,188.5 L70.3,185.5 L71.3,182.7 L72.2,180.0 L73.2,177.4 L74.0,174.9 L74.7,172.4 L75.2,169.8 L75.6,167.2 L75.9,164.5 L76.2,161.7 L76.6,158.8 L77.2,155.8 L78.1,152.8 L79.4,149.9 L81.2,147.1 L83.3,144.6 L85.9,142.4 L88.8,140.5 L92.0,138.9 L95.4,137.7 L98.9,136.9 L102.5,136.3 L106.0,135.9 L109.6,135.7 L113.1,135.7 L116.6,135.8 L120.0,135.9 L123.4,136.1 L126.8,136.5 L130.1,136.9 L133.4,137.6 L136.7,138.5 L139.8,139.6 L142.8,140.9 L145.6,142.5 L148.1,144.4 L150.5,146.4 L152.6,148.5 L154.6,150.7 L156.4,153.0 L158.1,155.2 L159.9,157.5 L161.6,159.7 L163.5,161.8 L165.5,164.1 L167.5,166.4 L169.6,168.8 L171.6,171.3 L173.4,174.0 L175.0,176.9Z"/><path d="M203.7,180.0 L204.5,184.7 L204.6,189.4 L203.9,194.1 L202.4,198.7 L200.1,203.0 L197.0,207.0 L193.3,210.6 L189.1,213.8 L184.6,216.5 L180.0,219.0 L175.4,221.1 L170.9,223.0 L166.6,224.9 L162.5,226.9 L158.7,228.9 L154.9,231.2 L151.2,233.6 L147.5,236.1 L143.6,238.7 L139.4,241.3 L135.0,243.6 L130.2,245.7 L125.2,247.3 L120.0,248.4 L114.7,249.0 L109.3,248.9 L103.9,248.3 L98.7,247.2 L93.7,245.6 L88.8,243.6 L84.2,241.4 L79.7,239.0 L75.5,236.4 L71.3,233.7 L67.3,230.8 L63.4,227.9 L59.8,224.7 L56.3,221.3 L53.2,217.8 L50.5,213.9 L48.3,209.9 L46.7,205.7 L45.6,201.4 L45.1,197.0 L45.2,192.6 L45.7,188.3 L46.6,184.1 L47.7,180.0 L48.8,176.1 L50.0,172.2 L50.9,168.4 L51.7,164.5 L52.4,160.6 L52.9,156.5 L53.4,152.2 L54.0,147.8 L54.9,143.2 L56.2,138.6 L58.1,134.1 L60.6,129.7 L63.7,125.7 L67.6,122.2 L72.0,119.2 L76.9,116.9 L82.2,115.2 L87.8,114.2 L93.4,113.7 L99.0,113.8 L104.5,114.2 L109.9,114.8 L115.0,115.6 L120.0,116.4 L124.9,117.3 L129.6,118.1 L134.4,118.9 L139.1,119.7 L143.8,120.6 L148.5,121.7 L153.2,123.0 L157.7,124.7 L162.1,126.6 L166.3,129.0 L170.2,131.6 L173.8,134.5 L177.1,137.7 L180.1,141.0 L182.9,144.4 L185.6,147.9 L188.2,151.5 L190.8,155.2 L193.3,158.9 L195.8,162.8 L198.2,166.8 L200.4,171.0 L202.3,175.4Z"/><path d="M228.8,180.0 L229.2,186.1 L229.0,192.1 L228.0,198.2 L226.2,204.1 L223.4,209.7 L219.9,215.0 L215.5,219.9 L210.5,224.2 L205.1,228.1 L199.3,231.5 L193.4,234.5 L187.6,237.2 L182.0,239.8 L176.6,242.4 L171.5,245.2 L166.5,248.2 L161.6,251.4 L156.7,254.9 L151.5,258.6 L146.1,262.3 L140.2,265.9 L133.9,269.2 L127.1,271.9 L120.0,273.9 L112.6,275.1 L105.2,275.3 L97.8,274.5 L90.6,272.9 L83.8,270.3 L77.4,267.1 L71.4,263.4 L66.0,259.2 L60.9,254.8 L56.2,250.3 L51.8,245.8 L47.6,241.3 L43.5,236.8 L39.5,232.2 L35.8,227.6 L32.2,222.9 L28.9,218.0 L26.1,212.9 L23.7,207.6 L22.0,202.2 L20.8,196.7 L20.3,191.1 L20.3,185.5 L20.8,180.0 L21.7,174.5 L22.8,169.2 L24.0,163.8 L25.2,158.5 L26.5,153.1 L27.7,147.7 L29.0,142.0 L30.4,136.2 L32.1,130.3 L34.3,124.3 L37.1,118.4 L40.6,112.8 L44.9,107.5 L50.0,102.8 L55.9,98.9 L62.5,95.8 L69.6,93.6 L77.1,92.3 L84.7,91.9 L92.2,92.3 L99.6,93.3 L106.7,94.7 L113.5,96.3 L120.0,97.9 L126.2,99.5 L132.3,100.8 L138.4,101.9 L144.4,102.9 L150.6,103.7 L157.0,104.5 L163.4,105.5 L170.0,106.8 L176.5,108.5 L182.8,110.7 L188.9,113.5 L194.6,116.8 L199.9,120.7 L204.6,125.1 L208.7,129.8 L212.3,134.9 L215.5,140.2 L218.3,145.6 L220.7,151.1 L222.9,156.7 L224.8,162.4 L226.5,168.1 L227.9,174.0Z"/><path d="M251.1,180.0 L250.5,187.2 L249.6,194.4 L248.3,201.6 L246.3,208.6 L243.6,215.5 L240.1,222.1 L235.9,228.4 L231.0,234.2 L225.4,239.6 L219.2,244.4 L212.8,248.8 L206.1,252.9 L199.4,256.6 L192.8,260.2 L186.2,263.8 L179.8,267.6 L173.4,271.6 L166.9,275.7 L160.2,280.1 L153.1,284.6 L145.6,288.9 L137.6,292.9 L129.0,296.3 L120.0,298.9 L110.7,300.5 L101.2,300.9 L91.8,300.0 L82.7,297.8 L74.1,294.4 L66.2,289.9 L59.0,284.6 L52.6,278.8 L46.9,272.6 L41.8,266.2 L37.2,259.9 L32.8,253.8 L28.6,247.8 L24.3,242.1 L20.0,236.5 L15.6,231.0 L11.2,225.4 L6.8,219.7 L2.7,213.7 L-1.0,207.4 L-4.1,200.9 L-6.5,194.1 L-8.2,187.1 L-8.9,180.0 L-8.9,172.9 L-8.1,165.7 L-6.8,158.7 L-4.9,151.7 L-2.6,144.8 L-0.1,137.9 L2.7,131.1 L5.8,124.2 L9.2,117.3 L13.0,110.5 L17.3,103.8 L22.3,97.3 L28.0,91.2 L34.5,85.7 L41.8,80.9 L49.8,77.1 L58.4,74.2 L67.4,72.5 L76.6,71.8 L85.8,72.1 L94.9,73.1 L103.6,74.8 L112.0,76.8 L120.0,78.9 L127.7,81.0 L135.1,82.7 L142.5,84.2 L150.0,85.3 L157.7,86.0 L165.7,86.7 L174.0,87.3 L182.6,88.3 L191.4,89.6 L200.1,91.7 L208.6,94.5 L216.7,98.2 L224.1,102.8 L230.6,108.2 L236.2,114.3 L240.8,121.0 L244.3,128.1 L247.0,135.5 L248.9,143.0 L250.1,150.5 L250.9,158.0 L251.2,165.4 L251.3,172.7Z"/><path d="M271.1,180.0 L269.2,188.3 L267.4,196.4 L265.6,204.5 L263.6,212.6 L261.3,220.6 L258.5,228.6 L255.1,236.4 L251.0,244.0 L246.1,251.3 L240.4,258.2 L234.0,264.6 L226.9,270.5 L219.4,275.9 L211.5,280.9 L203.5,285.7 L195.2,290.2 L186.8,294.7 L178.3,299.1 L169.6,303.5 L160.5,307.9 L151.1,312.2 L141.2,316.1 L130.8,319.4 L120.0,321.9 L108.9,323.4 L97.6,323.7 L86.5,322.5 L75.7,320.0 L65.5,316.0 L56.0,310.7 L47.5,304.4 L40.0,297.2 L33.5,289.6 L27.8,281.7 L22.7,273.9 L18.0,266.3 L13.5,259.0 L8.9,252.1 L4.0,245.6 L-1.3,239.2 L-6.9,233.0 L-12.8,226.6 L-18.9,219.9 L-24.7,212.8 L-30.1,205.3 L-34.8,197.2 L-38.5,188.8 L-40.9,180.0 L-42.1,171.0 L-41.9,162.0 L-40.4,153.0 L-37.8,144.2 L-34.1,135.7 L-29.7,127.5 L-24.7,119.6 L-19.2,112.0 L-13.3,104.6 L-7.1,97.4 L-0.6,90.5 L6.3,83.8 L13.7,77.4 L21.6,71.5 L30.1,66.2 L39.2,61.6 L48.8,57.9 L58.9,55.2 L69.3,53.6 L79.8,52.9 L90.2,53.2 L100.4,54.3 L110.4,56.0 L120.0,57.9 L129.3,60.0 L138.4,61.9 L147.4,63.6 L156.4,65.0 L165.7,66.0 L175.4,66.8 L185.5,67.6 L196.0,68.6 L206.8,70.1 L217.7,72.3 L228.4,75.4 L238.6,79.6 L248.1,85.0 L256.4,91.4 L263.4,98.9 L268.9,107.2 L272.9,116.2 L275.4,125.5 L276.6,135.0 L276.6,144.5 L275.9,153.8 L274.5,162.8 L272.9,171.5Z"/><path d="M290.4,180.0 L287.3,189.3 L284.6,198.3 L282.3,207.3 L280.3,216.3 L278.5,225.5 L276.6,234.9 L274.4,244.4 L271.5,254.0 L267.7,263.5 L262.9,272.8 L257.0,281.6 L249.9,289.9 L241.8,297.5 L232.7,304.3 L222.9,310.4 L212.6,315.7 L201.9,320.5 L190.8,324.7 L179.6,328.5 L168.1,332.0 L156.5,335.2 L144.6,337.9 L132.4,340.2 L120.0,341.8 L107.4,342.6 L94.7,342.4 L82.2,340.9 L69.9,338.1 L58.2,334.0 L47.3,328.6 L37.3,322.0 L28.3,314.4 L20.4,306.2 L13.4,297.5 L7.3,288.7 L1.7,280.1 L-3.6,271.7 L-8.9,263.7 L-14.6,256.1 L-20.8,248.8 L-27.5,241.5 L-34.7,234.2 L-42.3,226.6 L-50.0,218.5 L-57.4,209.9 L-64.0,200.5 L-69.6,190.5 L-73.6,180.0 L-75.9,169.1 L-76.3,158.1 L-74.7,147.2 L-71.3,136.6 L-66.2,126.5 L-59.7,117.0 L-52.1,108.2 L-43.7,100.0 L-34.9,92.4 L-25.9,85.3 L-16.7,78.6 L-7.5,72.1 L1.8,65.9 L11.1,59.9 L20.7,54.3 L30.6,49.0 L40.9,44.2 L51.5,40.2 L62.6,36.9 L73.9,34.5 L85.5,33.1 L97.1,32.6 L108.6,32.9 L120.0,33.8 L131.2,35.3 L142.2,37.0 L153.2,38.8 L164.1,40.6 L175.2,42.4 L186.6,44.0 L198.2,45.7 L210.3,47.7 L222.6,50.1 L235.0,53.1 L247.3,57.2 L259.1,62.3 L270.1,68.6 L279.8,76.2 L288.1,85.0 L294.5,94.8 L299.0,105.3 L301.6,116.4 L302.4,127.6 L301.6,138.8 L299.6,149.8 L296.9,160.3 L293.7,170.4Z"/><path d="M311.3,180.0 L307.4,190.4 L304.0,200.5 L301.3,210.5 L299.3,220.6 L297.8,231.1 L296.5,241.9 L295.2,253.1 L293.3,264.7 L290.6,276.4 L286.6,288.1 L281.1,299.5 L274.0,310.3 L265.3,320.2 L255.0,328.9 L243.5,336.4 L230.9,342.6 L217.6,347.5 L203.8,351.3 L189.8,354.0 L175.7,356.0 L161.7,357.3 L147.7,358.1 L133.8,358.5 L120.0,358.5 L106.2,358.0 L92.5,356.8 L78.9,355.0 L65.5,352.2 L52.4,348.5 L39.9,343.6 L28.1,337.6 L17.2,330.6 L7.3,322.8 L-1.7,314.3 L-9.9,305.3 L-17.3,296.1 L-24.2,287.0 L-30.9,278.0 L-37.7,269.1 L-44.7,260.5 L-52.3,251.9 L-60.3,243.2 L-68.7,234.2 L-77.2,224.7 L-85.5,214.6 L-93.2,203.8 L-99.8,192.2 L-104.7,180.0 L-107.7,167.4 L-108.4,154.6 L-106.7,141.8 L-102.5,129.5 L-96.1,117.9 L-87.8,107.2 L-77.9,97.4 L-67.0,88.7 L-55.3,80.9 L-43.5,73.9 L-31.7,67.4 L-20.2,61.4 L-9.0,55.5 L1.8,49.7 L12.4,43.7 L22.9,37.8 L33.6,31.8 L44.6,26.1 L56.1,20.7 L68.1,16.0 L80.5,12.0 L93.4,9.1 L106.6,7.2 L120.0,6.5 L133.4,6.7 L146.8,7.9 L160.0,9.8 L173.1,12.2 L186.1,15.1 L199.1,18.4 L212.1,21.9 L225.2,25.8 L238.4,30.1 L251.5,35.0 L264.4,40.6 L276.9,47.2 L288.6,54.9 L299.1,63.7 L308.2,73.6 L315.5,84.5 L320.8,96.2 L324.1,108.5 L325.3,121.0 L324.6,133.6 L322.5,145.9 L319.2,157.8 L315.3,169.2Z"/><path d="M335.9,180.0 L332.1,191.8 L328.6,203.2 L325.6,214.6 L323.3,226.1 L321.5,237.9 L320.1,250.1 L318.8,262.9 L317.1,276.3 L314.5,290.0 L310.6,303.8 L305.1,317.3 L297.6,330.3 L288.1,342.2 L276.6,352.7 L263.4,361.6 L248.6,368.5 L232.9,373.6 L216.4,376.9 L199.7,378.5 L183.0,378.8 L166.6,378.1 L150.6,376.7 L135.1,374.8 L120.0,372.8 L105.2,370.7 L90.7,368.5 L76.2,366.2 L61.9,363.6 L47.6,360.5 L33.5,356.8 L19.7,352.2 L6.3,346.6 L-6.4,340.0 L-18.3,332.5 L-29.3,324.1 L-39.5,315.0 L-48.9,305.3 L-57.6,295.3 L-65.9,285.1 L-73.9,274.7 L-81.9,264.3 L-90.0,253.6 L-98.1,242.6 L-106.2,231.3 L-114.0,219.4 L-121.2,206.9 L-127.4,193.7 L-132.1,180.0 L-134.9,165.9 L-135.4,151.5 L-133.4,137.3 L-128.8,123.6 L-121.7,110.6 L-112.3,98.6 L-101.0,87.8 L-88.2,78.3 L-74.7,69.9 L-60.7,62.7 L-46.8,56.2 L-33.3,50.2 L-20.5,44.4 L-8.3,38.5 L3.4,32.3 L14.6,25.6 L25.9,18.5 L37.3,11.0 L49.2,3.6 L61.8,-3.7 L75.3,-10.3 L89.5,-15.9 L104.5,-20.3 L120.0,-23.2 L135.8,-24.5 L151.8,-24.1 L167.5,-22.2 L183.0,-18.9 L198.0,-14.5 L212.6,-9.1 L226.7,-3.0 L240.3,3.6 L253.6,10.8 L266.6,18.3 L279.3,26.3 L291.4,34.9 L303.0,44.2 L313.7,54.3 L323.2,65.1 L331.4,76.7 L337.8,89.1 L342.4,102.0 L345.1,115.3 L345.9,128.8 L345.0,142.1 L342.8,155.2 L339.6,167.8Z"/><path d="M365.6,180.0 L362.9,193.5 L359.9,206.7 L356.7,219.8 L353.8,233.0 L351.0,246.3 L348.4,260.1 L345.8,274.2 L342.8,288.8 L339.0,303.8 L334.0,318.9 L327.4,333.9 L318.8,348.3 L308.2,361.6 L295.4,373.4 L280.6,383.3 L264.0,391.1 L246.2,396.5 L227.5,399.7 L208.5,400.7 L189.6,399.8 L171.1,397.6 L153.3,394.3 L136.3,390.6 L120.0,386.8 L104.3,383.2 L88.9,380.0 L73.6,377.2 L58.3,374.8 L42.8,372.5 L27.0,370.0 L11.0,367.0 L-5.0,363.2 L-20.9,358.4 L-36.2,352.3 L-50.8,344.8 L-64.5,336.1 L-77.0,326.2 L-88.3,315.2 L-98.4,303.5 L-107.4,291.1 L-115.6,278.3 L-122.9,265.1 L-129.7,251.7 L-136.0,238.1 L-141.8,224.1 L-147.0,209.7 L-151.2,195.0 L-154.4,180.0 L-156.0,164.7 L-155.7,149.3 L-153.3,134.0 L-148.5,119.1 L-141.4,104.9 L-132.0,91.7 L-120.6,79.6 L-107.6,68.8 L-93.4,59.4 L-78.5,51.1 L-63.6,43.8 L-48.9,37.1 L-34.7,30.8 L-21.2,24.3 L-8.3,17.5 L4.0,10.0 L16.2,1.9 L28.5,-6.8 L41.4,-16.0 L55.0,-25.2 L69.7,-34.0 L85.5,-41.9 L102.3,-48.5 L120.0,-53.2 L138.3,-55.9 L156.8,-56.3 L175.1,-54.3 L192.9,-50.2 L209.9,-44.2 L226.0,-36.5 L241.0,-27.6 L255.0,-17.8 L268.0,-7.5 L280.3,3.2 L292.0,14.0 L303.2,25.0 L314.0,36.1 L324.3,47.4 L334.0,59.0 L342.9,71.1 L350.8,83.7 L357.5,96.8 L362.7,110.3 L366.2,124.2 L368.2,138.2 L368.6,152.3 L367.6,166.3Z"/><path d="M400.4,180.0 L399.7,195.5 L397.6,210.9 L394.4,226.2 L390.5,241.3 L386.0,256.4 L381.1,271.5 L375.8,286.7 L369.9,302.1 L363.3,317.6 L355.8,333.1 L346.9,348.4 L336.4,363.1 L324.0,376.9 L309.8,389.3 L293.7,399.9 L275.9,408.4 L256.7,414.6 L236.6,418.2 L216.1,419.5 L195.6,418.6 L175.5,416.0 L156.1,412.2 L137.6,407.6 L120.0,402.8 L103.1,398.3 L86.6,394.4 L70.3,391.3 L53.9,388.9 L36.9,387.1 L19.4,385.5 L1.2,383.8 L-17.5,381.5 L-36.4,378.1 L-55.3,373.3 L-73.5,366.7 L-90.8,358.3 L-106.6,348.1 L-120.6,336.2 L-132.6,322.8 L-142.7,308.3 L-150.8,293.0 L-157.1,277.1 L-161.9,261.0 L-165.6,244.7 L-168.2,228.5 L-170.1,212.3 L-171.2,196.2 L-171.6,180.0 L-171.1,163.9 L-169.5,147.7 L-166.6,131.8 L-162.0,116.1 L-155.6,100.8 L-147.4,86.3 L-137.2,72.7 L-125.5,60.1 L-112.3,48.7 L-98.0,38.4 L-83.2,29.2 L-68.1,20.8 L-53.1,13.0 L-38.4,5.3 L-24.1,-2.5 L-10.1,-10.7 L3.7,-19.5 L17.7,-28.9 L32.2,-38.8 L47.5,-48.9 L63.9,-58.7 L81.5,-67.7 L100.2,-75.4 L120.0,-81.2 L140.5,-84.6 L161.3,-85.4 L181.9,-83.4 L201.9,-78.6 L220.8,-71.2 L238.3,-61.6 L254.2,-50.3 L268.5,-37.7 L281.4,-24.3 L293.0,-10.7 L303.6,2.8 L313.7,16.1 L323.5,29.0 L333.2,41.6 L343.0,53.9 L352.7,66.3 L362.2,78.9 L371.3,91.9 L379.7,105.4 L387.0,119.5 L392.8,134.1 L397.0,149.1 L399.6,164.5Z"/><path d="M438.5,180.0 L440.2,197.8 L439.4,215.6 L436.3,233.2 L431.3,250.6 L424.5,267.5 L416.4,283.9 L407.3,299.9 L397.3,315.5 L386.7,330.8 L375.2,345.7 L363.0,360.3 L349.7,374.4 L335.2,387.7 L319.5,400.0 L302.3,410.9 L283.8,420.0 L264.1,427.2 L243.5,432.2 L222.3,435.0 L200.9,435.6 L179.8,434.3 L159.1,431.4 L139.2,427.6 L120.0,423.2 L101.5,418.7 L83.5,414.7 L65.6,411.3 L47.6,408.7 L29.0,406.7 L9.7,405.2 L-10.4,403.8 L-31.4,401.9 L-52.9,399.0 L-74.6,394.6 L-95.9,388.3 L-116.2,379.8 L-134.8,369.1 L-151.3,356.2 L-165.2,341.2 L-176.2,324.7 L-184.3,307.0 L-189.6,288.5 L-192.5,269.8 L-193.3,251.0 L-192.6,232.6 L-190.8,214.6 L-188.3,197.1 L-185.5,180.0 L-182.5,163.2 L-179.3,146.7 L-175.7,130.2 L-171.5,113.9 L-166.4,97.7 L-160.1,81.8 L-152.4,66.4 L-143.1,51.5 L-132.2,37.4 L-119.8,24.3 L-106.2,12.2 L-91.5,1.0 L-76.2,-9.3 L-60.4,-18.9 L-44.4,-28.2 L-28.2,-37.2 L-11.9,-46.3 L4.7,-55.6 L21.7,-65.0 L39.4,-74.4 L58.0,-83.6 L77.7,-92.0 L98.4,-99.3 L120.0,-104.8 L142.3,-108.1 L164.9,-108.8 L187.4,-106.6 L209.1,-101.4 L229.6,-93.3 L248.5,-82.6 L265.6,-69.8 L280.6,-55.4 L293.8,-40.0 L305.3,-24.3 L315.5,-8.7 L325.1,6.5 L334.3,21.0 L343.7,34.7 L353.6,47.9 L364.2,60.7 L375.3,73.5 L386.9,86.5 L398.4,100.0 L409.4,114.4 L419.4,129.6 L427.9,145.7 L434.3,162.6Z"/><path d="M477.0,180.0 L480.8,200.0 L481.3,220.2 L478.3,240.3 L472.1,259.8 L463.0,278.5 L451.5,296.2 L438.2,312.8 L423.7,328.3 L408.2,343.0 L392.3,356.8 L376.1,370.0 L359.6,382.7 L342.7,394.9 L325.3,406.4 L307.4,417.3 L288.6,427.1 L269.0,435.7 L248.6,442.7 L227.5,448.1 L206.0,451.6 L184.2,453.2 L162.5,453.1 L141.0,451.6 L120.0,449.0 L99.4,445.8 L79.2,442.2 L59.2,438.7 L39.1,435.5 L18.6,432.7 L-2.4,430.1 L-24.2,427.4 L-46.8,424.4 L-69.9,420.5 L-93.3,415.2 L-116.4,408.0 L-138.5,398.7 L-159.0,387.1 L-177.2,373.0 L-192.5,356.7 L-204.4,338.5 L-212.8,318.9 L-217.7,298.4 L-219.3,277.5 L-218.2,256.7 L-214.9,236.4 L-210.2,216.8 L-204.7,198.0 L-199.0,180.0 L-193.7,162.6 L-188.9,145.6 L-184.7,128.7 L-180.9,111.8 L-177.2,94.6 L-173.0,77.3 L-168.1,59.8 L-161.8,42.3 L-153.8,25.2 L-144.0,8.6 L-132.2,-7.1 L-118.5,-21.8 L-103.0,-35.2 L-86.2,-47.4 L-68.2,-58.3 L-49.4,-68.3 L-30.0,-77.3 L-10.1,-85.7 L10.2,-93.6 L31.0,-101.0 L52.3,-107.8 L74.3,-114.0 L96.8,-119.2 L120.0,-123.0 L143.6,-125.0 L167.4,-124.9 L191.1,-122.3 L214.0,-117.0 L235.9,-109.0 L256.3,-98.4 L274.8,-85.6 L291.2,-71.0 L305.7,-55.1 L318.3,-38.6 L329.4,-22.0 L339.5,-5.7 L349.2,9.9 L359.1,24.8 L369.6,38.9 L381.0,52.5 L393.5,65.9 L406.8,79.5 L420.8,93.6 L434.8,108.6 L448.1,124.8 L460.1,142.1 L469.9,160.6Z"/></g></svg>`;
+
+/* ============================================================
+   VISUAL PHASE 4 — 生きた背景（app.js へ追記するブロック）
+   OFFスイッチ: D_LIVE=false にすると markup も class も出ない。
+   ============================================================ */
+
+const D_LIVE = true;
+const D_EASE = "cubic-bezier(.22,.61,.36,1)";
+const D_MOTION = true;
+const D_RM = !D_MOTION;
+document.documentElement.dataset.motion = D_MOTION ? "on" : "off";
+
+/* ---- 1. 時刻の判定は「1か所」だけ ---------------------------
+   既存 greetingByHour() の境界（4 / 11 / 18）をそのまま使い、
+   「こんばんは」の帯だけ 18-22 / 22-4 に割って夕と夜を作る。
+   → 挨拶の文言は全24時間で現行と1文字も変わらない（§7-9 に検証結果）。 */
+function timeOfDay(hour = new Date().getHours()) {
+  if (hour < 4) return "night";
+  if (hour < 11) return "morning";
+  if (hour < 18) return "day";
+  if (hour < 22) return "evening";
+  return "night";
+}
+
+/* 置き換え後の greetingByHour（返り値は現行と完全一致） */
 function greetingByHour() {
-  const hour = new Date().getHours();
-  if (hour < 4) return "こんばんは";
-  if (hour < 11) return "おはようございます";
-  if (hour < 18) return "こんにちは";
-  return "こんばんは";
+  const t = timeOfDay();
+  if (t === "morning") return "おはようございます";
+  if (t === "day") return "こんにちは";
+  return "こんばんは";            // evening / night
+}
+
+/* ---- 2. 背景の土台を1回だけ作る ------------------------------ */
+let dAtmoReady = false;
+function mountDLive() {
+  if (!D_LIVE || dAtmoReady) return;
+  dAtmoReady = true;
+  document.body.classList.add("d-live");
+  document.body.classList.add("tod-" + timeOfDay());
+  const atmo = document.createElement("div");
+  atmo.className = "d-atmo";
+  atmo.setAttribute("aria-hidden", "true");
+  atmo.innerHTML = `<div class="lyr" data-p=".06"><div class="cstat">${D_CONTOUR_SVG}</div></div>`;
+  document.body.appendChild(atmo);
+  if (!D_RM) bindDParallax();
+  setInterval(() => {              /* 日をまたいでも空が追随する */
+    const t = "tod-" + timeOfDay();
+    if (!document.body.classList.contains(t)) {
+      document.body.className = document.body.className.replace(/tod-\w+/, t);
+    }
+  }, 600000);
+}
+
+/* ---- 3. 視差：コンテンツと同方向・より遅く --------------------
+   固定層(.d-atmo .lyr) は内容が上へ y 動くあいだ 0。層を -y*p で「同方向・遅く」。
+   窓(.land .ll) は内容と一緒に上へ y 動く。+y*k を足して「同方向・遅く」。
+   どちらも符号が逆に見えるが、基準が固定か流れるかの違いで意味は同じ。 */
+function bindDParallax() {
+  let ticking = false, idle = null;
+  window.addEventListener("scroll", () => {
+    document.body.classList.add("scrolling");
+    clearTimeout(idle);
+    idle = setTimeout(() => document.body.classList.remove("scrolling"), 220);
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      const y = window.scrollY;
+      document.querySelectorAll(".d-atmo .lyr").forEach((l) => {
+        l.style.transform = `translate3d(0,${(-y * parseFloat(l.dataset.p || 0)).toFixed(1)}px,0)`;
+      });
+      document.querySelectorAll(".land:not(.fixed) .ll").forEach((l) => {
+        l.style.transform = `translate3d(0,${(y * parseFloat(l.dataset.k || 0)).toFixed(1)}px,0)`;
+      });
+      ticking = false;
+    });
+  }, { passive: true });
+}
+
+/* ---- 4. 窓のマークアップ（全画面で同一。差は variant クラスだけ）-- */
+function renderLand(variant = "") {
+  if (!D_LIVE) return "";
+  return `
+    <div class="land${variant ? " " + variant : ""}" aria-hidden="true">
+      <div class="ll far" data-k=".18">
+        <svg viewBox="0 0 420 200" preserveAspectRatio="none"><path d="M0,200 L0,118 C28,110 58,86 94,90 C120,93 138,54 168,44 C188,38 204,60 226,54 C258,46 282,10 308,20 C332,30 352,64 384,56 C400,52 410,50 420,58 L420,200 Z"/></svg>
+        <div class="glint"></div>
+      </div>
+      <div class="ll mid" data-k=".10">
+        <svg viewBox="0 0 420 200" preserveAspectRatio="none"><path d="M0,200 L0,144 C34,134 70,114 110,118 C140,121 164,90 198,82 C224,76 246,104 276,98 C302,93 322,70 352,78 C382,86 402,108 420,102 L420,200 Z"/></svg>
+        <div class="mist"></div>
+      </div>
+      <div class="ll near" data-k=".04">
+        <svg viewBox="0 0 420 200" preserveAspectRatio="none">
+          <path d="M0,200 L0,170 C40,162 80,154 118,146 C150,139 175,114 196,94 L214,76 L226,90 C244,114 270,134 300,144 C340,158 380,164 420,160 L420,200 Z"/>
+          <path class="crest" d="M196,94 L214,76 L226,90" fill="none" stroke="url(#crestGrad)" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </div>
+    </div>
+  `;
+}
+
+/* ---- 5. 稜線の帯（ホームの進捗パネル内）---------------------- */
+function renderRidgeBand() {
+  if (!D_LIVE) return "";
+  return `
+    <svg class="ridge-band" viewBox="0 0 340 56" preserveAspectRatio="none" aria-hidden="true">
+      <path class="fill" d="M0,56 L0,52 C60,51 120,49 180,44 C220,40 250,34 280,24 C300,16 322,8 340,4 L340,56 Z"/>
+      <path class="rim2" d="M0,52 C60,51 120,49 180,44 C220,40 250,34 280,24 C300,16 322,8 340,4"/>
+      <path class="rim" pathLength="100" d="M0,52 C60,51 120,49 180,44 C220,40 250,34 280,24 C300,16 322,8 340,4"/>
+      <g class="head-g"><circle class="head" r="2.8" cx="0" cy="0"/></g>
+    </svg>
+  `;
+}
+
+/* ---- 6. 稜線の光：頭は経路上を歩く（cx/cy は使わない：Firefox）-- */
+function ridgeHeadKeyframes(rim, fromPct, toPct) {
+  const L = rim.getTotalLength(), kf = [], n = 14;
+  for (let i = 0; i <= n; i++) {
+    const p = rim.getPointAtLength(L * (fromPct + (toPct - fromPct) * i / n) / 100);
+    kf.push({ transform: `translate(${p.x.toFixed(2)}px,${p.y.toFixed(2)}px)` });
+  }
+  return kf;
+}
+function setRidgeHead(pct) {
+  const rim = document.querySelector(".ridge-band .rim");
+  const g = document.querySelector(".ridge-band .head-g");
+  if (!rim || !g) return;
+  const p = rim.getPointAtLength(rim.getTotalLength() * pct / 100);
+  g.style.transform = `translate(${p.x.toFixed(2)}px,${p.y.toFixed(2)}px)`;
+  g.classList.toggle("hide", pct <= 0);
+}
+
+/* 読込時：リング／数字は既存 tween() が担当。稜線と頭だけ同じ所作に合わせる */
+let ridgePctShown = null;
+function playRidge(pct, fromPct = 0) {
+  const rim = document.querySelector(".ridge-band .rim");
+  const g = document.querySelector(".ridge-band .head-g");
+  if (!rim) return;
+  ridgePctShown = pct;
+  const to = String(100 - pct);
+  if (D_RM) {
+    rim.style.transition = "";
+    rim.style.strokeDashoffset = to;
+    setRidgeHead(pct);
+    return;
+  }
+  rim.style.transition = "none";
+  setTimeout(() => { rim.style.transition = ""; }, 900);
+  rim.style.strokeDashoffset = to;
+  setRidgeHead(pct);
+  rim.animate([{ strokeDashoffset: String(100 - fromPct) }, { strokeDashoffset: to }],
+    { duration: 620, delay: 180, easing: D_EASE, fill: "backwards" });
+  if (g && pct > 0) {
+    g.animate(ridgeHeadKeyframes(rim, fromPct, pct),
+      { duration: 620, delay: 180, easing: D_EASE, fill: "backwards" });
+  }
+}
+
+/* 進捗が変わったとき：リング・数字（既存 tween）と同時・同イージング */
+function setRidgeProgress(pct) {
+  const rim = document.querySelector(".ridge-band .rim");
+  const g = document.querySelector(".ridge-band .head-g");
+  if (!rim) return;
+  if (D_RM) rim.style.transition = "";
+  const prev = ridgePctShown == null ? pct : ridgePctShown;
+  ridgePctShown = pct;
+  rim.style.strokeDashoffset = String(100 - pct);
+  if (!g) return;
+  if (D_RM) { setRidgeHead(pct); return; }
+  g.classList.remove("hide");
+  const a = g.animate(ridgeHeadKeyframes(rim, prev, pct),
+    { duration: 900, easing: D_EASE, fill: "forwards" });
+  a.onfinish = () => { a.cancel(); setRidgeHead(pct); };
 }
 
 /* ============================================================
@@ -583,7 +753,10 @@ function renderHome() {
             <div class="gs"><b>${summary.videoDone}<em> /${summary.videoTotal}</em></b><small>視聴した動画</small></div>
             <div class="gs hot"><b>${passCount}<em> /${passTotal}</em></b><small>クリアしたワーク</small></div>
           </div>
+          ${renderRidgeBand()}
         </section>
+
+        ${renderLand("h")}
 
         ${cta ? `
           <section class="today2 rise rise-1" aria-label="今日の一歩">
@@ -627,16 +800,20 @@ function renderHome() {
           from: growth.from, to: growth.to, duration: 1100, ease: easePower2Out,
           onUpdate: (v) => setHomeRing(v)
         });
+        setRidgeProgress(growth.to);          // リング・数字と同時に、同じ長さで動く
         showToast(`標高が上がりました <span class="g">${growth.from}% → ${growth.to}%</span>`);
       }, 450);
+      playRidge(growth.from, growth.from);    // 変化前の位置で静かに置いておく
     } else if (!homeRingShown) {
       homeRingShown = true;
       tween({
         from: 0, to: percent, duration: 1300, delay: 250, ease: easePower2Out,
         onUpdate: (v) => setHomeRing(v)
       });
+      playRidge(percent, 0);                  // 0 → 現在値。リングと同じ所作
     } else {
       setHomeRing(percent);
+      playRidge(percent, percent);            // 再訪時は再生しない（値だけ置く）
     }
   });
 }
@@ -783,6 +960,73 @@ function renderChapterRow(learning, phase) {
    学習一覧（#/learning）
    ============================================================ */
 
+/* ---- C-2 ルートライン（v2.2 修正）---------------------------- */
+
+/* 節点の中心は border 込みで実測。各節点の担当区間を中点で分ける。 */
+function layoutRouteSegments(route) {
+  if (!D_LIVE || !document.body.classList.contains("d-live")) return;
+  const rail = route.querySelector(":scope > .route-rail");
+  const rows = [...route.querySelectorAll(":scope > .ls-row")];
+  if (!rail) return;
+  const rr = route.getBoundingClientRect();
+  const routeStyle = getComputedStyle(route);
+  const scale = rr.width / parseFloat(routeStyle.width) || 1;
+  const railStyle = getComputedStyle(rail);
+  const top = parseFloat(railStyle.top);
+  const end = Math.max(top, parseFloat(routeStyle.height) - parseFloat(railStyle.bottom));
+  const centers = rows.map((row) => {
+    const box = row.getBoundingClientRect();
+    const style = getComputedStyle(row);
+    const dot = getComputedStyle(row, "::before");
+    return (box.top - rr.top) / scale + parseFloat(style.borderTopWidth)
+      + parseFloat(dot.top) + parseFloat(dot.height) / 2;
+  });
+  /* 共通の境界を1/64px単位へ揃え、隣接区間の丸め方による隙間を防ぐ。 */
+  const edges = [top, ...centers.slice(1).map((center, i) => (centers[i] + center) / 2), end]
+    .map((value) => Math.round(value * 64) / 64);
+  const segments = rows.map((row, i) => {
+    const start = edges[i];
+    const stop = edges[i + 1];
+    const segment = document.createElement("span");
+    segment.className = "route-segment";
+    segment.dataset.state = row.dataset.state;
+    segment.style.top = Math.max(0, start - top) + "px";
+    segment.style.height = Math.max(0, Math.min(end, stop) - Math.max(top, start)) + "px";
+    return segment;
+  });
+  rail.replaceChildren(...segments);
+  const currentIndex = rows.findIndex((row) => row.classList.contains("is-current"));
+  if (currentIndex >= 0) {
+    route.style.setProperty("--trail", Math.max(0, centers[currentIndex] - top) + "px");
+  }
+}
+
+/* 光は現在地の章で1回だけ。色は全章で更新し、文字折返しにも追従する。 */
+let routeSparkShown = false;
+let routeResizeObserver = null;
+function playRouteSpark() {
+  if (!D_LIVE || !document.body.classList.contains("d-live")) return;
+  const routes = [...document.querySelectorAll(".route")];
+  routes.forEach(layoutRouteSegments);
+  if (typeof ResizeObserver !== "undefined") {
+    if (!routeResizeObserver) routeResizeObserver = new ResizeObserver((entries) => {
+      const changed = new Set(entries.map((entry) => entry.target.closest(".route")));
+      changed.forEach((route) => { if (route?.isConnected) layoutRouteSegments(route); });
+    });
+    routeResizeObserver.disconnect();
+    routes.forEach((route) => {
+      routeResizeObserver.observe(route);
+      route.querySelectorAll(":scope > .ls-row").forEach((row) => routeResizeObserver.observe(row));
+    });
+  }
+  const route = document.querySelector(".route .ls-row.is-current")?.closest(".route");
+  if (!route) return;
+  const spark = route.querySelector(":scope > .spark");
+  if (!spark || D_RM || routeSparkShown) return;
+  routeSparkShown = true;
+  route.classList.add("route-play");
+}
+
 function renderLearningPage() {
   const learning = state.learning;
   if (!learning) {
@@ -803,6 +1047,7 @@ function renderLearningPage() {
         <p class="page-kicker">ROUTE</p>
         <h1 class="page-title">登頂ルート</h1>
         <p class="page-lead">動画を見て、ミニワークで言葉にする。その一歩ずつが、次の章への道になります。</p>
+        ${renderLand("r")}
         ${phases.map((phase, index) => renderPhaseGroup(learning, phase, index)).join("")}
         <div class="page-foot">
           <a class="text-link" href="${config.supportLineUrl}" target="_blank" rel="noopener">公式LINEへ戻る</a>
@@ -811,7 +1056,13 @@ function renderLearningPage() {
     </div>
   `;
 
+  app.querySelectorAll(".route").forEach((route) => {
+    route.closest(".stage")?.classList.add("d-route-static");
+    route.closest(".phase-group")?.classList.add("d-route-static");
+  });
+
   requestAnimationFrame(() => scrollToPageTop());
+  requestAnimationFrame(() => playRouteSpark());
 }
 
 function renderPhaseGroup(learning, phase, index) {
@@ -839,7 +1090,13 @@ function renderPhaseGroup(learning, phase, index) {
         <span class="ph-title">${no ? `<span class="no">${no}</span>` : ""}${escapeHtml(phase.phase_title)}</span>
         <span class="ph-count${stateName === "done" ? " done" : ""}">${stateName === "done" ? "★ クリア " : ""}${done}/${total}</span>
       </div>
-      ${phase.lessons.map((lesson) => renderLessonRow(learning, phase, lesson)).join("") || `<p class="phase-locked-note">この章の教材は順次ひらいていきます。</p>`}
+      ${phase.lessons.length ? `
+        <div class="route">
+          <span class="route-rail" aria-hidden="true"></span>
+          <span class="spark" aria-hidden="true"></span>
+          ${phase.lessons.map((lesson) => renderLessonRow(learning, phase, lesson)).join("")}
+        </div>
+      ` : `<p class="phase-locked-note">この章の教材は順次ひらいていきます。</p>`}
     </section>
   `;
 }
@@ -861,6 +1118,19 @@ function stationSubText(lesson) {
   if (lesson.miniWork) pieces.push("ミニワーク");
   if (lesson.work) pieces.push("本ワーク");
   return pieces.join(" ・ ");
+}
+
+function rowEntryStyle(index) {
+  const enabled = Number.isInteger(index) && index >= 0 && index < 6;
+  const delay = enabled ? 180 + index * 40 : 0;
+  return `--d:${delay}ms;--row-entry:${enabled ? "dRowEnter" : "none"};`;
+}
+
+function lessonEntryStyle(learning, lesson) {
+  const lessons = learning.phases
+    .filter((phase) => phase.isAccessible)
+    .flatMap((phase) => phase.lessons);
+  return rowEntryStyle(lessons.findIndex((item) => item.lesson_id === lesson.lesson_id));
 }
 
 function renderLessonRow(learning, phase, lesson) {
@@ -890,9 +1160,9 @@ function renderLessonRow(learning, phase, lesson) {
   `;
 
   if (stateName === "locked") {
-    return `<div class="ls-row is-locked">${inner}</div>`;
+    return `<div class="ls-row is-locked" data-state="locked" style="${lessonEntryStyle(learning, lesson)}">${inner}</div>`;
   }
-  return `<a class="ls-row${stateName === "current" ? " is-current" : ""}" href="${escapeAttribute(cta.href)}">${inner}</a>`;
+  return `<a class="ls-row${stateName === "current" ? " is-current" : ""}" data-state="${stateName}" style="${lessonEntryStyle(learning, lesson)}" href="${escapeAttribute(cta.href)}">${inner}</a>`;
 }
 
 /* ============================================================
@@ -920,6 +1190,8 @@ function renderLesson(lessonId, section = "") {
           <p class="lt-k">${isFinalPhase(phase) ? "最終まとめ" : `CHAPTER ${padChapter(phase?.phase_order)}`}</p>
           <h1>${escapeHtml(lesson.lesson_title)}</h1>
         </div>
+
+        ${renderLand("t")}
 
         ${renderVideoBlock(lesson)}
         ${renderQuizBlock(lesson)}
@@ -1024,7 +1296,7 @@ function renderQuizForm(quiz, isRetry = false) {
     <form class="quiz-form" data-form="quiz" data-quiz-id="${escapeAttribute(quiz.quiz_id)}">
       <ol class="quiz-question-list">
         ${(quiz.questions || []).map((question, index) => `
-          <li class="quiz-question" data-quiz-question="${escapeAttribute(question.question_id)}">
+          <li class="quiz-question" data-quiz-question="${escapeAttribute(question.question_id)}" style="${rowEntryStyle(index)}">
             <p><span>問${index + 1}</span>${escapeHtml(question.statement)}</p>
             <fieldset>
               <legend class="sr-only">問${index + 1}の回答</legend>
@@ -1401,6 +1673,8 @@ function renderWorksPage() {
         <h1 class="page-title">実践ワーク</h1>
         <p class="page-lead">学んだ視点を、あなたの実務に落とし込む場所です。AIが伴走し、テーマ整理から最終フィードバックまでこのページ内で完結します。</p>
 
+        ${renderLand("r")}
+
         ${nextWork ? `
           <div class="sec-h-row rise">
             <span class="sec-h">いま取り組むワーク</span>
@@ -1519,6 +1793,7 @@ function renderAiWorkMain(work) {
       <h1>${escapeHtml(work.title)}</h1>
       <p class="lt-sub">${escapeHtml(work.work_goal || work.purpose)}</p>
     </div>
+    ${renderLand("t")}
     <div class="meta-chips">
       ${renderAiWorkStatusBadge(status)}
       ${renderMetaChip("鍛える力", work.target_skill || "判断力 / 仮説検証 / PDCA")}
@@ -2528,22 +2803,36 @@ async function refreshLearningState() {
 async function handleLogin(event) {
   event.preventDefault();
   const form = event.target;
-  const email = normalizeEmail(new FormData(form).get("email"));
-  const result = await provider.login(email);
+  const button = form.querySelector('button[type="submit"]');
+  if (!button || button.disabled) return;
+  const originalMarkup = button.innerHTML;
+  let email = "";
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  button.textContent = "確認しています\u2026";
 
-  if (!result.ok) {
-    const message = loginErrorMessage(result);
-    renderLogin(message, email, true);
-    return;
+  try {
+    email = normalizeEmail(new FormData(form).get("email"));
+    const result = await provider.login(email);
+    if (!result.ok) {
+      renderLogin(loginErrorMessage(result), email, true);
+      return;
+    }
+
+    state.email = email;
+    saveSession(email);
+    await refreshLearningState();
+    const nextRoute = state.pendingRoute || "#/home";
+    state.pendingRoute = "";
+    window.location.hash = nextRoute;
+    render();
+  } catch (error) {
+    renderLogin(loginErrorMessage({ reason: "auth_unavailable" }), email, true);
+  } finally {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    button.innerHTML = originalMarkup;
   }
-
-  state.email = email;
-  saveSession(email);
-  await refreshLearningState();
-  const nextRoute = state.pendingRoute || "#/home";
-  state.pendingRoute = "";
-  window.location.hash = nextRoute;
-  render();
 }
 
 function loginErrorMessage(result = {}) {
@@ -2989,6 +3278,10 @@ document.addEventListener("submit", async (event) => {
 document.addEventListener("change", (event) => {
   const form = event.target.closest?.(".quiz-form");
   if (!form) return;
+  form.querySelectorAll('.quiz-question label').forEach((label) => {
+    const input = label.querySelector('input[type="radio"]');
+    label.classList.toggle("is-selected", Boolean(input?.checked));
+  });
   const questionCount = form.querySelectorAll("[data-quiz-question]").length;
   const answeredCount = new FormData(form).entries
     ? Array.from(new FormData(form).keys()).length

@@ -7,22 +7,33 @@
    ============================================================ */
 
 :root {
-  --bg: #131316;
-  --panel: #1c1c20;
-  --panel-2: #242429;
-  --hair: rgba(255, 255, 255, .08);
-  --ink: #f5f5f7;
-  --dim: rgba(245, 245, 247, .55);
-  --faint: rgba(245, 245, 247, .32);
-  --red: #e0503f;
-  --red-deep: #c0392b;
-  --gold: #d4a017;
-  --sage: #57a58c;
-  --radius-l: 22px;
-  --radius-m: 16px;
-  --radius-s: 13px;
-  --shadow-card: 0 20px 50px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .05);
-  --shadow-soft: 0 12px 30px rgba(0, 0, 0, .28);
+  /* ---- 面と文字 ---- */
+  --bg: #0E1117;                    /* 旧 #131316：純グレーの黒に青の芯を入れる */
+  --panel: #161B26;                 /* 旧 #1c1c20 */
+  --panel-2: #1B2130;               /* 旧 #242429 */
+  --hair: rgba(163, 174, 192, .22); /* 旧 rgba(255,255,255,.08)：無色→補助色を溶かした罫 */
+  --ink: #EDF1F7;                   /* 旧 #f5f5f7：16.7:1 */
+  --dim: #A3AEC0;                   /* 旧 rgba(245,245,247,.55)：8.4:1 */
+  --faint: #8B96A8;                 /* 旧 rgba(245,245,247,.32)＝2.6:1で基準未達 → 6.3:1 */
+
+  /* ---- 意味を持つ色 ---- */
+  --red: #E0503F;                   /* 変更なし。現在地の印・線・文字 4.9:1 */
+  --red-deep: #C6412F;              /* 旧 #c0392b。白文字を載せる塗り専用 5.0:1（旧は3.9:1） */
+  --gold: #E5B049;                  /* 旧 #d4a017。合格・達成のみ 9.6:1 */
+  --sage: #5FBFA0;                  /* 旧 #57a58c。公式LINE導線のみ 8.5:1 */
+
+  /* ---- 形 ---- */
+  --radius-l: 14px;                 /* 旧 22px */
+  --radius-m: 10px;                 /* 旧 16px */
+  --radius-s: 10px;                 /* 旧 13px */
+
+  /* ---- 影：暗背景で不可視な外側の影を廃し、効いている1pxだけ残す ---- */
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, .05);  /* 旧 0 20px 50px rgba(0,0,0,.35) ＋ inset */
+  --shadow-soft: none;                                     /* 旧 0 12px 30px rgba(0,0,0,.28) */
+
+  /* ---- 追加（2つだけ） ---- */
+  --line-ui: rgba(163, 174, 192, .42); /* 操作できるものの輪郭 3.1:1（WCAG 1.4.11） */
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
 }
 
 * {
@@ -320,6 +331,26 @@ img {
   border-color: rgba(224, 80, 63, .6);
   box-shadow: 0 0 0 3px rgba(224, 80, 63, .16);
 }
+
+/* ---- C10: login progress ---------------------------------- */
+#login-form button[type="submit"][aria-busy="true"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: wait;
+}
+#login-form button[type="submit"][aria-busy="true"]::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 2px solid rgba(255, 255, 255, .35);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin .8s linear infinite !important;
+}
+/* ---- C10 end ----------------------------------------------- */
 
 .login-support-note {
   margin-top: 14px;
@@ -2089,6 +2120,24 @@ textarea[aria-invalid="true"] { border-color: rgba(224, 80, 63, .7); }
    その他
    ============================================================ */
 
+/* ---- C8: bounded row entry -------------------------------- */
+/* Containers and route nodes stay visible; only row content enters. */
+.d-live .stage.d-route-static,
+.d-live .phase-group.d-route-static { animation: none; }
+.d-live .route > .ls-row[style*="--row-entry"] > *,
+.d-live .quiz-question[style*="--row-entry"] > * {
+  animation-name: var(--row-entry, none);
+  animation-duration: .3s;
+  animation-timing-function: var(--ease-out);
+  animation-delay: var(--d, 0ms);
+  animation-fill-mode: backwards;
+}
+@keyframes dRowEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* ---- C8 end ------------------------------------------------ */
+
 .page-foot {
   margin-top: 26px;
   display: flex;
@@ -2140,6 +2189,71 @@ textarea[aria-invalid="true"] { border-color: rgba(224, 80, 63, .7); }
 .quiz-retry { margin-top: 16px; }
 .quiz-retry > summary { cursor: pointer; font-weight: 700; }
 
+/* ---- C7: quiz dark integration ---------------------------- */
+.d-live .quiz-question,
+.d-live .quiz-explanation-list li,
+.d-live .quiz-result {
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: none;
+}
+.d-live .quiz-question,
+.d-live .quiz-explanation-list li {
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  border-radius: 0;
+  padding: 14px 0;
+}
+.d-live .quiz-question-list,
+.d-live .quiz-explanation-list { color: var(--ink); }
+.d-live .quiz-question > p,
+.d-live .quiz-question > p > span { color: var(--ink); }
+.d-live .quiz-question > p { line-height: 1.75; }
+.d-live .quiz-question fieldset {
+  display: flex;
+  gap: 0;
+  max-width: 220px;
+  border: 1px solid var(--line-ui);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.d-live .quiz-question label {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  justify-content: center;
+  margin: 0;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+.d-live .quiz-question label + label { border-left: 1px solid var(--line-ui); }
+.d-live .quiz-question label.is-selected {
+  font-weight: 700;
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.d-live .quiz-question label:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: -3px;
+}
+.d-live .quiz-question input[type="radio"] { accent-color: var(--ink); }
+.d-live .quiz-result { border: 1px solid var(--hair); }
+.d-live .quiz-result-head,
+.d-live .quiz-explanation-list strong,
+.d-live .quiz-explanation-list p { color: var(--ink); }
+.d-live .quiz-explanation-list li.is-correct {
+  border-left: 4px solid var(--gold);
+  padding-left: 12px;
+}
+.d-live .quiz-explanation-list li.is-wrong {
+  border-left: 4px solid var(--red);
+  padding-left: 12px;
+}
+/* ---- C7 end ------------------------------------------------ */
+
 @media (min-width: 700px) {
   body {
     background:
@@ -2147,3 +2261,334 @@ textarea[aria-invalid="true"] { border-color: rgba(224, 80, 63, .7); }
       var(--bg);
   }
 }
+
+/* ============================================================
+   VISUAL PHASE 1 — 移行ブロック
+   切り戻し: このブロックを削除し、:root を旧版へ戻す（2手）
+   ============================================================ */
+
+/* ---- A-2 空気層（夜明け前の稜線）------------------------- */
+/* html 側の background:var(--bg) が地になるので body は透明にする */
+body { background: transparent; }
+
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 38%, transparent 48%, rgba(5, 7, 11, .55) 100%),
+    radial-gradient(115% 40% at 50% -8%, rgba(126, 146, 196, .13), transparent 60%),
+    radial-gradient(80% 30% at 84% 0%,   rgba(229, 176, 73, .06),  transparent 58%),
+    radial-gradient(120% 56% at 30% 104%, rgba(24, 31, 48, .9),    transparent 62%);
+}
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  opacity: .045; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---- A-3 外側の影 → 罫線 --------------------------------- */
+.login-panel,
+.gauge-card,
+.today2,
+.evaluation-card,
+.work-card {
+  border: 1px solid var(--hair);
+  border-top-color: rgba(255, 255, 255, .09); /* 光の当たる上端だけ明るく */
+}
+.primary-button,
+.t2-btn,
+.judge-stamp { box-shadow: none; }
+
+/* ---- 塗りボタンを単色に（白文字 3.9:1 → 5.0:1）----------- */
+.primary-button,
+.t2-btn,
+.ls-cta { background: var(--red-deep); }
+
+/* ---- A-4 タップ領域 44px（実測で未達だった4箇所）--------- */
+.tabbar a        { min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; } /* 実測37px */
+.text-button     { min-height: 44px; padding: 0 8px; }                                             /* 実測31px */
+.ls-cta          { min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; } /* 実測34px */
+.cleared-work-link { min-height: 44px; }                                                           /* 実測40px */
+
+/* ---- A-4 フォーカス表示：赤→インク ----------------------- */
+/* 既存は outline:2px solid rgba(224,80,63,.8)。赤は「現在地」の色として温存する */
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* ---- 触覚まわり ------------------------------------------ */
+button, a, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- C9: app-controlled decorative motion ----------------- */
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  transition-duration: .01ms !important;
+  scroll-behavior: auto !important;
+}
+html[data-motion="off"] .stage,
+html[data-motion="off"] .rise,
+html[data-motion="off"] .login-screen,
+html[data-motion="off"] .here-dot::after,
+html[data-motion="off"] .spark i,
+html[data-motion="off"] .d-live .land .glint,
+html[data-motion="off"] .d-live .land .mist,
+html[data-motion="off"] .d-live .route.route-play .ls-row.is-current::after,
+html[data-motion="off"] .d-live .route > .ls-row[style*="--row-entry"] > *,
+html[data-motion="off"] .d-live .quiz-question[style*="--row-entry"] > * {
+  animation: none !important;
+}
+html[data-motion="off"] .d-live .land .ll,
+html[data-motion="off"] .d-live .d-atmo .lyr {
+  transform: translate3d(0, 0, 0) !important;
+}
+html[data-motion="off"] .d-live .route .spark { display: none !important; }
+html[data-motion="off"] .d-live .ridge-band .rim { transition-duration: .9s !important; }
+/* ---- C9 end ------------------------------------------------ */
+/* ============ VISUAL PHASE 1 ここまで ============ */
+
+/* ============ VISUAL PHASE 1-b — モーション（ここから） ============ */
+/* 既存セレクタを後勝ちで上書きする。新しいセレクタは足さない。 */
+
+/* ---- M1. 押下の手応え：押しは速く（60ms）、戻りはゆっくり（180ms）---- */
+.back, .tabbar a, .primary-button, .ghost-button, .line-button,
+.t2-btn, .ch-row, a.ls-row, .submit2, .judge-next {
+  transition:
+    transform 180ms var(--ease-out),
+    background-color 180ms var(--ease-out),
+    opacity 180ms var(--ease-out),
+    border-color 180ms var(--ease-out);
+}
+.back:active, .tabbar a:active, .primary-button:active, .ghost-button:active,
+.line-button:active, .t2-btn:active, .ch-row:active, a.ls-row:active,
+.submit2:active, .judge-next:active {
+  transition-duration: 60ms;
+}
+
+/* ---- M2. 立ち上がりを短く（.7s は待たされる）---- */
+.rise { animation: riseIn .44s var(--ease-out) both; }
+
+/* ---- M3. 画面遷移のイージングを統一 ---- */
+.stage[data-enter="fwd"]  { animation: screenIn .34s var(--ease-out) both; }
+.stage[data-enter="back"] { animation: screenInBack .34s var(--ease-out) both; }
+
+/* ---- M4. ログイン画面の入りを短く ---- */
+.login-screen { animation: fadeIn .5s var(--ease-out) both; }
+
+/* ---- M5. クリア済みワークのリンク：色の変化をじわっと ---- */
+.cleared-work-link {
+  transition: border-color 180ms var(--ease-out), background-color 180ms var(--ease-out);
+}
+/* ============ VISUAL PHASE 1-b ここまで ============ */
+
+/* ============================================================
+   VISUAL PHASE 4 — 全画面D「生きた背景」（ここから）
+   OFFスイッチ: <body> から d-live を外すと、この節は1行も効かない。
+   切り戻し: このブロックを丸ごと削除する（:root の --sky-a / --sky-b も同時に消える）。
+   ============================================================ */
+
+/* ---- 0. OFFスイッチの土台 ------------------------------------
+   D の要素は既定で display:none。.d-live が付いたときだけ現れる。
+   ＝ body からクラスを外せば、DOMが残っていても見た目は完全に元へ戻る。 */
+.d-atmo,
+.land,
+.ridge-band { display: none; }
+
+/* ---- 1. 時刻連動の空 -----------------------------------------
+   フェーズ1の body::before を、変数で駆動する形に差し替える。
+   .d-live が無いときは --sky-a/--sky-b の既定値が効き、見た目は現行と同じ。 */
+:root {
+  --sky-a: rgba(126, 146, 196, .13);
+  --sky-b: rgba(229, 176, 73, .06);
+}
+body.d-live.tod-morning { --sky-a: rgba(229, 176, 73, .30); --sky-b: rgba(224, 120, 90, .18); --glint: rgba(229, 176, 73, .30); }
+body.d-live.tod-day     { --sky-a: rgba(160, 185, 230, .22); --sky-b: rgba(126, 146, 196, .26); --glint: rgba(200, 215, 240, .22); }
+body.d-live.tod-evening { --sky-a: rgba(224,  80,  63, .24); --sky-b: rgba(229, 176,  73, .20); --glint: rgba(224, 110,  63, .32); }
+body.d-live.tod-night   { --sky-a: rgba(126, 146, 196, .10); --sky-b: rgba( 60,  80, 140, .24); --glint: rgba(180, 200, 240, .18); }
+
+body.d-live::before {
+  background:
+    radial-gradient(ellipse at 50% 38%, transparent 48%, rgba(5, 7, 11, .55) 100%),
+    radial-gradient(115% 40% at 50% -8%, var(--sky-a), transparent 60%),
+    radial-gradient(80% 30% at 84% 0%,   var(--sky-b), transparent 58%),
+    radial-gradient(120% 56% at 30% 104%, rgba(24, 31, 48, .9), transparent 62%);
+  transition: background 1.2s ease;
+}
+
+/* ---- 2. 等高線の層（画面全体・上45%のみ・視差） ---------------- */
+.d-live .d-atmo {
+  display: block; position: fixed; inset: 0; z-index: -1;
+  pointer-events: none; overflow: hidden;
+}
+.d-live .d-atmo .lyr {
+  position: absolute; inset: 0;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 45%, transparent 100%);
+          mask-image: linear-gradient(180deg, #000 0, #000 45%, transparent 100%);
+  will-change: auto;
+}
+.d-live .d-atmo .cstat { position: absolute; inset: -8% -8%; width: 116%; height: 116%; }
+.d-live .d-atmo .cstat svg { width: 100%; height: 100%; }
+
+/* ---- 3. 山の「窓」（高さ0。リストの裏には決して入らない）-------- */
+.d-live .land {
+  display: block; position: relative; z-index: 0;
+  height: 0; margin: 0; pointer-events: none;
+}
+.d-live .land .ll {
+  position: absolute; left: -18px; right: -18px; top: -52px; height: 250px;
+  overflow: hidden;                  /* 霧(width:160%)が横スクロールを生むのを防ぐ */
+  transform: translate3d(0, 0, 0); will-change: auto;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 40%, transparent 82%);
+          mask-image: linear-gradient(180deg, #000 0, #000 40%, transparent 82%);
+}
+.d-live .land .ll svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.d-live .land .ll.far  path { fill: rgba(62, 76, 112, .50); }
+.d-live .land .ll.mid  path { fill: rgba(34, 44,  70, .80); }
+.d-live .land .ll.near path { fill: rgba(15, 19,  30, .97); }
+.d-live .land .ll.near .crest { opacity: .9; }
+
+/* 窓の位置：画面ごと */
+.d-live .land.r .ll {
+  top: -168px; height: 215px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 32%, transparent 74%);
+          mask-image: linear-gradient(180deg, #000 0, #000 32%, transparent 74%);
+}
+.d-live .land.t .ll {
+  top: -150px; height: 200px; opacity: .55;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 30%, transparent 70%);
+          mask-image: linear-gradient(180deg, #000 0, #000 30%, transparent 70%);
+}
+.d-live .land.t .ll.near { display: none; }   /* 詳細画面の窓は遠景・中景のみ */
+
+/* ログインは画面下固定の地平 */
+.d-live .login-screen { position: relative; }  /* .land.fixed の基準にする */
+.d-live .land.fixed { position: absolute !important; left: 0; right: 0; bottom: 0; height: 0; }
+.d-live .land.fixed .ll {
+  left: 0; right: 0;               /* 画面幅の窓は左右へ広げない。高さ0の親では切り取らない */
+  top: -172px; height: 220px;
+  -webkit-mask-image: none; mask-image: none;
+}
+.d-live .land.fixed .glint { display: none; }
+
+/* ---- 4. 常時動く2つ：頂の灯と霧（他は動かさない）--------------- */
+.d-live .land .glint {
+  position: absolute; width: 110px; height: 110px; border-radius: 50%;
+  left: calc(73% - 55px); top: calc(10% - 55px);
+  background: radial-gradient(circle, var(--glint, rgba(229,176,73,.24)), rgba(229,176,73,0) 62%);
+  transition: background 1.2s ease;
+  animation: dGlint 9s ease-in-out infinite;
+}
+.d-live .land .mist {
+  position: absolute; left: -30%; width: 160%; height: 64px; top: 38%; filter: blur(14px);
+  background: linear-gradient(90deg, transparent, rgba(163,174,192,.085) 40%, rgba(163,174,192,.06) 60%, transparent);
+  animation: dMist 46s ease-in-out infinite alternate;
+}
+@keyframes dGlint { 0%,100% { opacity:.55; transform:scale(.9) } 50% { opacity:1; transform:scale(1.08) } }
+@keyframes dMist  { from { transform:translate3d(-40px,0,0) } to { transform:translate3d(40px,0,0) } }
+
+/* スクロール中だけ will-change を付ける（常時付けると合成レイヤを食う）*/
+.d-live.scrolling .d-atmo .lyr,
+.d-live.scrolling .land .ll { will-change: transform; }
+
+/* ---- 5. 窓の上のカードは文字の地を確保する --------------------- */
+.d-live .gauge-card,
+.d-live .today2,
+.d-live .cleared-works .work-card,
+.d-live .phase-group,
+.d-live .ai-panel { background-color: rgba(14, 17, 23, .92); }
+.d-live .login-panel { background-color: rgba(14, 17, 23, .90); }
+
+/* ---- 6. 稜線の帯（進捗パネル下部）。光は左→右、右端の頂＝100% -- */
+.d-live .gauge-card { position: relative; overflow: hidden; padding-bottom: 62px; }
+.d-live .gauge-card > .ring-wrap,
+.d-live .gauge-card > .gauge-stats { position: relative; z-index: 1; }
+.d-live .ridge-band {
+  display: block; position: absolute; left: 0; right: 0; bottom: 0; height: 56px; z-index: 0;
+}
+.d-live .ridge-band .fill { fill: rgba(163, 174, 192, .07); }
+.d-live .ridge-band .rim2 { fill: none; stroke: rgba(163, 174, 192, .22); stroke-width: 1; stroke-linejoin: round; }
+.d-live .ridge-band .rim {
+  fill: none; stroke: rgba(229, 176, 73, .8); stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 100; stroke-dashoffset: var(--climb, 100);
+  transition: stroke-dashoffset .9s var(--ease-out);
+}
+.d-live .ridge-band .head {
+  fill: #FFF3D6; filter: drop-shadow(0 0 4px rgba(229, 176, 73, .9));
+  transition: none;                      /* 頭は transform を WAAPI で動かす */
+}
+.d-live .ridge-band .head-g { will-change: transform; }
+.d-live .ridge-band .head-g.hide { opacity: 0; }
+
+/* ---- 7. reduced-motion ---------------------------------------
+   霧と灯は止める。視差はJS側で登録しない。
+   進捗連動（稜線の光）は「動き」ではなく「値の表示」なので例外で残す。 */
+
+/* ---- C-2 ルートライン（v2.2 修正）------------------------------
+   既存の .ls-row は一切書き換えない。足すのは
+   ①区間別軌道（.route-rail） ②節点（.ls-row::before） ③光（.spark） の3つだけ。 */
+/* .route は既存行の器。OFFでも display を変更しない。装飾だけ隠す。 */
+.route > .route-rail,
+.route > .spark { display: none; }
+
+.d-live .route {
+  position: relative; padding-left: 30px; overflow: hidden;
+}
+/* ① 軌道：節点間の中点で区切り、各レッスンの完了状態で塗る */
+.d-live .route > .route-rail {
+  display: block; position: absolute; left: 6px; top: 20px; bottom: 26px; width: 1px;
+  pointer-events: none;
+}
+.d-live .route-rail > .route-segment {
+  position: absolute; left: 0; width: 1px; background: var(--hair);
+}
+.d-live .route-segment[data-state="complete"] { background: var(--gold); }
+.d-live .route-segment[data-state="current"] { background: var(--red); }
+/* ② 節点：各行の左に1つ。色は既存の状態クラスから引く */
+.d-live .route .ls-row { position: relative; }
+.d-live .route .ls-row::before {
+  content: ""; position: absolute; left: -28px; top: 20px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold); box-shadow: 0 0 0 4px var(--bg);
+}
+.d-live .route .ls-row.is-current::before { background: var(--red); }
+.d-live .route .ls-row.is-locked::before {
+  background: var(--bg); border: 1px solid var(--line-ui); box-shadow: 0 0 0 4px var(--bg);
+}
+.d-live .route .ls-row[data-state="progress"]::before { background: var(--ink); }
+.d-live .route .ls-row[data-state="not-started"]::before {
+  background: var(--bg); border: 1px solid var(--line-ui); box-shadow: 0 0 0 4px var(--bg);
+}
+/* 現在地の脈 */
+.d-live .route .ls-row.is-current::after {
+  content: ""; position: absolute; left: -31px; top: 17px;
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 1px solid var(--red); opacity: 0;
+}
+.d-live .route.route-play .ls-row.is-current::after {
+  animation: routeHalo 2s var(--ease-out) 3 both;
+}
+@keyframes routeHalo {
+  0%   { transform: scale(.5); opacity: .85 }
+  70%  { transform: scale(1.9); opacity: 0 }
+  100% { opacity: 0 }
+}
+/* ③ 光：上→下。読込1回だけ */
+.d-live .route .spark {
+  display: block; pointer-events: none; position: absolute; left: 5px; top: 20px; width: 3px; height: 56px; border-radius: 2px;
+  background: linear-gradient(180deg, transparent, rgba(255, 240, 226, .9), transparent);
+  opacity: 0;
+}
+.d-live .route.route-play .spark {
+  animation: routeTrail 1.1s var(--ease-out) .25s 1 both;
+}
+@keyframes routeTrail {
+  0%   { transform: translateY(-56px); opacity: 0 }
+  18%  { opacity: 1 }
+  88%  { opacity: 1 }
+  100% { transform: translateY(var(--trail, 300px)); opacity: 0 }
+}
+/* reduced-motion：光と脈は装飾なので完全に消す。軌道の色は残す */
+
+
+/* ============ VISUAL PHASE 4 ここまで ============ */
