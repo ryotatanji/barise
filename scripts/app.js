@@ -1056,6 +1056,11 @@ function renderLearningPage() {
     </div>
   `;
 
+  app.querySelectorAll(".route").forEach((route) => {
+    route.closest(".stage")?.classList.add("d-route-static");
+    route.closest(".phase-group")?.classList.add("d-route-static");
+  });
+
   requestAnimationFrame(() => scrollToPageTop());
   requestAnimationFrame(() => playRouteSpark());
 }
@@ -1115,6 +1120,19 @@ function stationSubText(lesson) {
   return pieces.join(" ・ ");
 }
 
+function rowEntryStyle(index) {
+  const enabled = Number.isInteger(index) && index >= 0 && index < 6;
+  const delay = enabled ? 180 + index * 40 : 0;
+  return `--d:${delay}ms;--row-entry:${enabled ? "dRowEnter" : "none"};`;
+}
+
+function lessonEntryStyle(learning, lesson) {
+  const lessons = learning.phases
+    .filter((phase) => phase.isAccessible)
+    .flatMap((phase) => phase.lessons);
+  return rowEntryStyle(lessons.findIndex((item) => item.lesson_id === lesson.lesson_id));
+}
+
 function renderLessonRow(learning, phase, lesson) {
   const stateName = stationState(learning, phase, lesson);
   const cta = getLearningLessonCta(lesson);
@@ -1142,9 +1160,9 @@ function renderLessonRow(learning, phase, lesson) {
   `;
 
   if (stateName === "locked") {
-    return `<div class="ls-row is-locked" data-state="locked">${inner}</div>`;
+    return `<div class="ls-row is-locked" data-state="locked" style="${lessonEntryStyle(learning, lesson)}">${inner}</div>`;
   }
-  return `<a class="ls-row${stateName === "current" ? " is-current" : ""}" data-state="${stateName}" href="${escapeAttribute(cta.href)}">${inner}</a>`;
+  return `<a class="ls-row${stateName === "current" ? " is-current" : ""}" data-state="${stateName}" style="${lessonEntryStyle(learning, lesson)}" href="${escapeAttribute(cta.href)}">${inner}</a>`;
 }
 
 /* ============================================================
@@ -1278,7 +1296,7 @@ function renderQuizForm(quiz, isRetry = false) {
     <form class="quiz-form" data-form="quiz" data-quiz-id="${escapeAttribute(quiz.quiz_id)}">
       <ol class="quiz-question-list">
         ${(quiz.questions || []).map((question, index) => `
-          <li class="quiz-question" data-quiz-question="${escapeAttribute(question.question_id)}">
+          <li class="quiz-question" data-quiz-question="${escapeAttribute(question.question_id)}" style="${rowEntryStyle(index)}">
             <p><span>問${index + 1}</span>${escapeHtml(question.statement)}</p>
             <fieldset>
               <legend class="sr-only">問${index + 1}の回答</legend>

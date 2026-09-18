@@ -2100,6 +2100,24 @@ textarea[aria-invalid="true"] { border-color: rgba(224, 80, 63, .7); }
    その他
    ============================================================ */
 
+/* ---- C8: bounded row entry -------------------------------- */
+/* Containers and route nodes stay visible; only row content enters. */
+.d-live .stage.d-route-static,
+.d-live .phase-group.d-route-static { animation: none; }
+.d-live .route > .ls-row[style*="--row-entry"] > *,
+.d-live .quiz-question[style*="--row-entry"] > * {
+  animation-name: var(--row-entry, none);
+  animation-duration: .3s;
+  animation-timing-function: var(--ease-out);
+  animation-delay: var(--d, 0ms);
+  animation-fill-mode: backwards;
+}
+@keyframes dRowEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* ---- C8 end ------------------------------------------------ */
+
 .page-foot {
   margin-top: 26px;
   display: flex;
