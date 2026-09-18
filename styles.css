@@ -332,6 +332,26 @@ img {
   box-shadow: 0 0 0 3px rgba(224, 80, 63, .16);
 }
 
+/* ---- C10: login progress ---------------------------------- */
+#login-form button[type="submit"][aria-busy="true"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: wait;
+}
+#login-form button[type="submit"][aria-busy="true"]::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 2px solid rgba(255, 255, 255, .35);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin .8s linear infinite !important;
+}
+/* ---- C10 end ----------------------------------------------- */
+
 .login-support-note {
   margin-top: 14px;
   font-size: 11px;

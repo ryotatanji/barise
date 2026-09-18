@@ -2803,22 +2803,36 @@ async function refreshLearningState() {
 async function handleLogin(event) {
   event.preventDefault();
   const form = event.target;
-  const email = normalizeEmail(new FormData(form).get("email"));
-  const result = await provider.login(email);
+  const button = form.querySelector('button[type="submit"]');
+  if (!button || button.disabled) return;
+  const originalMarkup = button.innerHTML;
+  let email = "";
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  button.textContent = "確認しています\u2026";
 
-  if (!result.ok) {
-    const message = loginErrorMessage(result);
-    renderLogin(message, email, true);
-    return;
+  try {
+    email = normalizeEmail(new FormData(form).get("email"));
+    const result = await provider.login(email);
+    if (!result.ok) {
+      renderLogin(loginErrorMessage(result), email, true);
+      return;
+    }
+
+    state.email = email;
+    saveSession(email);
+    await refreshLearningState();
+    const nextRoute = state.pendingRoute || "#/home";
+    state.pendingRoute = "";
+    window.location.hash = nextRoute;
+    render();
+  } catch (error) {
+    renderLogin(loginErrorMessage({ reason: "auth_unavailable" }), email, true);
+  } finally {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    button.innerHTML = originalMarkup;
   }
-
-  state.email = email;
-  saveSession(email);
-  await refreshLearningState();
-  const nextRoute = state.pendingRoute || "#/home";
-  state.pendingRoute = "";
-  window.location.hash = nextRoute;
-  render();
 }
 
 function loginErrorMessage(result = {}) {
