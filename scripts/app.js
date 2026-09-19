@@ -8,7 +8,7 @@ import {
   getStoredSession,
   normalizeEmail,
   saveSession
-} from "./data-provider.js?v=7-5-1-b031fix";
+} from "./data-provider.js?v=7-5-2-b038fix";
 
 const app = document.querySelector("#app");
 const provider = createLearningProvider();
@@ -2334,9 +2334,11 @@ function getEvaluationResultHelp(status) {
 
 function getLearningLessonCta(lesson) {
   const nextAction = getLessonCta(lesson);
-  if (lesson.isComplete) return { ...nextAction, label: "ふり返る", href: hashForLesson(lesson.lesson_id) };
-  if (lesson.progress.video_status === "watched") return { ...nextAction, label: "続きから登る" };
-  return { ...nextAction, label: "ここから登る" };
+  const lessonHref = hashForLesson(lesson.lesson_id);
+  const href = nextAction.href.startsWith(lessonHref) ? nextAction.href : lessonHref;
+  if (lesson.isComplete) return { ...nextAction, label: "ふり返る", href };
+  if (lesson.progress.video_status === "watched") return { ...nextAction, label: "続きから登る", href };
+  return { ...nextAction, label: "ここから登る", href };
 }
 
 function getLessonCta(lesson) {
